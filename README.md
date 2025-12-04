@@ -460,7 +460,8 @@ uCxSocketCreate(&gUcxHandle, protocol, &socketHandle);
 ```
 
 ### Versioning System
-- **Format**: `3.2.0.BUILD` where BUILD = YYDDD (year + day of year)
+- **Format**: `3.2.0.BUILD` where BUILD = YYMMDD (CalVer format)
+- **Example**: `3.2.0.251204` = December 4, 2025
 - **Alignment**: Major.Minor.Patch follows UCX API version
 - **Auto-increment**: Build number updates daily based on current date
 - **Display**: Shown in menu header and Windows file properties
@@ -471,7 +472,7 @@ uCxSocketCreate(&gUcxHandle, protocol, &socketHandle);
 ```
 ═════════════════════════════════════════════════════════════════
              u-blox ucxclient Windows App
-     using ucxclient API v3.2.0  |  Application v3.2.0.25338
+     using ucxclient API v3.2.0  |  Application v3.2.0.251204
 ═════════════════════════════════════════════════════════════════
 
 Settings file: C:\u-blox\ucxclient\ucx-windows-app.ini
@@ -661,8 +662,8 @@ For GitHub releases, distribute the signed executable:
 - No additional runtime dependencies
 ---
 
-**Version**: 3.2.0.25338 (aligned with UCX API 3.2.0)  
-**Build**: Date-based versioning (YYDDD format)  
+**Version**: 3.2.0.251204 (aligned with UCX API 3.2.0)  
+**Build**: Date-based versioning (YYMMDD CalVer format)  
 **Platform**: Windows 10/11 (64-bit)  
 
 

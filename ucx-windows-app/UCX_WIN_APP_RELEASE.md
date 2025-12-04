@@ -7,8 +7,8 @@ Releases are **GitHub-only** with signed executables. Users clone the repository
 ## Version Numbering
 
 **Automatic versioning** based on build date:
-- Format: `3.2.0.BUILD` where BUILD = YYDDD (year + day of year)
-- Example: `3.2.0.25338` (year 2025, day 338)
+- Format: `3.2.0.BUILD` where BUILD = YYMMDD (CalVer format)
+- Example: `3.2.0.251204` (December 4, 2025)
 - Major.Minor.Patch follows UCX API version (currently 3.2.0)
 - Build number updates daily based on current date
 
@@ -34,7 +34,7 @@ Version is generated at build time by CMake from `ucx-windows-app/version.h.in`.
 .\launch-ucx-windows-app.cmd sign EF3FD135F1CD...
 
 # This will:
-# - Generate version.h with date-based build number (3.2.0.YYDDD)
+# - Generate version.h with date-based build number (3.2.0.YYMMDD)
 # - Build Release configuration
 # - Sign with u-blox AG GlobalSign EV CodeSigning certificate
 # - Timestamp with DigiCert server (valid until Dec 2027)
@@ -45,11 +45,11 @@ Version is generated at build time by CMake from `ucx-windows-app/version.h.in`.
 **Verify Version Before Release:**
 ```powershell
 # Check the version number displayed in CMake output
-# Should show: "Build version: 3.2.0.YYDDD (date-based)"
+# Should show: "Build version: 3.2.0.YYMMDD (date-based)"
 
 # Or run the executable to verify
 .\examples\ucx-windows-app\release\ucx-windows-app-signed.exe
-# Menu header should show: "Application v3.2.0.YYDDD"
+# Menu header should show: "Application v3.2.0.YYMMDD"
 ```
 
 **Note:** The signed executable has ftd2xx64.dll embedded as a resource - no separate DLL needed.
@@ -57,16 +57,16 @@ Version is generated at build time by CMake from `ucx-windows-app/version.h.in`.
 ### 3. Create Git Tag
 ```bash
 # Tag format: v3.2.0.BUILD
-git tag -a v3.2.0.25338 -m "Release ucx Windows App v3.2.0.25338"
+git tag -a v3.2.0.251204 -m "Release ucx Windows App v3.2.0.251204"
 git push origin master
-git push origin v3.2.0.25338
+git push origin v3.2.0.251204
 ```
 
 ### 4. Create GitHub Release
 1. Go to: https://github.com/u-blox/ucx-windows-app/releases
 2. Click "Draft a new release"
-3. **Tag:** v3.2.0.25338 (must match Git tag)
-4. **Title:** ucx-windows-app v3.2.0.25338
+3. **Tag:** v3.2.0.251204 (must match Git tag)
+4. **Title:** ucx-windows-app v3.2.0.251204
 4. **Description:** Write release notes including:
    ```markdown
    ## Features
@@ -143,7 +143,7 @@ ucx-windows-app/
 ## Release Checklist
 
 - [ ] All tests passing
-- [ ] Version reflects current date (YYDDD format)
+- [ ] Version reflects current date (YYMMDD format)
 - [ ] Built and signed with certificate
 - [ ] SHA256 hash calculated and added to release notes
 - [ ] Git tag created and pushed

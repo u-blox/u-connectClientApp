@@ -12,11 +12,9 @@ set(APP_VERSION_MINOR 2)
 set(APP_VERSION_PATCH 0)
 set(APP_VERSION_BUILD 0)
 
-# Generate build number from current date: YYDDD (e.g., 25338 = 2025, day 338)
-# This is consistent across branches and increases over time
-string(TIMESTAMP BUILD_YEAR "%y")
-string(TIMESTAMP BUILD_DAY_OF_YEAR "%j")
-math(EXPR APP_VERSION_BUILD "${BUILD_YEAR}${BUILD_DAY_OF_YEAR}")
+# Generate build number from current date: YYMMDD (e.g., 251204 = Dec 4, 2025)
+# This is the most common CalVer format on GitHub
+string(TIMESTAMP APP_VERSION_BUILD "%y%m%d")
 
 message(STATUS "Build version: ${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD} (timestamp-based)")
 
