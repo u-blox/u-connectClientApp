@@ -571,7 +571,13 @@ set SIGN_CONFIG=Release
 
 set SIGN_EXE=ucx-windows-app\bin\ucx-windows-app.exe
 set SIGN_EXE_SIGNED=ucx-windows-app\release\ucx-windows-app-signed.exe
-set CERT_THUMBPRINT=%2
+
+REM Accept thumbprint from either %1 (called as subroutine) or %2 (called from command line)
+if not "%~1"=="" (
+    set CERT_THUMBPRINT=%~1
+) else (
+    set CERT_THUMBPRINT=%2
+)
 
 REM Check if executable exists
 if not exist "!SIGN_EXE!" (
