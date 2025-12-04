@@ -1,6 +1,7 @@
 build/
 
 # Binaries and build outputs
+ucx-windows-app/bin/
 examples/bin/*.exe
 examples/bin/*.pdb
 examples/bin/*.ilk
