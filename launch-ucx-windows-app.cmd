@@ -754,7 +754,9 @@ echo SHA256: !SHA256_HASH!
 echo.
 
 REM Step 4: Commit and tag
-echo [Step 4/5] Creating git tag v%RELEASE_VERSION%...
+echo [Step 4/5] Git tag creation...
+echo.
+echo Tag to create: v%RELEASE_VERSION%
 echo.
 
 REM Check if there are uncommitted changes
@@ -772,10 +774,24 @@ if errorlevel 1 (
     )
 )
 
+echo.
+set /p CREATE_TAG="Create and push git tag v%RELEASE_VERSION% to GitHub? (Y/n): "
+if /i "!CREATE_TAG!"=="n" (
+    echo.
+    echo [INFO] Skipping git tag creation (dry-run mode)
+    echo       You can create the tag manually later:
+    echo       git tag -a v%RELEASE_VERSION% -m "Release ucx Windows App v%RELEASE_VERSION%"
+    echo       git push origin v%RELEASE_VERSION%
+    echo.
+    goto :skip_tag_creation
+)
+
 REM Delete existing tag if it exists
 git tag -d v%RELEASE_VERSION% 2>nul
 
 REM Create and push tag
+echo.
+echo Creating tag v%RELEASE_VERSION%...
 git tag -a v%RELEASE_VERSION% -m "Release ucx Windows App v%RELEASE_VERSION% - CalVer YYMMDD format"
 if errorlevel 1 (
     echo [ERROR] Failed to create git tag!
@@ -788,6 +804,11 @@ if errorlevel 1 (
     echo [ERROR] Failed to push tag!
     exit /b 1
 )
+
+echo [OK] Tag v%RELEASE_VERSION% created and pushed to GitHub
+echo.
+
+:skip_tag_creation
 
 echo.
 echo ===================================
