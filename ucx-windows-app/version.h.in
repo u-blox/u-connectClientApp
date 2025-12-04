@@ -14,7 +14,7 @@
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 
-// Full version string: "3.2.0.147"
+// Full version string: "3.2.0.25338" (YYDDD format)
 #define APP_VERSION_STRING \
     TOSTRING(APP_VERSION_MAJOR) "." \
     TOSTRING(APP_VERSION_MINOR) "." \
