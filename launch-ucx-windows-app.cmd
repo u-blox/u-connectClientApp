@@ -748,8 +748,33 @@ if defined SIGN_THUMBPRINT (
     set RELEASE_FILE=ucx-windows-app\bin\ucx-windows-app.exe
 )
 
-REM Step 3: Calculate SHA256
-echo [Step 3/5] Calculating SHA256 hash...
+REM Step 3: Commit the built/signed executable
+echo.
+echo [Step 3/5] Committing release executable...
+echo.
+
+REM Check if there are uncommitted changes
+git diff --quiet
+if errorlevel 1 (
+    echo Changes detected, committing...
+    git add -A
+    git commit -m "Release v%RELEASE_VERSION%"
+    if errorlevel 1 (
+        echo [WARNING] Commit failed, continuing...
+    ) else (
+        echo Pushing to GitHub...
+        git push origin master
+        if errorlevel 1 (
+            echo [WARNING] Push failed, continuing...
+        )
+    )
+) else (
+    echo No changes to commit
+)
+
+REM Step 4: Calculate SHA256
+echo.
+echo [Step 4/5] Calculating SHA256 hash...
 echo.
 for /f "skip=1 tokens=*" %%h in ('certutil -hashfile "!RELEASE_FILE!" SHA256') do (
     if not defined SHA256_HASH set SHA256_HASH=%%h
@@ -759,27 +784,10 @@ set SHA256_HASH=!SHA256_HASH: =!
 echo SHA256: !SHA256_HASH!
 echo.
 
-REM Step 4: Commit and tag
-echo [Step 4/5] Git tag creation...
+REM Step 5: Git tag creation
+echo [Step 5/5] Git tag creation...
 echo.
 echo Tag to create: v%RELEASE_VERSION%
-echo.
-
-REM Check if there are uncommitted changes
-git diff --quiet
-if errorlevel 1 (
-    echo [WARNING] You have uncommitted changes!
-    set /p COMMIT_NOW="Commit changes now? (Y/n): "
-    if /i "!COMMIT_NOW!"=="n" (
-        echo.
-        echo [INFO] Skipping commit. Please commit manually before releasing.
-    ) else (
-        git add -A
-        git commit -m "Release v%RELEASE_VERSION%"
-        git push origin master
-    )
-)
-
 echo.
 set /p CREATE_TAG="Create and push git tag v%RELEASE_VERSION% to GitHub? (Y/n): "
 if /i "!CREATE_TAG!"=="n" (
