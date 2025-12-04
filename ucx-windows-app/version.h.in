@@ -14,7 +14,7 @@
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 
-// Full version string: "3.2.0.25338" (YYDDD format)
+// Full version string: "MAJOR.MINOR.PATCH.BUILD" where BUILD is YYDDD (year + day of year)
 #define APP_VERSION_STRING \
     TOSTRING(APP_VERSION_MAJOR) "." \
     TOSTRING(APP_VERSION_MINOR) "." \
