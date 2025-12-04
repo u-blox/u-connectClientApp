@@ -837,8 +837,9 @@ if exist "ucxclient" (
     dir /b "ucxclient" 2>nul | findstr "^" >nul
     if errorlevel 1 (
         echo [INFO] ucxclient directory is empty - cloning submodule...
+        echo [INFO] Skipping nested submodules (STM32CubeF4 not needed for Windows)
         echo.
-        git submodule update --init --recursive
+        git submodule update --init
         if errorlevel 1 (
             echo [ERROR] Failed to clone submodule!
             exit /b 1
@@ -1174,11 +1175,23 @@ if !errorlevel! neq 0 (
 echo [OK] Master branch cloned successfully
 echo.
 
+REM Initialize and update submodules in the cloned repository (non-recursive to skip STM32CubeF4)
+echo Initializing ucxclient submodule in cloned master branch...
+pushd "!TEMP_DIR!"
+git submodule update --init --depth 1
+if !errorlevel! equ 0 (
+    echo [OK] Submodule initialized
+) else (
+    echo [WARNING] Could not initialize submodule in master branch
+)
+popd
+echo.
+
 REM Compare directory structure
 echo Comparing directory structure...
 echo.
 
-set "COMPARE_DIRS=src inc ucx_api examples build"
+set "COMPARE_DIRS=ucxclient ucxclient\src ucxclient\inc ucxclient\ucx_api ucx-windows-app build"
 for %%d in (!COMPARE_DIRS!) do (
     if exist "%%d\" (
         if exist "!TEMP_DIR!\%%d\" (

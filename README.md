@@ -42,6 +42,7 @@ To build and run this application from a fresh clone, you need:
 
 3. **Git** (for cloning)
    - Download: https://git-scm.com/download/win
+   - Required for cloning the repository with submodules
 
 ### Hardware
 - **FTDI USB device** (NORA-W36 or NORA-B26 module)
@@ -49,12 +50,15 @@ To build and run this application from a fresh clone, you need:
 
 ### Quick Setup Steps
 ```powershell
-# 1. Clone the repository with submodule
-git clone --recurse-submodules https://github.com/u-blox/ucx-windows-app.git
+# 1. Clone the repository with submodule (non-recursive to skip STM32 dependencies)
+git clone --recurse-submodules=ucxclient https://github.com/u-blox/ucx-windows-app.git
 cd ucx-windows-app
 
-# Or if already cloned without submodules:
-# git submodule update --init --recursive
+# If you already cloned without submodules, initialize the submodule:
+# git submodule update --init
+# Or use the built-in launcher command:
+# .\launch-ucx-windows-app.cmd update
+# Note: We don't use --recursive to avoid cloning the large STM32CubeF4 submodule (not needed for Windows)
 
 # 2. Launch (auto-builds on first run)
 .\launch-ucx-windows-app.cmd
@@ -85,6 +89,9 @@ cd ucx-windows-app
 
 # Build all configurations (Debug + Release)
 .\launch-ucx-windows-app.cmd all
+
+# Update ucxclient submodule to latest version
+.\launch-ucx-windows-app.cmd update
 
 # Clean build artifacts
 .\launch-ucx-windows-app.cmd clean [debug|release]
@@ -489,17 +496,7 @@ OK
 
 Connected to: NORA-W36 (u-connectXpress 3.2.0)
 
-=== STATUS DASHBOARD ===
-┌─────────────────────────────────────────────────────────────────┐
-│ Device  │ COM10                                                  │
-│ Module  │ NORA-W36                                               │
-│ Version │ 3.2.0                                                  │
-├─────────────────────────────────────────────────────────────────┤
-│ Wi-Fi   │ ○ Not Connected                                       │
-│ BT      │ ○ Not Advertising                                     │
-└─────────────────────────────────────────────────────────────────┘
 
-Enter choice: w
 
 --- Wi-Fi Connect ---
 PC IP address: 10.12.71.133

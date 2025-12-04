@@ -137,7 +137,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 // Settings file name
 // Location strategy:
 //   1. Launcher usage: Uses/creates ucx-windows-app.ini in project root
-//   2. Direct exe usage: Checks ../../ucx-windows-app.ini first, then creates next to exe
+//   2. Direct exe usage: Checks root (../../ from bin/release), creates there if found, else creates next to exe
 #define SETTINGS_FILENAME "ucx-windows-app.ini"
 
 // Buffer size constants
@@ -20431,14 +20431,21 @@ int main(int argc, char *argv[])
     SetConsoleOutputCP(CP_UTF8);
     
     // Initialize settings file path with smart location strategy:
-    // 1. Try project root (../../ucx-windows-app.ini from bin/ or release/)
-    // 2. Fall back to exe directory (./ucx-windows-app.ini)
+    // 1. Check project root first (../../ucx-windows-app.ini from bin/ or release/)
+    // 2. If not found in root, use/create in exe directory
     getExecutableDirectory(gSettingsFilePath, sizeof(gSettingsFilePath));
     
-    // First, try project root location (for launcher usage)
+    // First, try project root location (for launcher usage and consistency)
     char rootSettingsPath[MAX_PATH];
+    char exeSettingsPath[MAX_PATH];
     strncpy(rootSettingsPath, gSettingsFilePath, sizeof(rootSettingsPath) - 1);
     rootSettingsPath[sizeof(rootSettingsPath) - 1] = '\0';
+    
+    // Save exe directory path for fallback
+    strncpy(exeSettingsPath, gSettingsFilePath, sizeof(exeSettingsPath) - 1);
+    exeSettingsPath[sizeof(exeSettingsPath) - 1] = '\0';
+    strncat(exeSettingsPath, SETTINGS_FILENAME, 
+           sizeof(exeSettingsPath) - strlen(exeSettingsPath) - 1);
     
     // Remove trailing slash if present
     size_t pathLen = strlen(rootSettingsPath);
@@ -20446,48 +20453,36 @@ int main(int argc, char *argv[])
         rootSettingsPath[pathLen - 1] = '\0';
     }
     
-    // Navigate up 3 levels: bin → ucx-windows-app → examples → root
+    // Navigate up 2 levels: bin/release → ucx-windows-app → root
     // Level 1: Remove "bin" or "release"
     char *lastSlash = strrchr(rootSettingsPath, '\\');
+    bool foundRootPath = false;
     if (lastSlash && lastSlash > rootSettingsPath) {
-        *lastSlash = '\0';  // Now at examples\ucx-windows-app
+        *lastSlash = '\0';  // Now at ucx-windows-app
         
         // Level 2: Remove "ucx-windows-app"
         lastSlash = strrchr(rootSettingsPath, '\\');
         if (lastSlash && lastSlash > rootSettingsPath) {
-            *lastSlash = '\0';  // Now at examples
-            
-            // Level 3: Remove "examples"
-            lastSlash = strrchr(rootSettingsPath, '\\');
-            if (lastSlash && lastSlash > rootSettingsPath) {
-                *(lastSlash + 1) = '\0';  // Keep trailing slash, now at root
-                strncat(rootSettingsPath, SETTINGS_FILENAME, 
-                       sizeof(rootSettingsPath) - strlen(rootSettingsPath) - 1);
-                
-                // Check if settings file exists in project root
-                if (GetFileAttributesA(rootSettingsPath) != INVALID_FILE_ATTRIBUTES) {
-                    // Use project root settings file
-                    strncpy(gSettingsFilePath, rootSettingsPath, sizeof(gSettingsFilePath) - 1);
-                    gSettingsFilePath[sizeof(gSettingsFilePath) - 1] = '\0';
-                } else {
-                    // Use exe directory (will be created if needed)
-                    strncat(gSettingsFilePath, SETTINGS_FILENAME, 
-                           sizeof(gSettingsFilePath) - strlen(gSettingsFilePath) - 1);
-                }
-            } else {
-                // Couldn't navigate to root, use exe directory
-                strncat(gSettingsFilePath, SETTINGS_FILENAME, 
-                       sizeof(gSettingsFilePath) - strlen(gSettingsFilePath) - 1);
-            }
-        } else {
-            // Couldn't navigate up, use exe directory
-            strncat(gSettingsFilePath, SETTINGS_FILENAME, 
-                   sizeof(gSettingsFilePath) - strlen(gSettingsFilePath) - 1);
+            *(lastSlash + 1) = '\0';  // Keep trailing slash, now at root
+            strncat(rootSettingsPath, SETTINGS_FILENAME, 
+                   sizeof(rootSettingsPath) - strlen(rootSettingsPath) - 1);
+            foundRootPath = true;
         }
+    }
+    
+    // Check if settings file exists in project root
+    if (foundRootPath && GetFileAttributesA(rootSettingsPath) != INVALID_FILE_ATTRIBUTES) {
+        // Use project root settings file
+        strncpy(gSettingsFilePath, rootSettingsPath, sizeof(gSettingsFilePath) - 1);
+        gSettingsFilePath[sizeof(gSettingsFilePath) - 1] = '\0';
+    } else if (foundRootPath) {
+        // Root path is valid but file doesn't exist - create it in root for consistency
+        strncpy(gSettingsFilePath, rootSettingsPath, sizeof(gSettingsFilePath) - 1);
+        gSettingsFilePath[sizeof(gSettingsFilePath) - 1] = '\0';
     } else {
-        // Couldn't parse path, use exe directory
-        strncat(gSettingsFilePath, SETTINGS_FILENAME, 
-               sizeof(gSettingsFilePath) - strlen(gSettingsFilePath) - 1);
+        // Couldn't determine root path, use exe directory
+        strncpy(gSettingsFilePath, exeSettingsPath, sizeof(gSettingsFilePath) - 1);
+        gSettingsFilePath[sizeof(gSettingsFilePath) - 1] = '\0';
     }
     
     // Load settings from file
