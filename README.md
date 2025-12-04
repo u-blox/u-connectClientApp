@@ -660,20 +660,28 @@ For GitHub releases, distribute the signed executable:
 - Windows 10/11 (64-bit)
 - FTDI USB device (NORA-W36 or NORA-B26)
 - No additional runtime dependencies
-
-## Support
-
-For issues, feature requests, or contributions:
-- GitHub: https://github.com/u-blox/ucx-windows-app
-- UCX Client Library: https://github.com/u-blox/ucxclient
-- Documentation: See `ucxclient/examples/` directory
-- UCX API Reference: Latest version included in firmware releases
-
 ---
 
 **Version**: 3.2.0.257 (aligned with UCX API 3.2.0)  
 **Build**: Auto-versioned using Git commit count  
 **Platform**: Windows 10/11 (64-bit)  
-**License**: See LICENSE.txt
 
 
+# Disclaimer
+Copyright &#x00a9; u-blox
+
+u-blox reserves all rights in this deliverable (documentation, software, etc.,
+hereafter “Deliverable”).
+
+u-blox grants you the right to use, copy, modify and distribute the
+Deliverable provided hereunder for any purpose without fee.
+
+THIS DELIVERABLE IS BEING PROVIDED "AS IS", WITHOUT ANY EXPRESS OR IMPLIED
+WARRANTY. IN PARTICULAR, NEITHER THE AUTHOR NOR U-BLOX MAKES ANY
+REPRESENTATION OR WARRANTY OF ANY KIND CONCERNING THE MERCHANTABILITY OF THIS
+DELIVERABLE OR ITS FITNESS FOR ANY PARTICULAR PURPOSE.
+
+In case you provide us a feedback or make a contribution in the form of a
+further development of the Deliverable (“Contribution”), u-blox will have the
+same rights as granted to you, namely to use, copy, modify and distribute the
+Contribution provided to us for any purpose without fee.
