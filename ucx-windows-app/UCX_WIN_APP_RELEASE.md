@@ -57,7 +57,7 @@ Version is generated at build time by CMake from `ucx-windows-app/version.h.in`.
 ### 3. Create Git Tag
 ```bash
 # Tag format: v3.2.0.BUILD
-git tag -a v3.2.0.257 -m "Release Windows Demo v3.2.0.257"
+git tag -a v3.2.0.257 -m "Release ucx Windows App v3.2.0.257"
 git push origin master
 git push origin v3.2.0.257
 ```
