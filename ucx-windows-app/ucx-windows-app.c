@@ -20472,15 +20472,12 @@ int main(int argc, char *argv[])
     
     // Check if settings file exists in project root
     if (foundRootPath && GetFileAttributesA(rootSettingsPath) != INVALID_FILE_ATTRIBUTES) {
-        // Use project root settings file
-        strncpy(gSettingsFilePath, rootSettingsPath, sizeof(gSettingsFilePath) - 1);
-        gSettingsFilePath[sizeof(gSettingsFilePath) - 1] = '\0';
-    } else if (foundRootPath) {
-        // Root path is valid but file doesn't exist - create it in root for consistency
+        // Use existing project root settings file
         strncpy(gSettingsFilePath, rootSettingsPath, sizeof(gSettingsFilePath) - 1);
         gSettingsFilePath[sizeof(gSettingsFilePath) - 1] = '\0';
     } else {
-        // Couldn't determine root path, use exe directory
+        // File doesn't exist in root OR couldn't determine root path
+        // Use exe directory for standalone/portable usage
         strncpy(gSettingsFilePath, exeSettingsPath, sizeof(gSettingsFilePath) - 1);
         gSettingsFilePath[sizeof(gSettingsFilePath) - 1] = '\0';
     }
