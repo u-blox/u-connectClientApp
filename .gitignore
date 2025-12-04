@@ -1,16 +1,15 @@
 build/
 
 # Binaries and build outputs
-ucx-windows-app/bin/
-examples/bin/*.exe
-examples/bin/*.pdb
-examples/bin/*.ilk
-examples/bin/*.dll
-!examples/bin/.gitkeep
+bin/*.exe
+bin/*.pdb
+bin/*.ilk
+bin/*.dll
+!bin/.gitkeep
 
 # ucx-windows-app build outputs
-examples/ucx-windows-app/bin/ucx-windows-app.exe
-examples/ucx-windows-app/bin/ucx-windows-app-debug.exe
+ucx-windows-app/bin/ucx-windows-app.exe
+ucx-windows-app/bin/ucx-windows-app-debug.exe
 
 # Release binaries (tracked in git for distribution)
 !releases/
@@ -29,7 +28,6 @@ __pycache__/
 .vscode/
 
 # User settings (contains credentials)
-settings.json
 ucx-windows-app.ini
 
 # OS
@@ -54,6 +52,3 @@ deep_*.py
 CMakeCache.txt
 CMakeFiles/
 *.vcxproj.user
-x64/
-Debug/
-Release/
