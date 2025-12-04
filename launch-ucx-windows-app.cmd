@@ -18,6 +18,7 @@ if /i "%1"=="sign" goto :sign
 if /i "%1"=="signed" goto :launch_signed
 if /i "%1"=="selftest" goto :selftest
 if /i "%1"=="update" goto :update_submodule
+if /i "%1"=="make-release" goto :make_release
 
 REM Commands that need prerequisites
 if /i "%1"=="clean" goto :clean_with_checks
@@ -693,6 +694,151 @@ echo.
 exit /b 0
 
 REM ===================================
+REM Make Release command
+REM ===================================
+:make_release
+echo.
+echo ===================================
+echo Automated Release Process
+echo ===================================
+echo.
+
+REM Get current version (YYMMDD format)
+for /f "tokens=2 delims==" %%i in ('wmic os get localdatetime /value') do set datetime=%%i
+set YEAR=%datetime:~2,2%
+set MONTH=%datetime:~4,2%
+set DAY=%datetime:~6,2%
+set VERSION_BUILD=%YEAR%%MONTH%%DAY%
+set RELEASE_VERSION=3.2.0.%VERSION_BUILD%
+
+echo Release version: %RELEASE_VERSION%
+echo.
+
+REM Step 1: Rebuild
+echo [Step 1/5] Rebuilding with version %RELEASE_VERSION%...
+echo.
+call :rebuild release
+if errorlevel 1 (
+    echo [ERROR] Rebuild failed!
+    exit /b 1
+)
+
+REM Step 2: Optional signing
+set SIGN_THUMBPRINT=%2
+if defined SIGN_THUMBPRINT (
+    echo.
+    echo [Step 2/5] Signing executable...
+    echo.
+    call :sign !SIGN_THUMBPRINT!
+    if errorlevel 1 (
+        echo [WARNING] Signing failed, continuing with unsigned binary
+        set RELEASE_FILE=ucx-windows-app\bin\ucx-windows-app.exe
+    ) else (
+        set RELEASE_FILE=ucx-windows-app\release\ucx-windows-app-signed.exe
+    )
+) else (
+    echo [Step 2/5] Skipping signing (no thumbprint provided)
+    echo.
+    set RELEASE_FILE=ucx-windows-app\bin\ucx-windows-app.exe
+)
+
+REM Step 3: Calculate SHA256
+echo [Step 3/5] Calculating SHA256 hash...
+echo.
+for /f "skip=1 tokens=*" %%h in ('certutil -hashfile "!RELEASE_FILE!" SHA256') do (
+    if not defined SHA256_HASH set SHA256_HASH=%%h
+)
+REM Remove spaces from hash
+set SHA256_HASH=!SHA256_HASH: =!
+echo SHA256: !SHA256_HASH!
+echo.
+
+REM Step 4: Commit and tag
+echo [Step 4/5] Creating git tag v%RELEASE_VERSION%...
+echo.
+
+REM Check if there are uncommitted changes
+git diff --quiet
+if errorlevel 1 (
+    echo [WARNING] You have uncommitted changes!
+    set /p COMMIT_NOW="Commit changes now? (Y/n): "
+    if /i "!COMMIT_NOW!"=="n" (
+        echo.
+        echo [INFO] Skipping commit. Please commit manually before releasing.
+    ) else (
+        git add -A
+        git commit -m "Release v%RELEASE_VERSION%"
+        git push origin master
+    )
+)
+
+REM Delete existing tag if it exists
+git tag -d v%RELEASE_VERSION% 2>nul
+
+REM Create and push tag
+git tag -a v%RELEASE_VERSION% -m "Release ucx Windows App v%RELEASE_VERSION% - CalVer YYMMDD format"
+if errorlevel 1 (
+    echo [ERROR] Failed to create git tag!
+    exit /b 1
+)
+
+echo Pushing tag to GitHub...
+git push --force origin v%RELEASE_VERSION%
+if errorlevel 1 (
+    echo [ERROR] Failed to push tag!
+    exit /b 1
+)
+
+echo.
+echo ===================================
+echo Release Preparation Complete!
+echo ===================================
+echo.
+echo Version: %RELEASE_VERSION%
+echo File:    !RELEASE_FILE!
+echo SHA256:  !SHA256_HASH!
+echo Tag:     v%RELEASE_VERSION% (pushed to GitHub)
+echo.
+echo.
+echo [Step 5/5] Create GitHub Release
+echo.
+echo Next steps:
+echo.
+echo 1. Go to: https://github.com/u-blox/ucx-windows-app/releases/new
+echo.
+echo 2. Fill in the release form:
+echo    Tag:   v%RELEASE_VERSION%
+echo    Title: ucx-windows-app v%RELEASE_VERSION%
+echo.
+echo 3. Release notes (copy this):
+echo ----------------------------------------
+echo ## Features
+echo - Bluetooth: Scan, connect, GATT client/server, SPS
+echo - Wi-Fi: Station/AP mode, HTTP, MQTT, NTP, location services
+echo - Firmware update via XMODEM with SHA256 verification
+echo - Note: HID over GATT (HoG) keyboard is experimental
+echo.
+echo ## Requirements
+echo - Windows 10/11 (64-bit)
+echo - NORA-W36 or NORA-B26 module
+echo - USB connection (auto-detects EVK boards)
+echo.
+echo ## SHA256 Checksum
+echo sha256:!SHA256_HASH!
+echo.
+echo ## Installation
+echo Download ucx-windows-app-signed.exe and run - no installation required.
+echo FTDI drivers are embedded in the executable.
+echo ----------------------------------------
+echo.
+echo 4. Attach file: !RELEASE_FILE!
+echo.
+echo 5. Click "Publish release"
+echo.
+echo.
+exit /b 0
+
+REM ===================================
 REM Help command
 REM ===================================
 :help
@@ -729,6 +875,13 @@ echo.
 echo   sign [thumbprint]     Code sign the Release executable
 echo                         - thumbprint: Certificate thumbprint (required)
 echo                         Example: sign 1234567890ABCDEF...
+echo.
+echo   make-release [thumb]  Automated release process
+echo                         1. Rebuild with current date version
+echo                         2. Calculate SHA256 hash
+echo                         3. Create and push git tag
+echo                         4. Display GitHub release instructions
+echo                         Optional: Provide thumbprint to sign executable
 echo.
 echo   selftest              Run comprehensive workspace tests
 echo                         Tests workspace structure, builds, version checks
