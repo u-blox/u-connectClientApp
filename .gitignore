@@ -1,6 +1,7 @@
 build/
 
 # Binaries and build outputs
+bin/
 bin/*.exe
 bin/*.pdb
 bin/*.ilk
