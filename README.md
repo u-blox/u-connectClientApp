@@ -7,7 +7,6 @@ A comprehensive Windows application for testing and configuring u-connectXpress 
 **Key Features:**
 - ✅ **Native C Implementation** - Direct API calls without wrapper layers
 - ✅ **Professional Interface** - Dual menu modes (detailed/compact)
-- ✅ **Auto-versioning** - Git-based build numbers aligned with UCX API
 - ✅ **Secure Firmware Updates** - SHA256 verification with XMODEM protocol
 - ✅ **Easy Deployment** - Launch script handles building and dependencies
 - ✅ **Production Ready** - Code signing support for distribution
@@ -350,7 +349,7 @@ cd ucx-windows-app\bin
 ```
 ═════════════════════════════════════════════════════════════════
              u-blox ucxclient Windows App
-     using ucxclient API v3.2.0  |  Application v3.2.0.321
+     using ucxclient API v3.2.0  |  Application v3.2.0.25338
 ═════════════════════════════════════════════════════════════════
   CONNECTION:  ✓ ACTIVE
   DEVICE:      NORA-W36 (Firmware 3.2.0-046)
@@ -461,9 +460,9 @@ uCxSocketCreate(&gUcxHandle, protocol, &socketHandle);
 ```
 
 ### Versioning System
-- **Format**: `3.2.0.BUILD` where BUILD = Git commit count
+- **Format**: `3.2.0.BUILD` where BUILD = YYDDD (year + day of year)
 - **Alignment**: Major.Minor.Patch follows UCX API version
-- **Auto-increment**: Build number increases with each commit
+- **Auto-increment**: Build number updates daily based on current date
 - **Display**: Shown in menu header and Windows file properties
 - **Implementation**: CMake generates `version.h` from template at build time
 
@@ -472,7 +471,7 @@ uCxSocketCreate(&gUcxHandle, protocol, &socketHandle);
 ```
 ═════════════════════════════════════════════════════════════════
              u-blox ucxclient Windows App
-     using ucxclient API v3.2.0  |  Application v3.2.0.257
+     using ucxclient API v3.2.0  |  Application v3.2.0.25338
 ═════════════════════════════════════════════════════════════════
 
 Settings file: C:\u-blox\ucxclient\ucx-windows-app.ini
@@ -662,8 +661,8 @@ For GitHub releases, distribute the signed executable:
 - No additional runtime dependencies
 ---
 
-**Version**: 3.2.0.257 (aligned with UCX API 3.2.0)  
-**Build**: Auto-versioned using Git commit count  
+**Version**: 3.2.0.25338 (aligned with UCX API 3.2.0)  
+**Build**: Date-based versioning (YYDDD format)  
 **Platform**: Windows 10/11 (64-bit)  
 
 

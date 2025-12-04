@@ -1,0 +1,21 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"*.h": "c",
+			"ostream": "c"
+		},
+		"cmake.sourceDirectory": "${workspaceFolder}/examples",
+		"debug.focusEditorOnBreak": false
+	},
+	"extensions": {
+		"recommendations": [
+			"ms-vscode.cpptools",
+			"shardulm94.trailing-spaces"
+		]
+	},
+}

@@ -30,7 +30,6 @@ __pycache__/
 # User settings (contains credentials)
 settings.json
 ucx-windows-app.ini
-.ucxclient/
 
 # OS
 .DS_Store
