@@ -1,0 +1,59 @@
+build/
+
+# Binaries and build outputs
+examples/bin/*.exe
+examples/bin/*.pdb
+examples/bin/*.ilk
+examples/bin/*.dll
+!examples/bin/.gitkeep
+
+# ucx-windows-app build outputs
+examples/ucx-windows-app/bin/ucx-windows-app.exe
+examples/ucx-windows-app/bin/ucx-windows-app-debug.exe
+
+# Release binaries (tracked in git for distribution)
+!releases/
+!releases/**/*.exe
+!releases/**/*.dll
+!releases/**/*.txt
+!releases/**/*.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE
+.vscode/
+
+# User settings (contains credentials)
+settings.json
+ucx-windows-app.ini
+.ucxclient/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary and debug files
+*.tmp
+*.temp
+debug_output.txt
+test_*.py
+debug_*.py
+temp_*.py
+verify_*.py
+trace_*.py
+analyze_*.py
+compare_*.py
+deep_*.py
+
+# Visual Studio / CMake
+.vs/
+CMakeCache.txt
+CMakeFiles/
+*.vcxproj.user
+x64/
+Debug/
+Release/

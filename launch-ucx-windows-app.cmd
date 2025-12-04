@@ -17,6 +17,7 @@ if /i "%1"=="/?" goto :help
 if /i "%1"=="sign" goto :sign
 if /i "%1"=="signed" goto :launch_signed
 if /i "%1"=="selftest" goto :selftest
+if /i "%1"=="update" goto :update_submodule
 
 REM Commands that need prerequisites
 if /i "%1"=="clean" goto :clean_with_checks
@@ -732,6 +733,9 @@ echo.
 echo   selftest              Run comprehensive workspace tests
 echo                         Tests workspace structure, builds, version checks
 echo.
+echo   update                Update ucxclient submodule to latest version
+echo                         Clones submodule if it doesn't exist
+echo.
 echo   help / --help / -h    Show this help message
 echo.
 echo EXAMPLES:
@@ -774,6 +778,9 @@ echo.
 echo   launch-ucx-windows-app.cmd selftest
 echo       Run comprehensive workspace tests and validation
 echo.
+echo   launch-ucx-windows-app.cmd update
+echo       Update ucxclient submodule to latest master branch
+echo.
 echo NOTES:
 echo   - Release is the default (optimized, no debug symbols)
 echo   - Debug is for development/troubleshooting (symbols, no optimization)
@@ -781,6 +788,126 @@ echo   - First launch auto-configures CMake if needed
 echo   - Auto-builds if executable is missing or outdated
 echo   - Settings file: ucx-windows-app.ini in project root (launcher creates it)
 echo   - Exe-only usage: Creates ucx-windows-app.ini next to executable
+echo.
+exit /b 0
+
+REM ===================================
+REM Update Submodule command
+REM ===================================
+:update_submodule
+echo.
+echo ========================================
+echo Update ucxclient Submodule
+echo ========================================
+echo.
+
+REM Check if git is available
+git --version >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Git is not installed or not in PATH!
+    echo.
+    echo Please install Git from: https://git-scm.com/download/win
+    echo.
+    exit /b 1
+)
+
+REM Check if this is a git repository
+if not exist ".git" (
+    echo [ERROR] Not a git repository!
+    echo.
+    echo This command requires the ucx-windows-app repository to be cloned from GitHub.
+    echo Clone with: git clone --recurse-submodules https://github.com/u-blox/ucx-windows-app.git
+    echo.
+    exit /b 1
+)
+
+REM Check if ucxclient submodule directory exists
+if not exist "ucxclient" (
+    echo [INFO] ucxclient submodule not found - initializing...
+    echo.
+    git submodule init
+    if errorlevel 1 (
+        echo [ERROR] Failed to initialize submodule!
+        exit /b 1
+    )
+)
+
+REM Check if ucxclient directory is empty (not cloned yet)
+if exist "ucxclient" (
+    dir /b "ucxclient" 2>nul | findstr "^" >nul
+    if errorlevel 1 (
+        echo [INFO] ucxclient directory is empty - cloning submodule...
+        echo.
+        git submodule update --init --recursive
+        if errorlevel 1 (
+            echo [ERROR] Failed to clone submodule!
+            exit /b 1
+        )
+        echo.
+        echo [SUCCESS] ucxclient submodule cloned successfully!
+        goto :update_complete
+    )
+)
+
+REM Update existing submodule
+echo Updating ucxclient submodule to latest version...
+echo.
+cd ucxclient
+git fetch origin
+if errorlevel 1 (
+    echo [ERROR] Failed to fetch updates from remote!
+    cd ..
+    exit /b 1
+)
+
+REM Show current and latest commits
+for /f "delims=" %%a in ('git rev-parse --short HEAD') do set CURRENT_COMMIT=%%a
+for /f "delims=" %%a in ('git rev-parse --short origin/master') do set LATEST_COMMIT=%%a
+
+echo Current commit: %CURRENT_COMMIT%
+echo Latest commit:  %LATEST_COMMIT%
+echo.
+
+if "%CURRENT_COMMIT%"=="%LATEST_COMMIT%" (
+    echo [INFO] ucxclient is already up to date!
+    cd ..
+    goto :update_complete
+)
+
+echo Updating to latest master branch...
+git checkout master
+if errorlevel 1 (
+    echo [WARNING] Could not checkout master branch
+)
+
+git pull origin master
+if errorlevel 1 (
+    echo [ERROR] Failed to update submodule!
+    cd ..
+    exit /b 1
+)
+
+cd ..
+
+REM Update the parent repository's submodule reference
+echo.
+echo Updating parent repository submodule reference...
+git add ucxclient
+if not errorlevel 1 (
+    echo [INFO] Submodule reference updated in parent repository
+    echo [INFO] You may want to commit this change:
+    echo         git commit -m "Update ucxclient submodule"
+)
+
+echo.
+echo [SUCCESS] ucxclient submodule updated successfully!
+
+:update_complete
+echo.
+echo Submodule status:
+git submodule status
+echo.
+echo ========================================
 echo.
 exit /b 0
 
