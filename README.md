@@ -29,9 +29,12 @@ This repo contains https://github.com/u-blox/ucxclient a small footprint AT comm
 ## Quick Start
 
 ```powershell
-# Clone repository with ucxclient submodule
-git clone --recurse-submodules=ucxclient https://github.com/u-blox/ucx-windows-app.git
+# Clone main repository only
+git clone https://github.com/u-blox/ucx-windows-app.git
 cd ucx-windows-app
+
+# Initialize only the ucxclient submodule (without recursing into its submodules)
+git submodule update --init ucxclient
 
 # Launch (auto-builds on first run)
 .\launch-ucx-windows-app.cmd
