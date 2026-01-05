@@ -18760,20 +18760,20 @@ static void ntpTimeExample(void)
     }
     printf("✓ NTP server configured\n");
     
-    // Step 5: Wait for synchronization with aggressive polling (max 120 seconds)
-    // Strategy: Start with 2-second intervals, then back off to 5 seconds after 10 seconds
+    // Step 5: Wait for NTP server to become reachable (max 120 seconds)
+    // Strategy: Check NTP server reachability status directly
     printf("\n");
     printf("Waiting for NTP synchronization (max 120 seconds, press Ctrl+C to cancel)...\n");
     
-    bool timeSynced = false;
+    bool serverReachable = false;
     int totalWaitTime = 0;
     int maxWaitTime = 120;  // 120 seconds max
     int attempt = 0;
     DWORD startTicks = GetTickCount();  // Get start time in milliseconds
     
-    while (totalWaitTime < maxWaitTime && !timeSynced) {
+    while (totalWaitTime < maxWaitTime && !serverReachable) {
         if (attempt == 0) {
-            printf("Checking");
+            printf("Checking NTP server reachability");
         } else {
             // Aggressive 2-second polling for first 10 seconds, then 5-second intervals
             int waitInterval = (totalWaitTime < 10) ? 2 : 5;
@@ -18788,65 +18788,35 @@ static void ntpTimeExample(void)
             totalWaitTime += waitInterval;
         }
         
-        // Try to read system time
-        uint64_t testTime = 0;
-        uByteArray_t testTimeData;
-        uint8_t timeBuffer[32];
-        testTimeData.pData = timeBuffer;
-        testTimeData.length = 0;
-        
-        bool gotResponse = uCxSystemGetUnixTimeBegin(&gUcxHandle, &testTimeData);
-        
-        // Always call uCxEnd() to complete the AT command sequence
-        int32_t endResult = uCxEnd(&gUcxHandle);
-        
-        if (gotResponse && endResult == 0) {
-            if (testTimeData.length == 4) {
-                // Data is 4 bytes in big-endian format (network byte order)
-                uint8_t *bytes = testTimeData.pData;
-                testTime = ((uint64_t)bytes[0] << 24) |
-                          ((uint64_t)bytes[1] << 16) |
-                          ((uint64_t)bytes[2] << 8) |
-                          ((uint64_t)bytes[3]);
+        // Check NTP server reachability status
+        uCxNtpGetNtpServer_t ntpCheck;
+        if (uCxNetworkTimeGetNtpServerBegin(&gUcxHandle, &ntpCheck)) {
+            if (ntpCheck.reachable) {
+                serverReachable = true;
+                printf(" ✓\n");
                 
-                // Distinguish between system uptime and Unix timestamp:
-                // - System uptime: < 315360000 (10 years in seconds, would be year 1980)
-                // - Unix timestamp: > 1600000000 (Sep 2020, reasonable minimum for NTP sync)
-                if (testTime > 1600000000) {
-                    timeSynced = true;
-                    printf(" ✓\n");
-                    
-                    // Calculate precise elapsed time in seconds with 0.1s resolution
-                    DWORD elapsedMs = GetTickCount() - startTicks;
-                    double elapsedSec = elapsedMs / 1000.0;
-                    printf("NTP synchronized in %.1f seconds\n", elapsedSec);
-                } else if (testTime > 0 && testTime < 315360000) {
-                    // This is system uptime, not NTP time yet
-                    printf(" (uptime: %llu sec)", testTime);
-                }
+                // Calculate precise elapsed time in seconds with 0.1s resolution
+                DWORD elapsedMs = GetTickCount() - startTicks;
+                double elapsedSec = elapsedMs / 1000.0;
+                printf("NTP server reachable after %.1f seconds\n", elapsedSec);
             } else {
-                printf(" (invalid length: %zd)", testTimeData.length);
+                printf(" (server not reachable yet)");
             }
         } else {
-            printf(" (gotResponse=%d or endResult=%d failed)", gotResponse, endResult);
+            printf(" (query failed)");
         }
-        
-        if (!timeSynced && testTime == 0) {
-            printf(" (no response)");
-        } else if (!timeSynced && testTime >= 315360000 && testTime <= 1600000000) {
-            // Time is between 1980 and 2020 - unusual, but not uptime
-            printf(" (unusual time: %llu)", testTime);
-        }
+        uCxEnd(&gUcxHandle);
         
         attempt++;
     }
     
-    if (!timeSynced) {
-        printf("\n\nWARNING: NTP synchronization timeout after 120 seconds.\n");
+    if (!serverReachable) {
+        printf("\n\nWARNING: NTP server did not become reachable after 120 seconds.\n");
         printf("Time may not be synchronized. Possible reasons:\n");
-        printf("  - NTP server is unreachable\n");
+        printf("  - NTP server is unreachable from your network\n");
         printf("  - Firewall blocking NTP traffic (UDP port 123)\n");
         printf("  - Internet connectivity issues\n");
+        printf("  - DNS resolution failure for NTP server hostname\n");
         printf("\nAttempting to read system time anyway...\n");
     }
     
@@ -18890,10 +18860,93 @@ static void ntpTimeExample(void)
                 strftime(utcString, sizeof(utcString), "%Y-%m-%d %H:%M:%S UTC", utcTime);
                 printf("UTC Time:      %s\n", utcString);
                 printf("─────────────────────────────────────────────────\n");
+                
+                // Sanity check: warn if time is suspiciously far in the future
+                // Current date is ~2025, so anything beyond 2030 is suspicious
+                // Unix timestamp for 2030-01-01 is approximately 1,893,456,000
+                if (unixTime > 1893456000) {
+                    printf("\n");
+                    printf("⚠️  WARNING: Time appears to be incorrect! ⚠️\n");
+                    printf("The reported time is in year %d, which is suspiciously far\n", utcTime->tm_year + 1900);
+                    printf("in the future. This suggests:\n");
+                    printf("  - NTP synchronization may have failed\n");
+                    printf("  - The module's internal clock may be wrong\n");
+                    printf("  - There may be a time overflow/calculation error\n");
+                    printf("\n");
+                    printf("Please check:\n");
+                    printf("  1. NTP server reachability (see list below)\n");
+                    printf("  2. Module firmware version\n");
+                    printf("  3. Try manually setting time or different NTP server\n");
+                    printf("─────────────────────────────────────────────────\n");
+                }
             }
             
             // Update global time tracking with NTP source
             updateTime(rawTime, "NTP", 1);
+            
+            // Compare with PC time and show running clock
+            printf("\n");
+            printf("═════════════════════════════════════════════════\n");
+            printf("TIME COMPARISON (Module vs PC)\n");
+            printf("═════════════════════════════════════════════════\n");
+            
+            // Get PC's current time
+            time_t pcTime;
+            time(&pcTime);
+            
+            // Calculate time difference
+            int64_t timeDiff = (int64_t)unixTime - (int64_t)pcTime;
+            
+            struct tm *pcTimeInfo = localtime(&pcTime);
+            char pcTimeStr[128];
+            strftime(pcTimeStr, sizeof(pcTimeStr), "%Y-%m-%d %H:%M:%S", pcTimeInfo);
+            
+            printf("Module Time:   %s\n", timeString);
+            printf("PC Time:       %s\n", pcTimeStr);
+            printf("Time Offset:   %lld seconds ", (long long)timeDiff);
+            if (timeDiff > 0) {
+                printf("(module is ahead)\n");
+            } else if (timeDiff < 0) {
+                printf("(module is behind)\n");
+            } else {
+                printf("(in sync)\n");
+            }
+            
+            if (abs((int)timeDiff) > 5) {
+                printf("\n⚠️  WARNING: Time difference exceeds 5 seconds!\n");
+                printf("This suggests NTP synchronization may not be accurate.\n");
+            }
+            
+            printf("═════════════════════════════════════════════════\n");
+            printf("\n");
+            printf("Running Clock (press any key to stop):\n");
+            printf("\n");
+            
+            // Display running clock for 120 seconds or until key press
+            DWORD clockStart = GetTickCount();
+            time_t displayTime = unixTime;
+            
+            while (!_kbhit() && (GetTickCount() - clockStart) < 120000) {
+                // Calculate elapsed seconds
+                DWORD elapsed = (GetTickCount() - clockStart) / 1000;
+                time_t currentDisplayTime = displayTime + elapsed;
+                
+                struct tm *currentTimeInfo = localtime(&currentDisplayTime);
+                char currentTimeStr[128];
+                strftime(currentTimeStr, sizeof(currentTimeStr), "%Y-%m-%d %H:%M:%S", currentTimeInfo);
+                
+                printf("\r  Module Clock: %s", currentTimeStr);
+                fflush(stdout);
+                
+                U_CX_PORT_SLEEP_MS(100);  // Update 10 times per second
+            }
+            
+            // Clear any pressed key
+            if (_kbhit()) {
+                _getch();
+            }
+            
+            printf("\n\n");
         } else {
             printf("WARNING: Unexpected time data length: %zu bytes\n", unixTimeData.length);
             printf("Raw data: ");

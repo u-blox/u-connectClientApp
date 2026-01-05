@@ -2,6 +2,12 @@
 
 A native C Windows application for testing and configuring u-connectXpress devices (NORA-W36, NORA-B26).
 
+This repo contains https://github.com/u-blox/ucxclient a small footprint AT command client for talking to the following u-blox u-connectXpress short-range modules:
+
+* NORA-W36
+* NORA-B26
+* NORA-B27
+
 ## Prerequisites
 
 ### System Requirements
@@ -23,9 +29,12 @@ A native C Windows application for testing and configuring u-connectXpress devic
 ## Quick Start
 
 ```powershell
-# Clone repository with ucxclient submodule
-git clone --recurse-submodules=ucxclient https://github.com/u-blox/ucx-windows-app.git
+# Clone main repository only
+git clone https://github.com/u-blox/ucx-windows-app.git
 cd ucx-windows-app
+
+# Initialize only the ucxclient submodule (without recursing into its submodules)
+git submodule update --init ucxclient
 
 # Launch (auto-builds on first run)
 .\launch-ucx-windows-app.cmd
