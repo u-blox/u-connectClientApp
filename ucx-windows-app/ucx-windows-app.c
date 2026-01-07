@@ -868,7 +868,7 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - gattClientFindAioHandles()       Find AIO handles
 //   - gattClientReadAioValues()        Read AIO values
 //   - gattClientSubscribeAio()         Subscribe to AIO
-//   - gattClientUartExample()          Nordic UART Service (NUS) example
+//   - gattClientNusExample()           Nordic UART Service (NUS) example
 //   - gattClientFindUartHandles()      Find NUS handles
 //   - gattClientSubscribeUart()        Subscribe to NUS
 //   - gattClientUartSend()             Send NUS data
@@ -908,7 +908,7 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - gattServerSetupHidKeyboard()     Setup HID keyboard
 //   - gattServerSetupBatteryOnly()     Setup Battery service
 //   - gattServerSetupEnvSensing()      Setup Environmental Sensing
-//   - gattServerSetupUartService()     Setup Nordic UART Service (NUS)
+//   - gattServerSetupNusService()      Setup Nordic UART Service (NUS)
 //   - gattServerSetupSpsService()      Setup u-blox Serial Port Service (SPS)
 //   - gattServerSetupLocationService() Setup Location service
 //   - gattServerSetupCtsService()      Setup Current Time service
@@ -1171,7 +1171,7 @@ static void gattServerSetupHeartbeat(void);
 static void gattServerSetupHidKeyboard(void);
 static void gattServerSetupBatteryOnly(void);
 static void gattServerSetupEnvSensing(void);
-static void gattServerSetupUartService(void);
+static void gattServerSetupNusService(void);
 static void gattServerSetupSpsService(void);
 static void gattServerSetupLocationService(void);
 static void gattClientReadCurrentTime(void);
@@ -1239,7 +1239,7 @@ static void uartParseRxData(const uint8_t *data, size_t len);
 static bool gattClientFindUartHandles(void);
 static void gattClientSubscribeUart(void);
 static void gattClientUartSend(const char *msg);
-static void gattClientUartExample(void);
+static void gattClientNusExample(void);
 static void spsParseFifoData(const uint8_t *data, size_t len);
 static void spsParseCredits(const uint8_t *data, size_t len);
 static bool gattClientFindSpsHandles(void);
@@ -8802,7 +8802,7 @@ static void gattClientUartSend(const char *msg)
 }
 
 // Complete Nordic UART Service (NUS) client example with interactive send loop
-static void gattClientUartExample(void)
+static void gattClientNusExample(void)
 {
     printf("\n--- GATT Client: Nordic UART Service (NUS) ---\n");
 
@@ -10575,7 +10575,7 @@ static void gattServerSetupEnvSensing(void)
 
 // Setup Nordic UART Service (NUS)
 // Spec: https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/bluetooth/services/nus.html
-static void gattServerSetupUartService(void)
+static void gattServerSetupNusService(void)
 {
     if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
@@ -22661,7 +22661,7 @@ static void handleUserInput(void)
                             break;
                         }
                         if (firstChar == 'u') {
-                            gattServerSetupUartService();  // UART Service
+                            gattServerSetupNusService();  // UART Service
                             break;
                         }
                         if (firstChar == 's') {
@@ -22748,7 +22748,7 @@ static void handleUserInput(void)
                             break;
                         }
                         if (firstChar == 'u') {
-                            gattClientUartExample();
+                            gattClientNusExample();
                             break;
                         }
                         if (firstChar == 's') {
