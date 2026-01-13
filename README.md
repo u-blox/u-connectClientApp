@@ -6,7 +6,6 @@ This repo contains https://github.com/u-blox/ucxclient a small footprint AT comm
 
 * NORA-W36
 * NORA-B26
-* NORA-B27
 
 ## Prerequisites
 

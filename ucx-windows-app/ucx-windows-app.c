@@ -534,9 +534,11 @@ static BtScanDevice_t gLastScanDevices[MAX_BT_SCAN_DEVICES];
 static int gLastScanDeviceCount = 0;
 
 // Dynamic firmware path storage per product
+#define MAX_FIRMWARE_HISTORY 5  // Keep last 5 firmware files per product
 typedef struct {
     char productName[64];      // e.g., "NORA-W36", "NORA-B26"
-    char lastFirmwarePath[256]; // Last used firmware path for this product
+    char firmwareHistory[MAX_FIRMWARE_HISTORY][256]; // Last 5 firmware paths [0]=most recent
+    int historyCount;          // Number of valid history entries
 } ProductFirmwarePath_t;
 
 #define MAX_PRODUCT_PATHS 10
@@ -546,6 +548,10 @@ static int gProductFirmwarePathCount = 0;
 // Device information (populated after connection)
 static char gDeviceModel[64] = "";            // Device model (e.g., "NORA-W36")
 static char gDeviceFirmware[64] = "";         // Firmware version (e.g., "3.1.0")
+
+// Auto-flash mode (triggered by command-line "flash" argument)
+static bool gAutoFlashMode = false;
+static char gAutoFlashPath[256] = "";
 
 // Device status (queried at startup/connection)
 static int gActiveSocketCount = 0;            // Number of active sockets
@@ -1046,6 +1052,9 @@ static char* ucxHttpGetRequest(const char *server, const char *path, int32_t *ou
 static bool downloadFirmwareFromGitHub(const char *product, char *downloadedPath, size_t pathSize);
 static const char* getProductFirmwarePath(const char *productName);
 static void setProductFirmwarePath(const char *productName, const char *firmwarePath);
+static void addProductFirmwareToHistory(const char *productName, const char *firmwarePath);
+static int getProductFirmwareHistoryCount(const char *productName);
+static const char* getProductFirmwareHistoryEntry(const char *productName, int index);
 static char* extractProductFromFilename(const char *filename);
 static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t pathSize);
 static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSize);
@@ -20538,8 +20547,13 @@ int main(int argc, char *argv[])
     // Load settings from file
     loadSettings();
     
-    // Check for COM port argument (skip if it's a flag like -v, --version, etc.)
-    if (argc > 1 && argv[1][0] != '-') {
+    // Check for "flash" argument to enable auto-flash mode
+    if (argc > 1 && strcmp(argv[1], "flash") == 0) {
+        gAutoFlashMode = true;
+    }
+    
+    // Check for COM port argument (skip if it's a flag like -v, --version, or "flash")
+    if (argc > 1 && argv[1][0] != '-' && strcmp(argv[1], "flash") != 0) {
         strncpy(gComPort, argv[1], sizeof(gComPort) - 1);
         gComPort[sizeof(gComPort) - 1] = '\0';
     } else {
@@ -20577,13 +20591,65 @@ int main(int argc, char *argv[])
     
     // Try to auto-connect
     printf("\nAttempting to connect to %s...\n", gComPort);
+    bool autoConnected = false;
     if (ucxclientConnect(gComPort)) {
         saveSettings();  // Save successful port
+        autoConnected = true;
     } else {
         printf("\nFailed to connect. You can try again from the menu.\n");
         
         // Show welcome guide for first-time users
         printWelcomeGuide();
+    }
+    
+    // If flash mode is enabled and we're connected, go to firmware menu
+    if (gAutoFlashMode && autoConnected && gDeviceModel[0] != '\0') {
+        printf("\n");
+        printf("=================================================================\n");
+        printf("  FIRMWARE UPDATE MODE\n");
+        printf("=================================================================\n");
+        printf("  Device: %s\n", gDeviceModel);
+        
+        const char *lastFirmware = getProductFirmwarePath(gDeviceModel);
+        if (lastFirmware && lastFirmware[0] != '\0') {
+            printf("  Last firmware: %s\n", lastFirmware);
+            // Copy firmware path for quick access
+            strncpy(gAutoFlashPath, lastFirmware, sizeof(gAutoFlashPath) - 1);
+            gAutoFlashPath[sizeof(gAutoFlashPath) - 1] = 0;
+        } else {
+            printf("  No firmware history found.\n");
+        }
+        printf("=================================================================\n");
+        printf("\n");
+        
+        // Go directly to firmware update menu
+        gMenuState = MENU_FIRMWARE_UPDATE;
+    } else if (gAutoFlashMode) {
+        printf("\n");
+        printf("=================================================================\n");
+        printf("  AUTO-FLASH MODE - ERROR\n");
+        printf("=================================================================\n");
+        if (!autoConnected) {
+            printf("  Failed to connect to device on %s\n", gComPort);
+            printf("  Please check connection and try again.\n");
+            printf("\n");
+            printf("  Common issues:\n");
+            printf("    - Device not connected via USB\n");
+            printf("    - Wrong COM port (check Device Manager)\n");
+            printf("    - Another application using the COM port\n");
+            printf("    - Driver not installed\n");
+        } else {
+            printf("  Device model not detected\n");
+            printf("  Try running without 'flash' argument first.\n");
+        }
+        printf("=================================================================\n");
+        printf("\n");
+        gAutoFlashMode = false;
+        
+        // Exit application when flash mode fails
+        printf("Press Enter to exit...");
+        getchar();
+        return 0;
     }
     
     // Main menu loop
@@ -21736,13 +21802,37 @@ static void printMenu(void)
                 if (gDeviceFirmware[0] != '\0') {
                     printf("  Firmware      : %s\n", gDeviceFirmware);
                 }
+                
+                // Show firmware history for this product
+                int historyCount = getProductFirmwareHistoryCount(gDeviceModel);
+                if (historyCount > 0) {
+                    printf("\n");
+                    printf("RECENT FIRMWARE FILES (%s)\n", gDeviceModel);
+                    for (int i = 0; i < historyCount && i < 5; i++) {
+                        const char *path = getProductFirmwareHistoryEntry(gDeviceModel, i);
+                        if (path && path[0] != '\0') {
+                            // Extract filename from path
+                            const char *filename = strrchr(path, '\\\\');
+                            if (filename == NULL) filename = strrchr(path, '/');
+                            if (filename == NULL) filename = path;
+                            else filename++;  // Skip the slash
+                            
+                            if (i == 0) {
+                                printf("  [ENTER] %s (last used)\n", filename);
+                            } else {
+                                printf("  [%d]     %s\n", i, filename);
+                            }
+                        }
+                    }
+                }
             }
             printf("\n");
-            printf("  [1] Select firmware file and start update\n");
+            printf("  [1] Select new firmware file and start update\n");
             printf("  [2] Download firmware from GitHub\n"); //(WinHTTP)\n");
             //printf("  [3] Download firmware from GitHub (UCX HTTP API)\n");
             printf("\n");
-            printf("TIP: You can also drag-and-drop a .bin or .zip file path directly!\n");
+            printf("TIP: Press ENTER to flash the last used firmware file!\n");
+            printf("     You can also drag-and-drop a .bin or .zip file path directly!\n");
             printf("     (ZIP files will be extracted automatically)\n");
             printf("\n");
             printf("  [0] Back to main menu\n");
@@ -21791,17 +21881,35 @@ static void handleUserInput(void)
         trimmedInput[--len] = '\0';
     }
     
-    // Handle ENTER key (empty input) for quick connect
-    if (strlen(trimmedInput) == 0 && gMenuState == MENU_MAIN && !gUcxConnected && gComPort[0] != '\0') {
-        quickConnectToLastDevice();
-        return;
-    }
-    
     // Parse choice
     int choice = 0;
     
-    // Special handling for firmware update menu - allow drag-and-drop file paths
-    if (gMenuState == MENU_FIRMWARE_UPDATE) {
+    // Handle ENTER key for quick actions
+    if (strlen(trimmedInput) == 0) {
+        if (gMenuState == MENU_MAIN && !gUcxConnected && gComPort[0] != '\0') {
+            // Main menu: quick connect
+            quickConnectToLastDevice();
+            return;
+        } else if (gMenuState == MENU_FIRMWARE_UPDATE && gUcxConnected && gDeviceModel[0] != '\0') {
+            // Firmware menu: flash last used firmware
+            const char *lastFirmware = getProductFirmwarePath(gDeviceModel);
+            if (lastFirmware && lastFirmware[0] != '\0') {
+                // Use the last firmware file - set input to trigger case 1 with the path
+                strncpy(input, lastFirmware, sizeof(input) - 1);
+                input[sizeof(input) - 1] = '\0';
+                trimmedInput = input;
+                choice = 1;  // Route to firmware update handler
+            } else {
+                printf("No firmware history found for %s\n", gDeviceModel);
+                return;
+            }
+        } else {
+            return;  // Empty input in other contexts - ignore
+        }
+    }
+    
+    // Special handling for firmware update menu - allow drag-and-drop file paths and history selection
+    if (choice == 0 && gMenuState == MENU_FIRMWARE_UPDATE) {
         // Check if input looks like a file path (contains backslash, forward slash, or file extensions)
         if (strchr(trimmedInput, '\\') != NULL || strchr(trimmedInput, '/') != NULL ||
             strstr(trimmedInput, ".bin") != NULL || strstr(trimmedInput, ".zip") != NULL) {
@@ -21809,9 +21917,24 @@ static void handleUserInput(void)
             choice = 1;  // Route to "Select firmware file" case
             // We'll handle the file path in the case 1 handler
         } else {
-            choice = atoi(trimmedInput);
+            int inputChoice = atoi(trimmedInput);
+            // Check if it's a history selection (0-4)
+            if (inputChoice >= 0 && inputChoice <= 4 && gDeviceModel[0] != '\0') {
+                const char *historyPath = getProductFirmwareHistoryEntry(gDeviceModel, inputChoice);
+                if (historyPath && historyPath[0] != '\0') {
+                    // Use firmware from history - set input and route to case 1
+                    strncpy(input, historyPath, sizeof(input) - 1);
+                    input[sizeof(input) - 1] = '\0';
+                    trimmedInput = input;
+                    choice = 1;
+                } else {
+                    choice = inputChoice;  // No history entry, use as regular choice
+                }
+            } else {
+                choice = inputChoice;
+            }
         }
-    } else {
+    } else if (choice == 0) {
         choice = atoi(trimmedInput);
     }
     
@@ -23069,13 +23192,7 @@ static void handleUserInput(void)
                         printf("The module is rebooting...\n");
                     }
                     
-                    // Step 6: Wait for module to reboot
-                    printf("Waiting 5 seconds for module reboot...");
-                    fflush(stdout);
-                    U_CX_PORT_SLEEP_MS(5000);
-                    printf(" Done\n");
-                    
-                    // Step 7: Reconnect AT client
+                    // Step 6: Reconnect AT client
                     printf("Reopening AT client connection...\n");
                     result = uCxAtClientOpen(&gUcxAtClient, 115200, false);
                     if (result != 0) {
@@ -23087,7 +23204,7 @@ static void handleUserInput(void)
                     gUartHandle = gUcxAtClient.uartHandle;
                     U_CX_PORT_SLEEP_MS(500);
                     
-                    // Step 8: Wait for +STARTUP URC
+                    // Step 7: Wait for +STARTUP URC
                     printf("Waiting for +STARTUP URC");
                     fflush(stdout);
                     bool startupReceived = waitEvent(URC_FLAG_STARTUP, 10);
@@ -23098,14 +23215,14 @@ static void handleUserInput(void)
                         printf(" Timeout! Continuing anyway...\n");
                     }
                     
-                    // Step 9: Re-initialize module
+                    // Step 8: Re-initialize module
                     printf("Disabling AT echo...\n");
                     result = uCxSystemSetEchoOff(&gUcxHandle);
                     if (result != 0) {
                         printf("Warning: Failed to disable echo (error %d)\n", result);
                     }
                     
-                    // Step 10: Query new firmware version
+                    // Step 9: Query new firmware version
                     printf("Querying new firmware version...\n");
                     gDeviceModel[0] = '\0';
                     gDeviceFirmware[0] = '\0';
@@ -23137,6 +23254,9 @@ static void handleUserInput(void)
                         printf("Device: %s\n", gDeviceModel);
                         printf("New firmware version: %s\n", gDeviceFirmware);
                         printf("\nThe device is ready to use!\n");
+                        
+                        // Add firmware to history for this product
+                        addProductFirmwareToHistory(gDeviceModel, firmwarePath);
                     } else {
                         printf("Note: Could not read new firmware version. You may need to reconnect.\n");
                     }
@@ -23267,6 +23387,9 @@ static void handleUserInput(void)
                         printf("Device: %s\n", gDeviceModel);
                         printf("New firmware version: %s\n", gDeviceFirmware);
                         printf("\nThe device is ready to use!\n");
+                        
+                        // Add firmware to history for this product
+                        addProductFirmwareToHistory(gDeviceModel, firmwarePath);
                     } else {
                         printf("Note: Could not read new firmware version.\n");
                     }
@@ -23403,6 +23526,9 @@ static void handleUserInput(void)
                         printf("Device: %s\n", gDeviceModel);
                         printf("New firmware version: %s\n", gDeviceFirmware);
                         printf("\nThe device is ready to use!\n");
+                        
+                        // Add firmware to history for this product
+                        addProductFirmwareToHistory(gDeviceModel, firmwarePath);
                     } else {
                         printf("Note: Could not read new firmware version.\n");
                     }
@@ -23597,6 +23723,29 @@ static void moduleStartupInit(void)
         } else {
             printf("Warning: Failed to set regulatory domain (error %d)\n", result);
         }
+        
+        // Test: Set WiFi channel list to only use channels 1, 6, 11
+        // printf("Testing WiFi channel list - setting to channels 1, 6, 11...\n");
+        // int16_t channels[] = {1, 6, 11};
+        // result = uCxWifiSetChannelList(&gUcxHandle, channels, 3);
+        // if (result == 0) {
+        //     printf("✓ WiFi channel list set successfully to [1, 6, 11]\n");
+            
+        //     // Read back to verify
+        //     uIntList_t channelList;
+        //     if (uCxWifiGetChannelList(&gUcxHandle, &channelList) == 0) {
+        //         printf("  Verified channel list (%zu channels): ", channelList.length);
+        //         for (size_t i = 0; i < channelList.length && i < 20; i++) {
+        //             printf("%d", channelList.pIntValues[i]);
+        //             if (i < channelList.length - 1) printf(", ");
+        //         }
+        //         printf("\n");
+        //     } else {
+        //         printf("  Warning: Could not read back channel list\n");
+        //     }
+        // } else {
+        //     printf("✗ Failed to set WiFi channel list (error %d)\n", result);
+        // }
     }
 }
 
@@ -23989,43 +24138,116 @@ static char* extractProductFromFilename(const char *filename)
     return product;
 }
 
-// Get the last used firmware path for a product
+// Get the last used firmware path for a product (most recent from history)
 static const char* getProductFirmwarePath(const char *productName)
 {
     for (int i = 0; i < gProductFirmwarePathCount; i++) {
         if (strcmp(gProductFirmwarePaths[i].productName, productName) == 0) {
-            return gProductFirmwarePaths[i].lastFirmwarePath;
+            if (gProductFirmwarePaths[i].historyCount > 0) {
+                return gProductFirmwarePaths[i].firmwareHistory[0];
+            }
+            return "";
         }
     }
     return ""; // Not found
 }
 
-// Set/update the firmware path for a product
-static void setProductFirmwarePath(const char *productName, const char *firmwarePath)
+// Add a firmware path to product history (most recent first)
+static void addProductFirmwareToHistory(const char *productName, const char *firmwarePath)
 {
-    // Check if product already exists
+    // Find or create product entry
+    int productIdx = -1;
     for (int i = 0; i < gProductFirmwarePathCount; i++) {
         if (strcmp(gProductFirmwarePaths[i].productName, productName) == 0) {
-            // Update existing entry
-            strncpy(gProductFirmwarePaths[i].lastFirmwarePath, firmwarePath, 
-                    sizeof(gProductFirmwarePaths[i].lastFirmwarePath) - 1);
-            gProductFirmwarePaths[i].lastFirmwarePath[sizeof(gProductFirmwarePaths[i].lastFirmwarePath) - 1] = '\0';
-            return;
+            productIdx = i;
+            break;
         }
     }
     
-    // Add new entry if we have space
-    if (gProductFirmwarePathCount < MAX_PRODUCT_PATHS) {
-        strncpy(gProductFirmwarePaths[gProductFirmwarePathCount].productName, productName,
-                sizeof(gProductFirmwarePaths[gProductFirmwarePathCount].productName) - 1);
-        gProductFirmwarePaths[gProductFirmwarePathCount].productName[sizeof(gProductFirmwarePaths[gProductFirmwarePathCount].productName) - 1] = '\0';
-        
-        strncpy(gProductFirmwarePaths[gProductFirmwarePathCount].lastFirmwarePath, firmwarePath,
-                sizeof(gProductFirmwarePaths[gProductFirmwarePathCount].lastFirmwarePath) - 1);
-        gProductFirmwarePaths[gProductFirmwarePathCount].lastFirmwarePath[sizeof(gProductFirmwarePaths[gProductFirmwarePathCount].lastFirmwarePath) - 1] = '\0';
-        
-        gProductFirmwarePathCount++;
+    // Create new product entry if not found
+    if (productIdx == -1) {
+        if (gProductFirmwarePathCount >= MAX_PRODUCT_PATHS) {
+            return; // No space
+        }
+        productIdx = gProductFirmwarePathCount++;
+        strncpy(gProductFirmwarePaths[productIdx].productName, productName,
+                sizeof(gProductFirmwarePaths[productIdx].productName) - 1);
+        gProductFirmwarePaths[productIdx].productName[sizeof(gProductFirmwarePaths[productIdx].productName) - 1] = '\0';
+        gProductFirmwarePaths[productIdx].historyCount = 0;
     }
+    
+    ProductFirmwarePath_t *product = &gProductFirmwarePaths[productIdx];
+    
+    // Check if this path already exists in history
+    int existingIdx = -1;
+    for (int i = 0; i < product->historyCount; i++) {
+        if (strcmp(product->firmwareHistory[i], firmwarePath) == 0) {
+            existingIdx = i;
+            break;
+        }
+    }
+    
+    // If it exists, move it to front
+    if (existingIdx >= 0) {
+        // Shift entries down to make room at [0]
+        char temp[256];
+        strncpy(temp, product->firmwareHistory[existingIdx], sizeof(temp) - 1);
+        temp[sizeof(temp) - 1] = '\0';
+        for (int i = existingIdx; i > 0; i--) {
+            strncpy(product->firmwareHistory[i], product->firmwareHistory[i-1],
+                    sizeof(product->firmwareHistory[i]) - 1);
+            product->firmwareHistory[i][sizeof(product->firmwareHistory[i]) - 1] = '\0';
+        }
+        strncpy(product->firmwareHistory[0], temp, sizeof(product->firmwareHistory[0]) - 1);
+        product->firmwareHistory[0][sizeof(product->firmwareHistory[0]) - 1] = '\0';
+    } else {
+        // New entry - shift all entries down and insert at [0]
+        int maxShift = (product->historyCount < MAX_FIRMWARE_HISTORY - 1) ? 
+                       product->historyCount : MAX_FIRMWARE_HISTORY - 1;
+        for (int i = maxShift; i > 0; i--) {
+            strncpy(product->firmwareHistory[i], product->firmwareHistory[i-1],
+                    sizeof(product->firmwareHistory[i]) - 1);
+            product->firmwareHistory[i][sizeof(product->firmwareHistory[i]) - 1] = '\0';
+        }
+        strncpy(product->firmwareHistory[0], firmwarePath,
+                sizeof(product->firmwareHistory[0]) - 1);
+        product->firmwareHistory[0][sizeof(product->firmwareHistory[0]) - 1] = '\0';
+        
+        if (product->historyCount < MAX_FIRMWARE_HISTORY) {
+            product->historyCount++;
+        }
+    }
+}
+
+// Get firmware history count for a product
+static int getProductFirmwareHistoryCount(const char *productName)
+{
+    for (int i = 0; i < gProductFirmwarePathCount; i++) {
+        if (strcmp(gProductFirmwarePaths[i].productName, productName) == 0) {
+            return gProductFirmwarePaths[i].historyCount;
+        }
+    }
+    return 0;
+}
+
+// Get a specific firmware history entry by index (0 = most recent)
+static const char* getProductFirmwareHistoryEntry(const char *productName, int index)
+{
+    for (int i = 0; i < gProductFirmwarePathCount; i++) {
+        if (strcmp(gProductFirmwarePaths[i].productName, productName) == 0) {
+            if (index >= 0 && index < gProductFirmwarePaths[i].historyCount) {
+                return gProductFirmwarePaths[i].firmwareHistory[index];
+            }
+            return "";
+        }
+    }
+    return "";
+}
+
+// Set/update the firmware path for a product (legacy compatibility - adds to history)
+static void setProductFirmwarePath(const char *productName, const char *firmwarePath)
+{
+    addProductFirmwareToHistory(productName, firmwarePath);
 }
 
 // Load settings from file
@@ -24201,8 +24423,60 @@ static void loadSettings(void)
                 }
                 printf("Loaded WiFi roaming threshold from settings: %d dBm\n", gWifiRoamingThreshold);
             }
+            else if (strncmp(line, "firmware_history_", 17) == 0) {
+                // Firmware history: firmware_history_<PRODUCT>_<N>=<path>
+                // e.g., "firmware_history_NORA_W36_0=/path/to/firmware.bin"
+                char *underscore = strchr(line + 17, '_');
+                if (underscore) {
+                    // Extract product name
+                    size_t productNameLen = underscore - (line + 17);
+                    if (productNameLen > 0 && productNameLen < 64) {
+                        char productName[64];
+                        strncpy(productName, line + 17, productNameLen);
+                        productName[productNameLen] = '\0';
+                        
+                        // Convert underscores back to hyphens (NORA_W36 -> NORA-W36)
+                        for (size_t i = 0; i < productNameLen; i++) {
+                            if (productName[i] == '_') productName[i] = '-';
+                        }
+                        
+                        // Parse index and value
+                        int historyIdx;
+                        char *equals = strchr(underscore + 1, '=');
+                        if (equals && sscanf(underscore + 1, "%d", &historyIdx) == 1) {
+                            if (historyIdx >= 0 && historyIdx < MAX_FIRMWARE_HISTORY) {
+                                // Find or create product entry
+                                int productIdx = -1;
+                                for (int i = 0; i < gProductFirmwarePathCount; i++) {
+                                    if (strcmp(gProductFirmwarePaths[i].productName, productName) == 0) {
+                                        productIdx = i;
+                                        break;
+                                    }
+                                }
+                                
+                                if (productIdx == -1 && gProductFirmwarePathCount < MAX_PRODUCT_PATHS) {
+                                    productIdx = gProductFirmwarePathCount++;
+                                    strncpy(gProductFirmwarePaths[productIdx].productName, productName,
+                                            sizeof(gProductFirmwarePaths[productIdx].productName) - 1);
+                                    gProductFirmwarePaths[productIdx].productName[sizeof(gProductFirmwarePaths[productIdx].productName) - 1] = '\0';
+                                    gProductFirmwarePaths[productIdx].historyCount = 0;
+                                }
+                                
+                                if (productIdx >= 0) {
+                                    strncpy(gProductFirmwarePaths[productIdx].firmwareHistory[historyIdx], equals + 1,
+                                            sizeof(gProductFirmwarePaths[productIdx].firmwareHistory[historyIdx]) - 1);
+                                    gProductFirmwarePaths[productIdx].firmwareHistory[historyIdx][sizeof(gProductFirmwarePaths[productIdx].firmwareHistory[historyIdx]) - 1] = '\0';
+                                    if (historyIdx >= gProductFirmwarePaths[productIdx].historyCount) {
+                                        gProductFirmwarePaths[productIdx].historyCount = historyIdx + 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             else if (strncmp(line, "firmware_path_", 14) == 0) {
-                // Dynamic firmware path: firmware_path_<PRODUCT>=<path>
+                // Legacy firmware path: firmware_path_<PRODUCT>=<path> (for backward compatibility)
                 // e.g., "firmware_path_NORA-W36=/path/to/firmware.bin"
                 char *equals = strchr(line + 14, '=');
                 if (equals) {
@@ -24218,7 +24492,7 @@ static void loadSettings(void)
                             if (productName[i] == '_') productName[i] = '-';
                         }
                         
-                        // Store the firmware path for this product
+                        // Store the firmware path for this product (adds to history)
                         setProductFirmwarePath(productName, equals + 1);
                     }
                 }
@@ -24291,19 +24565,25 @@ static void saveSettings(void)
             fprintf(f, "bt_profile_%d_address=%s\n", i, gBtProfiles[i].address);
         }
         
-        // Save dynamic per-product firmware paths
+        // Save per-product firmware history
         for (int i = 0; i < gProductFirmwarePathCount; i++) {
             if (gProductFirmwarePaths[i].productName[0] != '\0' && 
-                gProductFirmwarePaths[i].lastFirmwarePath[0] != '\0') {
-                // Convert hyphens to underscores for INI file compatibility
-                // (NORA-W36 -> NORA_W36)
+                gProductFirmwarePaths[i].historyCount > 0) {
+                // Convert hyphens to underscores for INI file compatibility (NORA-W36 -> NORA_W36)
                 char productKey[64];
                 strncpy(productKey, gProductFirmwarePaths[i].productName, sizeof(productKey) - 1);
                 productKey[sizeof(productKey) - 1] = '\0';
                 for (size_t j = 0; j < strlen(productKey); j++) {
                     if (productKey[j] == '-') productKey[j] = '_';
                 }
-                fprintf(f, "firmware_path_%s=%s\n", productKey, gProductFirmwarePaths[i].lastFirmwarePath);
+                
+                // Save all history entries for this product
+                for (int h = 0; h < gProductFirmwarePaths[i].historyCount; h++) {
+                    if (gProductFirmwarePaths[i].firmwareHistory[h][0] != '\0') {
+                        fprintf(f, "firmware_history_%s_%d=%s\n", productKey, h, 
+                                gProductFirmwarePaths[i].firmwareHistory[h]);
+                    }
+                }
             }
         }
         
