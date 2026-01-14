@@ -1076,6 +1076,7 @@ static void executeGetPowerSaveLevel(void);
 static void executeSetPowerSaveLevel(void);
 static void executeSetPowerSaveTimeout(void);
 static void executeDeepSleep(void);
+static void executeChangeBaudrate(void);
 static void showLegacyAdvertisementStatus(void);
 static bool ensureLegacyAdvertisementEnabled(void);
 static void showGattServerConnectionInfo(void);
@@ -21624,6 +21625,7 @@ static void printMenu(void)
             printf("  [2] Factory reset (restore defaults)\n");
             printf("  [8] Store configuration (AT&W - save current settings)\n");
             printf("  [3] Read crash/assert info (AT+USYCI?)\n");
+            printf("  [9] Change UART baudrate to 3 Mbit/s\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -21908,6 +21910,15 @@ static void handleUserInput(void)
         }
     }
     
+    // Handle quit command first (before any special menu handling)
+    if (choice == 0 && strlen(trimmedInput) > 0) {
+        char firstChar = (char)tolower(trimmedInput[0]);
+        if (firstChar == 'q') {
+            gMenuState = MENU_EXIT;
+            return;
+        }
+    }
+    
     // Special handling for firmware update menu - allow drag-and-drop file paths and history selection
     if (choice == 0 && gMenuState == MENU_FIRMWARE_UPDATE) {
         // Check if input looks like a file path (contains backslash, forward slash, or file extensions)
@@ -21942,11 +21953,7 @@ static void handleUserInput(void)
     if (choice == 0 && strlen(trimmedInput) > 0) {
         char firstChar = (char)tolower(trimmedInput[0]);
         
-        // Handle special commands available in all menus
-        if (firstChar == 'q') {
-            gMenuState = MENU_EXIT;
-            return;
-        }
+        // Note: 'q' is already handled above before special menu handling
         
         // Handle specific letter commands for main menu
         if (gMenuState == MENU_MAIN) {
@@ -22721,6 +22728,9 @@ static void handleUserInput(void)
                     break;
                 case 8:
                     executeStoreConfiguration();
+                    break;
+                case 9:
+                    executeChangeBaudrate();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
@@ -26340,6 +26350,120 @@ static void executeDeepSleep(void)
         printf("  2. Or power cycle the device\n");
     } else {
         printf("✗ ERROR: Failed to enter deep sleep (error %d)\n", result);
+    }
+}
+
+static void executeChangeBaudrate(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("CHANGE UART BAUDRATE TO 3 Mbit/s\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("CURRENT SETTING:\n");
+    printf("  Baudrate: 115200 bps (default)\n\n");
+    
+    printf("NEW SETTING:\n");
+    printf("  Baudrate: 3000000 bps (3 Mbit/s)\n");
+    printf("  Flow Control: Disabled\n\n");
+    
+    printf("PROCESS:\n");
+    printf("  1. Send AT+USYUS=3000000,0,1 to module\n");
+    printf("  2. Module responds with OK\n");
+    printf("  3. Module switches to 3 Mbit/s immediately\n");
+    printf("  4. App closes current UART connection\n");
+    printf("  5. App reopens UART at 3 Mbit/s\n");
+    printf("  6. Connection re-established\n\n");
+    
+    printf("NOTE: This change is immediate but not persistent.\n");
+    printf("      Use AT&W (option 8) to save the baudrate permanently.\n\n");
+    
+    printf("Type 'CHANGE' (in uppercase) to confirm, or anything else to cancel: ");
+    char confirm[32];
+    if (!fgets(confirm, sizeof(confirm), stdin)) {
+        return;
+    }
+    confirm[strcspn(confirm, "\r\n")] = 0;
+    
+    if (strcmp(confirm, "CHANGE") != 0) {
+        printf("\nBaudrate change cancelled.\n");
+        return;
+    }
+    
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
+    printf("Step 1: Sending baudrate change command to module...\n");
+    
+    // Send AT+USYUS=3000000,0,1
+    // Parameters: baudrate=3000000, flow_control=0 (disabled), change_after_confirm=1 (immediate)
+    int32_t result = uCxSystemSetUartSettings3(&gUcxHandle, 3000000, 0, 1);
+    
+    if (result != 0) {
+        printf("✗ ERROR: Failed to send baudrate change command (error %d)\n", result);
+        printf("Baudrate remains at 115200 bps.\n");
+        return;
+    }
+    
+    printf("✓ Module acknowledged baudrate change\n");
+    printf("  Module is now switching to 3 Mbit/s...\n\n");
+    
+    // Wait a moment for module to switch
+    U_CX_PORT_SLEEP_MS(500);
+    
+    printf("Step 2: Closing current UART connection (115200 bps)...\n");
+    uCxAtClientClose(&gUcxAtClient);
+    U_CX_PORT_SLEEP_MS(200);
+    
+    printf("Step 3: Reopening UART at 3 Mbit/s...\n");
+    result = uCxAtClientOpen(&gUcxAtClient, 3000000, false);
+    
+    if (result != 0) {
+        printf("✗ ERROR: Failed to open UART at 3 Mbit/s (error %d)\n", result);
+        printf("\nAttempting to recover at 115200 bps...\n");
+        
+        // Try to reopen at original baudrate
+        U_CX_PORT_SLEEP_MS(500);
+        result = uCxAtClientOpen(&gUcxAtClient, 115200, false);
+        if (result == 0) {
+            gUartHandle = gUcxAtClient.uartHandle;
+            printf("✓ Recovered connection at 115200 bps\n");
+            printf("Baudrate change failed. Still running at 115200 bps.\n");
+        } else {
+            printf("✗ Failed to recover connection. Please reconnect manually.\n");
+            gUcxConnected = false;
+            gUartHandle = NULL;
+        }
+        return;
+    }
+    
+    gUartHandle = gUcxAtClient.uartHandle;
+    printf("✓ UART opened successfully at 3 Mbit/s\n\n");
+    
+    printf("Step 4: Testing communication...\n");
+    
+    // Send simple AT command to verify communication
+    result = uCxAtClientExecSimpleCmd(gUcxHandle.pAtClient, "AT");
+    if (result == 0) {
+        printf("✓ Communication test successful!\n\n");
+        printf("════════════════════════════════════════════════════════════════════════════════\n");
+        printf("SUCCESS: UART is now running at 3 Mbit/s\n");
+        printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+        printf("NEXT STEPS:\n");
+        printf("  • To make this permanent: Use option [8] Store Configuration (AT&W)\n");
+        printf("  • To revert: Reboot module (it will return to saved baudrate)\n");
+        printf("  • Current session: Will continue at 3 Mbit/s until disconnect\n\n");
+        printf("PERFORMANCE NOTES:\n");
+        printf("  • 3 Mbit/s = ~375 KB/s theoretical max throughput\n");
+        printf("  • Actual throughput depends on data size and USB latency\n");
+        printf("  • Best for: Firmware updates, large data transfers\n");
+        printf("  • 115200 bps is sufficient for most AT command usage\n\n");
+    } else {
+        printf("✗ WARNING: Communication test failed (error %d)\n", result);
+        printf("Baudrate changed but communication issues detected.\n");
+        printf("Try rebooting the module if problems persist.\n");
     }
 }
 

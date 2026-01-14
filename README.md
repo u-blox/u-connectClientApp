@@ -45,6 +45,9 @@ git submodule update --init ucxclient
 # Run application (default: auto-build if needed)
 .\launch-ucx-windows-app.cmd
 
+# Firmware update mode (goes directly to firmware menu)
+.\launch-ucx-windows-app.cmd flash
+
 # Debug build
 .\launch-ucx-windows-app.cmd debug
 
