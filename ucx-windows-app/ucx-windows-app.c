@@ -21929,8 +21929,8 @@ static void handleUserInput(void)
             // We'll handle the file path in the case 1 handler
         } else {
             int inputChoice = atoi(trimmedInput);
-            // Check if it's a history selection (0-4)
-            if (inputChoice >= 0 && inputChoice <= 4 && gDeviceModel[0] != '\0') {
+            // Check if it's a history selection (1-4, not 0 which is "Back to main menu")
+            if (inputChoice >= 1 && inputChoice <= 4 && gDeviceModel[0] != '\0') {
                 const char *historyPath = getProductFirmwareHistoryEntry(gDeviceModel, inputChoice);
                 if (historyPath && historyPath[0] != '\0') {
                     // Use firmware from history - set input and route to case 1
@@ -24436,48 +24436,57 @@ static void loadSettings(void)
             else if (strncmp(line, "firmware_history_", 17) == 0) {
                 // Firmware history: firmware_history_<PRODUCT>_<N>=<path>
                 // e.g., "firmware_history_NORA_W36_0=/path/to/firmware.bin"
-                char *underscore = strchr(line + 17, '_');
-                if (underscore) {
-                    // Extract product name
-                    size_t productNameLen = underscore - (line + 17);
-                    if (productNameLen > 0 && productNameLen < 64) {
-                        char productName[64];
-                        strncpy(productName, line + 17, productNameLen);
-                        productName[productNameLen] = '\0';
-                        
-                        // Convert underscores back to hyphens (NORA_W36 -> NORA-W36)
-                        for (size_t i = 0; i < productNameLen; i++) {
-                            if (productName[i] == '_') productName[i] = '-';
-                        }
-                        
-                        // Parse index and value
-                        int historyIdx;
-                        char *equals = strchr(underscore + 1, '=');
-                        if (equals && sscanf(underscore + 1, "%d", &historyIdx) == 1) {
-                            if (historyIdx >= 0 && historyIdx < MAX_FIRMWARE_HISTORY) {
-                                // Find or create product entry
-                                int productIdx = -1;
-                                for (int i = 0; i < gProductFirmwarePathCount; i++) {
-                                    if (strcmp(gProductFirmwarePaths[i].productName, productName) == 0) {
-                                        productIdx = i;
-                                        break;
+                // Note: Product name may contain underscores (NORA_W36), so we need to find
+                // the LAST underscore before '=' which separates the product name from the index
+                char *equals = strchr(line + 17, '=');
+                if (equals) {
+                    // Find the last underscore before '=' - this separates product_name from index
+                    char *lastUnderscore = NULL;
+                    for (char *p = line + 17; p < equals; p++) {
+                        if (*p == '_') lastUnderscore = p;
+                    }
+                    
+                    if (lastUnderscore && lastUnderscore > line + 17) {
+                        // Extract product name (between "firmware_history_" and last underscore)
+                        size_t productNameLen = lastUnderscore - (line + 17);
+                        if (productNameLen > 0 && productNameLen < 64) {
+                            char productName[64];
+                            strncpy(productName, line + 17, productNameLen);
+                            productName[productNameLen] = '\0';
+                            
+                            // Convert underscores back to hyphens (NORA_W36 -> NORA-W36)
+                            for (size_t i = 0; i < productNameLen; i++) {
+                                if (productName[i] == '_') productName[i] = '-';
+                            }
+                            
+                            // Parse index and value
+                            int historyIdx;
+                            if (sscanf(lastUnderscore + 1, "%d", &historyIdx) == 1) {
+                                if (historyIdx >= 0 && historyIdx < MAX_FIRMWARE_HISTORY) {
+                                    // Find or create product entry
+                                    int productIdx = -1;
+                                    for (int i = 0; i < gProductFirmwarePathCount; i++) {
+                                        if (strcmp(gProductFirmwarePaths[i].productName, productName) == 0) {
+                                            productIdx = i;
+                                            break;
+                                        }
                                     }
-                                }
-                                
-                                if (productIdx == -1 && gProductFirmwarePathCount < MAX_PRODUCT_PATHS) {
-                                    productIdx = gProductFirmwarePathCount++;
-                                    strncpy(gProductFirmwarePaths[productIdx].productName, productName,
-                                            sizeof(gProductFirmwarePaths[productIdx].productName) - 1);
-                                    gProductFirmwarePaths[productIdx].productName[sizeof(gProductFirmwarePaths[productIdx].productName) - 1] = '\0';
-                                    gProductFirmwarePaths[productIdx].historyCount = 0;
-                                }
-                                
-                                if (productIdx >= 0) {
-                                    strncpy(gProductFirmwarePaths[productIdx].firmwareHistory[historyIdx], equals + 1,
-                                            sizeof(gProductFirmwarePaths[productIdx].firmwareHistory[historyIdx]) - 1);
-                                    gProductFirmwarePaths[productIdx].firmwareHistory[historyIdx][sizeof(gProductFirmwarePaths[productIdx].firmwareHistory[historyIdx]) - 1] = '\0';
-                                    if (historyIdx >= gProductFirmwarePaths[productIdx].historyCount) {
-                                        gProductFirmwarePaths[productIdx].historyCount = historyIdx + 1;
+                                    
+                                    if (productIdx == -1 && gProductFirmwarePathCount < MAX_PRODUCT_PATHS) {
+                                        productIdx = gProductFirmwarePathCount++;
+                                        strncpy(gProductFirmwarePaths[productIdx].productName, productName,
+                                                sizeof(gProductFirmwarePaths[productIdx].productName) - 1);
+                                        gProductFirmwarePaths[productIdx].productName[sizeof(gProductFirmwarePaths[productIdx].productName) - 1] = '\0';
+                                        gProductFirmwarePaths[productIdx].historyCount = 0;
+                                    }
+                                    
+                                    if (productIdx >= 0) {
+                                        strncpy(gProductFirmwarePaths[productIdx].firmwareHistory[historyIdx], equals + 1,
+                                                sizeof(gProductFirmwarePaths[productIdx].firmwareHistory[historyIdx]) - 1);
+                                        gProductFirmwarePaths[productIdx].firmwareHistory[historyIdx][sizeof(gProductFirmwarePaths[productIdx].firmwareHistory[historyIdx]) - 1] = '\0';
+                                        if (historyIdx >= gProductFirmwarePaths[productIdx].historyCount) {
+                                            gProductFirmwarePaths[productIdx].historyCount = historyIdx + 1;
+                                        }
                                     }
                                 }
                             }
