@@ -553,6 +553,9 @@ static char gDeviceFirmware[64] = "";         // Firmware version (e.g., "3.1.0"
 static bool gAutoFlashMode = false;
 static char gAutoFlashPath[256] = "";
 
+// Auto-HID mode (triggered by command-line "hid" argument)
+static bool gAutoHidMode = false;
+
 // Device status (queried at startup/connection)
 static int gActiveSocketCount = 0;            // Number of active sockets
 static int gBondedDeviceCount = 0;            // Number of bonded BT devices
@@ -9685,10 +9688,9 @@ static void gattServerSetupHidKeyboard(void)
     // STEP 0: Configure Bluetooth settings BEFORE creating GATT services
     printf("Step 0: Configuring Bluetooth settings...\n");
     
-    // Set Bluetooth device name (add timestamp suffix to force cache refresh on phones)
+    // Set Bluetooth device name (fixed name for consistency)
     char deviceName[64];
-    time_t now = time(NULL);
-    snprintf(deviceName, sizeof(deviceName), "u-blox HID Keyboard %02d", (int)(now % 100));
+    snprintf(deviceName, sizeof(deviceName), "u-blox HID Keyboard");
     printf("  Setting device name to '%s'...\n", deviceName);
     int result = uCxBluetoothSetLocalName(&gUcxHandle, deviceName);
     if (result == 0) {
@@ -9702,11 +9704,11 @@ static void gattServerSetupHidKeyboard(void)
         printf("  ✓ Security mode set\n");
     }
     
-    // Set IO capabilities - use KeyboardOnly for HID keyboards to enable passkey entry (MITM protection)
-    printf("  Setting IO capabilities to KeyboardOnly...\n");
-    result = uCxBluetoothSetIoCapabilities(&gUcxHandle, U_BT_IO_CAP_KEYBOARD_ONLY);
+    // Set IO capabilities - use NoInputNoOutput for "Just Works" pairing (no passkey required)
+    printf("  Setting IO capabilities to NoInputNoOutput (Just Works)...\n");
+    result = uCxBluetoothSetIoCapabilities(&gUcxHandle, U_BT_IO_CAP_NO_INPUT_NO_OUTPUT);
     if (result == 0) {
-        printf("  ✓ IO capabilities set\n");
+        printf("  ✓ IO capabilities set (Just Works pairing enabled)\n");
     }
     
     // Set advertising interval to 100-150ms using new API
@@ -9736,39 +9738,40 @@ static void gattServerSetupHidKeyboard(void)
     uCxEnd(&gUcxHandle);
     printf("  ✓ Device Information Service ready\n\n");
     
-    // Step 0.5: Add complete Device Information Service (DIS) with PnP ID
-    // NOTE: NORA-W36 has built-in DIS (0x180A) with 4 characteristics (Manufacturer, Model, Firmware, Software)
-    // but does NOT support PnP ID through the built-in DIS API.
-    // We create a CUSTOM DIS service (0x180A) with PnP ID characteristic.
-    // This may work with some HID hosts, though it's non-standard.
+    // Step 0.5: Custom Device Information Service with PnP ID
+    // NOTE: Requires firmware fix where defining a new DIS replaces the built-in one.
+    // PnP ID is mandatory per HOGP spec but most hosts work without it.
+    // Set ENABLE_CUSTOM_DIS to 1 after firmware is fixed.
+#define ENABLE_CUSTOM_DIS 0
+
+#if ENABLE_CUSTOM_DIS
     printf("Step 0.5: Creating custom Device Information Service with PnP ID...\n");
     
     // Define custom DIS service (0x180A)
-    uint8_t disServiceUuid[] = {0x18, 0x0A};  // DIS UUID (little-endian)
+    uint8_t disServiceUuid[] = {0x18, 0x0A};  // DIS UUID
     int32_t customDisHandle;
     result = uCxGattServerServiceDefine(&gUcxHandle, disServiceUuid, 2, &customDisHandle);
     
     if (result != 0) {
         printf("  WARNING: Failed to create custom DIS (code %d)\n", result);
-        printf("    Using built-in DIS only (no PnP ID)\n");
-        printf("    HID may have limited compatibility with some hosts\n\n");
+        printf("    Using built-in DIS only (no PnP ID)\n\n");
     } else {
         printf("  ✓ Custom DIS defined (handle: %d)\n", customDisHandle);
         
-        // Add PnP ID characteristic to custom DIS
+        // Add PnP ID characteristic (0x2A50)
         // PnP ID structure (7 bytes):
         //   [0] Vendor ID Source: 0x02 = USB IF
-        //   [1-2] Vendor ID: 0x1546 (u-blox USB vendor ID, little-endian)
-        //   [3-4] Product ID: 0x1146 (example product ID, little-endian)
-        //   [5-6] Product Version: 0x0100 (version 1.0, little-endian)
-        uint8_t pnpIdUuid[] = {0x2A, 0x50};  // PnP ID UUID (little-endian)
+        //   [1-2] Vendor ID: 0x1546 (u-blox, little-endian)
+        //   [3-4] Product ID: 0x1146 (example, little-endian)
+        //   [5-6] Product Version: 0x0100 (v1.0, little-endian)
+        uint8_t pnpIdUuid[] = {0x2A, 0x50};
         uint8_t pnpIdValue[] = {
             0x02,        // Vendor ID Source: USB IF
-            0x46, 0x15,  // Vendor ID: 0x1546 (u-blox, little-endian)
-            0x46, 0x11,  // Product ID: 0x1146 (example, little-endian)
-            0x00, 0x01   // Product Version: 0x0100 (v1.0, little-endian)
+            0x46, 0x15,  // Vendor ID: 0x1546 (u-blox)
+            0x46, 0x11,  // Product ID: 0x1146
+            0x00, 0x01   // Version: 1.0
         };
-        uint8_t propRead[] = {0x02};  // Read only
+        uint8_t propRead[] = {0x02};
         
         uCxGattServerCharDefine_t pnpIdResponse;
         result = uCxGattServerCharDefine6(&gUcxHandle, pnpIdUuid, 2,
@@ -9779,20 +9782,37 @@ static void gattServerSetupHidKeyboard(void)
                                           &pnpIdResponse);
         
         if (result == 0) {
-            printf("  ✓ PnP ID added to custom DIS (handle: %d)\n", pnpIdResponse.value_handle);
+            printf("  ✓ PnP ID added (handle: %d)\n", pnpIdResponse.value_handle);
             printf("    Vendor: 0x1546 (u-blox), Product: 0x1146, Version: 1.0\n");
         } else {
-            printf("  WARNING: Failed to add PnP ID to custom DIS (code %d)\n", result);
-            printf("    HID may have limited compatibility with some hosts\n");
+            printf("  WARNING: Failed to add PnP ID (code %d)\n", result);
         }
         printf("\n");
+        
+        // Activate custom DIS
+        printf("Step 0.6: Activating custom DIS...\n");
+        result = uCxGattServerServiceActivate(&gUcxHandle);
+        if (result == 0) {
+            printf("  ✓ Custom DIS activated\n");
+        } else {
+            printf("  WARNING: Failed to activate custom DIS (code %d)\n", result);
+        }
     }
+#else
+    printf("Step 0.5: Using built-in Device Information Service\n");
+    printf("  Note: PnP ID not available (optional - HID will work without it)\n");
+    printf("  To enable PnP ID, set ENABLE_CUSTOM_DIS=1 after firmware fix\n");
+#endif
     printf("\n");
-    // Step 6: Activating DIS Service
-    printf("\nStep 6: Activating DIS Service...\n");
-    result = uCxGattServerServiceActivate(&gUcxHandle);
+    printf("\n");
     
-    // Step 1: Define HID Service (0x1812)
+    // Step 1: Define HID Service (0x1812) - check if already exists
+    if (gHidServiceHandle > 0) {
+        printf("Step 1: HID Service already exists (handle: %d), skipping service creation...\n", gHidServiceHandle);
+        printf("WARNING: Cannot add characteristics to existing service. Need device reboot for clean setup.\n");
+        return;
+    }
+    
     printf("Step 1: Creating HID Service (UUID: 0x1812)...\n");
     uint8_t hidServiceUuid[] = {0x18, 0x12};  // 16-bit UUID for HID Service (little-endian: LSB first)
     
@@ -9882,18 +9902,18 @@ static void gattServerSetupHidKeyboard(void)
         }
     }
     
-    // Step 3a: Add Boot Keyboard Input Report (0x2A22) - Notify (0x10)
+    // Step 3a: Add Boot Keyboard Input Report (0x2A22) - Read + Notify (0x12)
     // CRITICAL: Required for Windows/iOS to recognize device as HID Keyboard
-    // Security set to UNAUTHENTICATED (Encrypted) as per HID spec
+    // Per HID spec: Boot Keyboard Input MUST have Read + Notify properties
     // Boot reports MUST be exactly 8 bytes (per HID spec)
     printf("Step 3a: Adding Boot Keyboard Input Report (required for OS recognition)...\n");
     uint8_t bootKbdInputUuid[] = {0x2A, 0x22};  // Little-endian
-    uint8_t propNotify[] = {0x10};  // Notify only
+    uint8_t propReadNotifyBoot[] = {0x12};  // Read (0x02) + Notify (0x10) = 0x12 - per HID spec
     uint8_t emptyBootKbdReport[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Standard 8-byte boot report
     
     uCxGattServerCharDefine_t bootKbdResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, bootKbdInputUuid, 2,
-                                      propNotify, 1,
+                                      propReadNotifyBoot, 1,
                                       U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       emptyBootKbdReport, 8,
                                       8,
@@ -9901,13 +9921,31 @@ static void gattServerSetupHidKeyboard(void)
     
     if (result == 0) {
         gHidBootKbdInputHandle = bootKbdResponse.value_handle;
-        gHidBootKbdCccdHandle = bootKbdResponse.cccd_handle;
-        printf("✓ Boot Keyboard Input Report created (handle: %d, CCCD: %d)\n", 
-               bootKbdResponse.value_handle, bootKbdResponse.cccd_handle);
+        printf("✓ Boot Keyboard Input Report created (handle: %d)\n", bootKbdResponse.value_handle);
         
-        // CRITICAL: Add Report Reference descriptor (0x2908) for Boot Keyboard Input
+        // Check if firmware auto-added CCCD
+        if (bootKbdResponse.cccd_handle > 0) {
+            gHidBootKbdCccdHandle = bootKbdResponse.cccd_handle;
+            printf("  ✓ Boot Keyboard CCCD auto-added by firmware (handle: %d)\n", gHidBootKbdCccdHandle);
+        } else {
+            // Firmware didn't auto-add CCCD, add manually
+            uint8_t cccdUuid[] = {0x29, 0x02};  // CCCD UUID (little-endian)
+            uint8_t cccdValue[] = {0x00, 0x00}; // Default: notifications disabled
+            
+            result = uCxGattServerDescriptorDefine4(&gUcxHandle, cccdUuid, 2,
+                                                    U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                                    cccdValue, 2,
+                                                    &gHidBootKbdCccdHandle);
+            
+            if (result == 0) {
+                printf("  ✓ Boot Keyboard CCCD added manually (handle: %d)\n", gHidBootKbdCccdHandle);
+            } else {
+                printf("  WARNING: Failed to add Boot Keyboard CCCD (code %d)\n", result);
+            }
+        }
+        
+        // Add Report Reference descriptor (0x2908) for Boot Keyboard Input
         // This tells Windows: Report ID=1, Report Type=1 (Input)
-        // Without this, Windows won't recognize the device as HoG!
         uint8_t reportRefUuid[] = {0x29, 0x08};  // Report Reference UUID (little-endian)
         uint8_t reportRefValue[] = {0x01, 0x01}; // Report ID=1, Report Type=1 (Input)
         
@@ -9926,17 +9964,17 @@ static void gattServerSetupHidKeyboard(void)
         printf("WARNING: Failed to create Boot Keyboard Input Report (code %d)\n", result);
     }
     
-    // Step 3b: Add Boot Keyboard Output Report (0x2A32) - Write Without Response (0x04)
-    // Recommended for complete HID keyboard compliance
-    // Security set to AUTHENTICATED (Encrypted + Authenticated) for security
+    // Step 3b: Add Boot Keyboard Output Report (0x2A32) - Read + Write + Write Without Response (0x0E)
+    // Per HID spec: Boot Output MUST have Read + Write + Write Without Response
+    // Security set to AUTHENTICATED (Encrypted + Authenticated) for write
     printf("Step 3b: Adding Boot Keyboard Output Report...\n");
     uint8_t bootKbdOutputUuid[] = {0x2A, 0x32};  // Little-endian
-    uint8_t propWriteWoResp[] = {0x04};  // Write Without Response
+    uint8_t propReadWriteWWR[] = {0x0E};  // Read (0x02) + Write Without Response (0x04) + Write (0x08) = 0x0E
     uint8_t emptyBootKbdOutput[1] = {0x00};  // LED state (Num/Caps/Scroll Lock)
     
     uCxGattServerCharDefine_t bootKbdOutResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, bootKbdOutputUuid, 2,
-                                      propWriteWoResp, 1,
+                                      propReadWriteWWR, 1,
                                       U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_AUTHENTICATED,
                                       emptyBootKbdOutput, 1,
                                       1,
@@ -9986,10 +10024,27 @@ static void gattServerSetupHidKeyboard(void)
     
     if (result == 0) {
         gHidKeyboardInputHandle = kbdResponse.value_handle;
-        gHidKeyboardCccdHandle = kbdResponse.cccd_handle;
         printf("✓ Keyboard Input Report created (handle: %d)\n", gHidKeyboardInputHandle);
+        
+        // Check if firmware auto-added CCCD
         if (kbdResponse.cccd_handle > 0) {
-            printf("  CCCD handle: %d\n", kbdResponse.cccd_handle);
+            gHidKeyboardCccdHandle = kbdResponse.cccd_handle;
+            printf("  ✓ Keyboard Input CCCD auto-added by firmware (handle: %d)\n", gHidKeyboardCccdHandle);
+        } else {
+            // Firmware didn't auto-add CCCD, add manually
+            uint8_t cccdUuid[] = {0x29, 0x02};  // CCCD UUID (little-endian)
+            uint8_t cccdValue[] = {0x00, 0x00}; // Default: notifications disabled
+            
+            result = uCxGattServerDescriptorDefine4(&gUcxHandle, cccdUuid, 2,
+                                                    U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                                    cccdValue, 2,
+                                                    &gHidKeyboardCccdHandle);
+            
+            if (result == 0) {
+                printf("  ✓ Keyboard Input CCCD added manually (handle: %d)\n", gHidKeyboardCccdHandle);
+            } else {
+                printf("  WARNING: Failed to add Keyboard Input CCCD (code %d)\n", result);
+            }
         }
         
         // Add Report Reference descriptor (0x2908) for Keyboard Input Report
@@ -10005,7 +10060,7 @@ static void gattServerSetupHidKeyboard(void)
                                                 &kbdDescHandle);
         
         if (result == 0) {
-            printf("  Report Reference descriptor added (handle: %d)\n", kbdDescHandle);
+            printf("  ✓ Report Reference descriptor added (handle: %d)\n", kbdDescHandle);
         } else {
             printf("  WARNING: Failed to add Report Reference descriptor (code %d)\n", result);
         }
@@ -10016,12 +10071,12 @@ static void gattServerSetupHidKeyboard(void)
     // This is for Report mode (complementary to Boot Keyboard Output)
     printf("Step 4b: Adding Keyboard Output Report (LED indicators)...\n");
     uint8_t kbdOutputUuid[] = {0x2A, 0x4D};  // Report characteristic (little-endian)
-    uint8_t propReadWriteWWR[] = {0x0E};  // Read (0x02) + Write (0x08) + Write Without Response (0x04) = 0x0E
+    uint8_t propKbdOut[] = {0x0E};  // Read (0x02) + Write (0x08) + Write Without Response (0x04) = 0x0E
     uint8_t ledOutputValue[] = {0x00};  // 1 byte: LED bitmap (Num/Caps/Scroll/etc)
     
     uCxGattServerCharDefine_t kbdOutResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, kbdOutputUuid, 2,
-                                      propReadWriteWWR, 1,
+                                      propKbdOut, 1,
                                       U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_AUTHENTICATED,
                                       ledOutputValue, 1,
                                       1,
@@ -10083,52 +10138,87 @@ static void gattServerSetupHidKeyboard(void)
     
     printf("✓ HID Service activated!\n");
     
-    // Step 7: Create Battery Service (0x180F)
-    printf("Step 7: Creating Battery Service (UUID: 0x180F)...\n");
-    uint8_t batteryServiceUuid[] = {0x18, 0x0F};  // Little-endian
+    // Step 7: Create Battery Service (0x180F) - only if not already created
+    if (gBatteryServiceHandle > 0 && gBatteryLevelHandle > 0) {
+        printf("Step 7: Battery Service already exists (handle: %d), skipping...\n", gBatteryServiceHandle);
+    } else {
+        printf("Step 7: Creating Battery Service (UUID: 0x180F)...\n");
+        uint8_t batteryServiceUuid[] = {0x18, 0x0F};  // Little-endian
+        
+        result = uCxGattServerServiceDefine(&gUcxHandle, batteryServiceUuid, 2, &gBatteryServiceHandle);
     
-    result = uCxGattServerServiceDefine(&gUcxHandle, batteryServiceUuid, 2, &gBatteryServiceHandle);
-    
-    if (result == 0) {
-        printf("✓ Battery Service defined (handle: %d)\n", gBatteryServiceHandle);
-        
-        // Add Battery Level characteristic (0x2A19) - Read + Notify
-        uint8_t batteryLevelUuid[] = {0x2A, 0x19};  // Little-endian
-        uint8_t batValue[] = {100};  // 100%
-        
-        uCxGattServerCharDefine_t batResponse;
-        result = uCxGattServerCharDefine6(&gUcxHandle, batteryLevelUuid, 2,
-                                          propReadNotify, 1,
-                                          U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
-                                          batValue, 1,
-                                          1,
-                                          &batResponse);
-        
         if (result == 0) {
-            gBatteryLevelHandle = batResponse.value_handle;
-            gBatteryCccdHandle = batResponse.cccd_handle;
-            printf("✓ Battery Level characteristic created (handle: %d)\n", gBatteryLevelHandle);
-            if (batResponse.cccd_handle > 0) {
-                printf("  CCCD handle: %d\n", batResponse.cccd_handle);
+            printf("✓ Battery Service defined (handle: %d)\n", gBatteryServiceHandle);
+            
+            // Add Battery Level characteristic (0x2A19) - Read + Notify
+            uint8_t batteryLevelUuid[] = {0x2A, 0x19};  // Little-endian
+            uint8_t batValue[] = {100};  // 100%
+            
+            uCxGattServerCharDefine_t batResponse;
+            result = uCxGattServerCharDefine6(&gUcxHandle, batteryLevelUuid, 2,
+                                              propReadNotify, 1,
+                                              U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                              batValue, 1,
+                                              1,
+                                              &batResponse);
+            
+            if (result == 0) {
+                gBatteryLevelHandle = batResponse.value_handle;
+                printf("✓ Battery Level characteristic created (handle: %d)\n", gBatteryLevelHandle);
+                
+                // Check if firmware auto-added CCCD
+                if (batResponse.cccd_handle > 0) {
+                    gBatteryCccdHandle = batResponse.cccd_handle;
+                    printf("  ✓ Battery Level CCCD auto-added by firmware (handle: %d)\n", gBatteryCccdHandle);
+                } else {
+                    // Firmware didn't auto-add CCCD, add manually
+                    uint8_t cccdUuid[] = {0x29, 0x02};  // CCCD UUID (little-endian)
+                    uint8_t cccdValue[] = {0x00, 0x00}; // Default: notifications disabled
+                    
+                    result = uCxGattServerDescriptorDefine4(&gUcxHandle, cccdUuid, 2,
+                                                            U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                                            cccdValue, 2,
+                                                            &gBatteryCccdHandle);
+                    
+                    if (result == 0) {
+                        printf("  ✓ Battery Level CCCD added manually (handle: %d)\n", gBatteryCccdHandle);
+                    } else {
+                        printf("  WARNING: Failed to add Battery Level CCCD (code %d)\n", result);
+                    }
+                }
             }
+            
+            // Step 8: Activate Battery Service
+            printf("\nStep 8: Activating Battery Service...\n");
+            result = uCxGattServerServiceActivate(&gUcxHandle);
+            
+            if (result != 0) {
+                printf("ERROR: Failed to activate Battery service (code %d)\n", result);
+                return;
+            }
+            
+            printf("✓ Battery Service activated!\n");
         }
-        
-        // Step 8: Activate Battery Service
-        printf("\nStep 8: Activating Battery Service...\n");
-        result = uCxGattServerServiceActivate(&gUcxHandle);
-        
-        if (result != 0) {
-            printf("ERROR: Failed to activate Battery service (code %d)\n", result);
-            return;
-        }
-        
-        printf("✓ Battery Service activated!\n");
     }
     
     printf("\n─────────────────────────────────────────────────\n");
     printf("HID Keyboard + Battery Services Ready!\n");
     printf("─────────────────────────────────────────────────\n");
-    
+    printf("\n");
+    printf("Service Handle Summary:\n");
+    printf("  HID Service:           %d\n", gHidServiceHandle);
+    printf("  HID Information:       %d\n", gHidInfoHandle);
+    printf("  Protocol Mode:         %d\n", gHidProtocolModeHandle);
+    printf("  Report Map:            %d\n", gHidReportMapHandle);
+    printf("  Boot Keyboard Input:   %d (CCCD: %d)\n", gHidBootKbdInputHandle, gHidBootKbdCccdHandle);
+    printf("  Boot Keyboard Output:  %d\n", gHidBootKbdOutputHandle);
+    printf("  Keyboard Input:        %d (CCCD: %d)\n", gHidKeyboardInputHandle, gHidKeyboardCccdHandle);
+    printf("  Keyboard Output:       %d\n", gHidKeyboardOutputHandle);
+    printf("  HID Control Point:     %d\n", gHidControlPointHandle);
+    printf("  Battery Service:       %d\n", gBatteryServiceHandle);
+    printf("  Battery Level:         %d (CCCD: %d)\n", gBatteryLevelHandle, gBatteryCccdHandle);
+    printf("\n");
+
     // Show connection information
     showGattServerConnectionInfo();
     
@@ -20553,8 +20643,13 @@ int main(int argc, char *argv[])
         gAutoFlashMode = true;
     }
     
-    // Check for COM port argument (skip if it's a flag like -v, --version, or "flash")
-    if (argc > 1 && argv[1][0] != '-' && strcmp(argv[1], "flash") != 0) {
+    // Check for "hid" argument to enable auto-HID mode
+    if (argc > 1 && strcmp(argv[1], "hid") == 0) {
+        gAutoHidMode = true;
+    }
+    
+    // Check for COM port argument (skip if it's a flag like -v, --version, "flash", or "hid")
+    if (argc > 1 && argv[1][0] != '-' && strcmp(argv[1], "flash") != 0 && strcmp(argv[1], "hid") != 0) {
         strncpy(gComPort, argv[1], sizeof(gComPort) - 1);
         gComPort[sizeof(gComPort) - 1] = '\0';
     } else {
@@ -20648,6 +20743,50 @@ int main(int argc, char *argv[])
         gAutoFlashMode = false;
         
         // Exit application when flash mode fails
+        printf("Press Enter to exit...");
+        getchar();
+        return 0;
+    }
+    
+    // If HID mode is enabled and we're connected, go to HID menu and setup HID keyboard
+    if (gAutoHidMode && autoConnected) {
+        printf("\n");
+        printf("=================================================================\n");
+        printf("  HID KEYBOARD MODE\n");
+        printf("=================================================================\n");
+        printf("  Device: %s\n", gDeviceModel[0] != '\0' ? gDeviceModel : "Unknown");
+        printf("  Setting up HID Keyboard service...\n");
+        printf("=================================================================\n");
+        printf("\n");
+        
+        // Setup HID Keyboard service automatically
+        gattServerSetupHidKeyboard();
+        
+        // Go directly to HID menu
+        gMenuState = MENU_HID;
+    } else if (gAutoHidMode) {
+        printf("\n");
+        printf("=================================================================\n");
+        printf("  AUTO-HID MODE - ERROR\n");
+        printf("=================================================================\n");
+        if (!autoConnected) {
+            printf("  Failed to connect to device on %s\n", gComPort);
+            printf("  Please check connection and try again.\n");
+            printf("\n");
+            printf("  Common issues:\n");
+            printf("    - Device not connected via USB\n");
+            printf("    - Wrong COM port (check Device Manager)\n");
+            printf("    - Another application using the COM port\n");
+            printf("    - Driver not installed\n");
+        } else {
+            printf("  Device model not detected\n");
+            printf("  Try running without 'hid' argument first.\n");
+        }
+        printf("=================================================================\n");
+        printf("\n");
+        gAutoHidMode = false;
+        
+        // Exit application when HID mode fails
         printf("Press Enter to exit...");
         getchar();
         return 0;

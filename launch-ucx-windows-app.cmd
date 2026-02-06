@@ -19,6 +19,7 @@ if /i "%1"=="signed" goto :launch_signed
 if /i "%1"=="selftest" goto :selftest
 if /i "%1"=="update" goto :update_submodule
 if /i "%1"=="make-release" goto :make_release
+if /i "%1"=="hid" goto :launch_hid
 
 REM Commands that need prerequisites
 if /i "%1"=="clean" goto :clean_with_checks
@@ -363,6 +364,41 @@ cd ucx-windows-app\release
 
 REM Pass arguments (skip first argument which is --signed)
 ucx-windows-app-signed.exe %2 %3 %4 %5 %6 %7 %8 %9
+
+REM Store exit code
+set APP_EXIT_CODE=%ERRORLEVEL%
+
+REM Return to root
+cd ..\..
+
+REM Exit with application's exit code
+exit /b %APP_EXIT_CODE%
+
+REM ===================================
+REM Launch HID command
+REM ===================================
+:launch_hid
+echo ===================================
+echo Launching HID Keyboard Mode
+echo ===================================
+echo.
+
+REM Use unsigned (development) version for HID mode
+set UNSIGNED_EXE=ucx-windows-app\bin\ucx-windows-app.exe
+
+if exist "!UNSIGNED_EXE!" (
+    echo Launching development version with HID mode...
+    echo.
+    cd ucx-windows-app\bin
+    ucx-windows-app.exe hid %2 %3 %4 %5 %6 %7 %8 %9
+) else (
+    echo [ERROR] No executable found!
+    echo.
+    echo Please build the application first:
+    echo   launch-ucx-windows-app.cmd
+    echo.
+    exit /b 1
+)
 
 REM Store exit code
 set APP_EXIT_CODE=%ERRORLEVEL%
@@ -885,6 +921,7 @@ echo BASIC USAGE:
 echo   (no args)             Run Release build (auto-selects signed if newer)
 echo   debug                 Run Debug build (builds if needed)
 echo   signed                Force run signed version from release folder
+echo   hid                   Start directly in HID Keyboard mode
 echo.
 echo   By default, launcher checks both bin/ and release/ folders and runs
 echo   the newest version. Use --signed to force the signed version.
@@ -944,6 +981,9 @@ echo       Launch signed version and pass COM4 to the app
 echo.
 echo   launch-ucx-windows-app.cmd debug COM4
 echo       Launch Debug build and pass COM4 to the app
+echo.
+echo   launch-ucx-windows-app.cmd hid
+echo       Start directly in HID Keyboard mode (auto-setup HID service)
 echo.
 echo   launch-ucx-windows-app.cmd clean
 echo       Clean all configurations (Debug and Release)
