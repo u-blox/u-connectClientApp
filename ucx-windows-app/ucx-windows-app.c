@@ -448,6 +448,43 @@ static const uint8_t kSpsCreditsCharUuid[16] = {
     0xe7,0x44,0xf3,0x4f,0x04,0xe9,0xd7,0x01
 };
 
+// 128-bit UUIDs for Nordic Wi-Fi Provisioning Service
+// Spec: https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/bluetooth/services/wifi_prov.html
+// Service UUID: 14387800-130c-49e7-b877-2881c89cb258
+static const uint8_t kWifiProvServiceUuid[16] = {
+    0x58,0xb2,0x9c,0xc8,0x81,0x28,0x77,0xb8,
+    0xe7,0x49,0x0c,0x13,0x00,0x78,0x38,0x14
+};
+// Info characteristic (read): 14387801-130c-49e7-b877-2881c89cb258
+static const uint8_t kWifiProvInfoCharUuid[16] = {
+    0x58,0xb2,0x9c,0xc8,0x81,0x28,0x77,0xb8,
+    0xe7,0x49,0x0c,0x13,0x01,0x78,0x38,0x14
+};
+// Control Point characteristic (write): 14387802-130c-49e7-b877-2881c89cb258
+static const uint8_t kWifiProvCtrlCharUuid[16] = {
+    0x58,0xb2,0x9c,0xc8,0x81,0x28,0x77,0xb8,
+    0xe7,0x49,0x0c,0x13,0x02,0x78,0x38,0x14
+};
+// Data Out characteristic (notify): 14387803-130c-49e7-b877-2881c89cb258
+static const uint8_t kWifiProvDataCharUuid[16] = {
+    0x58,0xb2,0x9c,0xc8,0x81,0x28,0x77,0xb8,
+    0xe7,0x49,0x0c,0x13,0x03,0x78,0x38,0x14
+};
+
+// GATT Server - Nordic Wi-Fi Provisioning Service handles
+static int32_t gWifiProvServerServiceHandle = -1;
+static int32_t gWifiProvServerInfoHandle = -1;
+static int32_t gWifiProvServerCtrlHandle = -1;
+static int32_t gWifiProvServerDataHandle = -1;
+static int32_t gWifiProvServerDataCccdHandle = -1;
+static bool gWifiProvServerNotifyEnabled = false;
+
+// GATT Client - Nordic Wi-Fi Provisioning Service handles
+static int32_t gWifiProvClientServiceIndex = -1;
+static int32_t gWifiProvClientInfoHandle = -1;
+static int32_t gWifiProvClientCtrlHandle = -1;
+static int32_t gWifiProvClientDataHandle = -1;
+
 // Bluetooth state tracking
 static bool gBluetoothAdvertising = false;         // Advertising/discoverable state
 static char gBluetoothLocalAddress[18] = "";       // Local BT address (XX:XX:XX:XX:XX:XX)
@@ -1186,6 +1223,9 @@ static void gattServerSetupBatteryOnly(void);
 static void gattServerSetupEnvSensing(void);
 static void gattServerSetupNusService(void);
 static void gattServerSetupSpsService(void);
+static void gattServerSetupWifiProvService(void);
+static void gattClientWifiProvExample(void);
+static bool gattClientFindWifiProvHandles(void);
 static void gattServerSetupLocationService(void);
 static void gattClientReadCurrentTime(void);
 static void gattServerSetupCtsService(void);
@@ -1260,6 +1300,9 @@ static void gattClientSubscribeSps(bool enableFlowControl);
 static void gattClientSpsSend(const char *msg);
 static void gattClientSpsSendCredits(int8_t credits);
 static void gattClientSpsExample(void);
+static void wifiProvParseResponse(const uint8_t *data, size_t len);
+static void gattClientSubscribeWifiProv(void);
+static void gattClientWifiProvSendCommand(const char *cmd);
 static void basParseBatteryLevel(const uint8_t *data, size_t len);
 static bool gattClientFindBasHandles(void);
 static void gattClientReadBattery(void);
@@ -7540,6 +7583,144 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
         }
         return;
     }
+
+    // Handle Wi-Fi Provisioning Control Point writes
+    if (gWifiProvServerCtrlHandle > 0 && value_handle == gWifiProvServerCtrlHandle) {
+        // Null-terminate the command
+        char cmd[257];
+        size_t len = value->length < 256 ? value->length : 256;
+        memcpy(cmd, value->pData, len);
+        cmd[len] = '\0';
+        
+        printf("\n[WiFi Prov] Command received: %s\n", cmd);
+        
+        char response[256] = {0};
+        
+        // Parse command
+        if (strncmp(cmd, "SET_CONFIG:", 11) == 0) {
+            // Parse SET_CONFIG:<SSID>:<PASSWORD>:<AUTH>
+            char ssid[64] = {0}, password[64] = {0}, auth[16] = {0};
+            char *ptr = cmd + 11;
+            char *sep1 = strchr(ptr, ':');
+            if (sep1) {
+                size_t ssidLen = (size_t)(sep1 - ptr);
+                if (ssidLen < sizeof(ssid)) {
+                    strncpy(ssid, ptr, ssidLen);
+                    ssid[ssidLen] = '\0';
+                }
+                char *sep2 = strchr(sep1 + 1, ':');
+                if (sep2) {
+                    size_t passLen = (size_t)(sep2 - sep1 - 1);
+                    if (passLen < sizeof(password)) {
+                        strncpy(password, sep1 + 1, passLen);
+                        password[passLen] = '\0';
+                    }
+                    strncpy(auth, sep2 + 1, sizeof(auth) - 1);
+                }
+            }
+            
+            if (strlen(ssid) > 0) {
+                printf("[WiFi Prov] Configuring: SSID='%s', Auth=%s\n", ssid, auth);
+                
+                // Set connection parameters (SSID)
+                int32_t result = uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid);
+                if (result != 0) {
+                    snprintf(response, sizeof(response), "ERROR:SET_SSID_FAILED:%d", result);
+                } else {
+                    // Set security based on auth type
+                    if (strcmp(auth, "OPEN") == 0) {
+                        result = uCxWifiStationSetSecurityOpen(&gUcxHandle, 0);
+                    } else {
+                        // WPA2 or WPA3 - use threshold
+                        uWifiWpaThreshold_t threshold = U_WIFI_WPA_THRESHOLD_WPA2;
+                        if (strcmp(auth, "WPA3") == 0) {
+                            threshold = U_WIFI_WPA_THRESHOLD_WPA3;
+                        }
+                        result = uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, password, threshold);
+                    }
+                    
+                    if (result == 0) {
+                        result = uCxWifiStationConnect(&gUcxHandle, 0);
+                        if (result == 0) {
+                            snprintf(response, sizeof(response), "OK:CONNECTING:%s", ssid);
+                        } else {
+                            snprintf(response, sizeof(response), "ERROR:CONNECT_FAILED:%d", result);
+                        }
+                    } else {
+                        snprintf(response, sizeof(response), "ERROR:AUTH_FAILED:%d", result);
+                    }
+                }
+            } else {
+                snprintf(response, sizeof(response), "ERROR:INVALID_CONFIG");
+            }
+        }
+        else if (strcmp(cmd, "GET_STATUS") == 0) {
+            // Get current Wi-Fi status
+            if (gWifiConnected) {
+                snprintf(response, sizeof(response), "STATUS:CONNECTED:%s:%s", gWifiSsid, gWifiIpAddress);
+            } else {
+                snprintf(response, sizeof(response), "STATUS:DISCONNECTED");
+            }
+        }
+        else if (strcmp(cmd, "START_SCAN") == 0) {
+            // Start Wi-Fi scan (async - results will be sent via URCs separately)
+            printf("[WiFi Prov] Starting Wi-Fi scan...\n");
+            snprintf(response, sizeof(response), "OK:SCAN_STARTED");
+            // Note: Scan results would be sent via separate notifications
+            // For now, just acknowledge the command
+        }
+        else if (strcmp(cmd, "CONNECT") == 0) {
+            // Connect using stored configuration (config_id 0)
+            int32_t result = uCxWifiStationConnect(&gUcxHandle, 0);
+            if (result == 0) {
+                snprintf(response, sizeof(response), "OK:CONNECTING");
+            } else {
+                snprintf(response, sizeof(response), "ERROR:CONNECT_FAILED:%d", result);
+            }
+        }
+        else if (strcmp(cmd, "FORGET") == 0) {
+            // Clear stored credentials
+            int32_t result = uCxWifiStationDisconnect(&gUcxHandle);
+            gWifiSsid[0] = '\0';
+            gWifiIpAddress[0] = '\0';
+            gWifiConnected = false;
+            snprintf(response, sizeof(response), "OK:FORGOTTEN");
+            (void)result;
+        }
+        else {
+            snprintf(response, sizeof(response), "ERROR:UNKNOWN_CMD");
+        }
+        
+        // Send response via Data Out notification
+        if (gWifiProvServerNotifyEnabled && strlen(response) > 0) {
+            int32_t result = uCxGattServerSendNotification(&gUcxHandle, conn_handle,
+                                                           gWifiProvServerDataHandle,
+                                                           (uint8_t*)response, (int32_t)strlen(response));
+            if (result == 0) {
+                printf("[WiFi Prov] Response sent: %s\n", response);
+            } else {
+                printf("[WiFi Prov] Failed to send response (code %d)\n", result);
+            }
+        } else {
+            printf("[WiFi Prov] Response (no notify): %s\n", response);
+        }
+        return;
+    }
+
+    // Handle Wi-Fi Provisioning Data CCCD writes
+    if (gWifiProvServerDataCccdHandle > 0 && value_handle == gWifiProvServerDataCccdHandle) {
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            if (cccdValue & 0x0001) {
+                printf("\n[WiFi Prov] Client enabled notifications\n");
+                gWifiProvServerNotifyEnabled = true;
+            } else {
+                printf("\n[WiFi Prov] Client disabled notifications\n");
+                gWifiProvServerNotifyEnabled = false;
+            }
+        }
+        return;
+    }
 }
 
 // GATT Server URC handler - called when client reads a characteristic
@@ -7894,6 +8075,12 @@ static void gattClientNotificationUrc(struct uCxHandle *puCxHandle,
     // SERIAL PORT SERVICE (SPS) - Credits (Notify/Indicate) --------
     if (value_handle == gSpsClientCreditsValueHandle) {
         spsParseCredits(hex_data->pData, hex_data->length);
+        return;
+    }
+
+    // WI-FI PROVISIONING SERVICE - Data Out (Notify) ---------------
+    if (value_handle == gWifiProvClientDataHandle) {
+        wifiProvParseResponse(hex_data->pData, hex_data->length);
         return;
     }
 
@@ -9160,6 +9347,277 @@ static void gattClientSpsExample(void)
     }
 
     printf("[SPS] Client finished\n");
+}
+
+// ============================================================================
+// GATT CLIENT - NORDIC WI-FI PROVISIONING SERVICE
+// Spec: https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/bluetooth/services/wifi_prov.html
+// ============================================================================
+// Connect to a remote device that exposes the Wi-Fi Provisioning service
+// and configure its Wi-Fi credentials.
+
+// Parse Wi-Fi Provisioning response notification
+static void wifiProvParseResponse(const uint8_t *data, size_t len)
+{
+    if (len == 0) {
+        printf("[WiFi Prov] Empty response\n");
+        return;
+    }
+
+    // Null-terminate for string parsing
+    char response[257];
+    size_t copyLen = len < 256 ? len : 256;
+    memcpy(response, data, copyLen);
+    response[copyLen] = '\0';
+
+    printf("[WiFi Prov] Response: %s\n", response);
+
+    // Parse response type
+    if (strncmp(response, "STATUS:", 7) == 0) {
+        // STATUS:CONNECTED:<SSID>:<IP> or STATUS:DISCONNECTED
+        char *status = response + 7;
+        char *sep = strchr(status, ':');
+        if (sep) {
+            *sep = '\0';
+            printf("  Status: %s\n", status);
+            char *ssid = sep + 1;
+            sep = strchr(ssid, ':');
+            if (sep) {
+                *sep = '\0';
+                printf("  SSID: %s\n", ssid);
+                printf("  IP: %s\n", sep + 1);
+            } else {
+                printf("  SSID: %s\n", ssid);
+            }
+        } else {
+            printf("  Status: %s\n", status);
+        }
+    }
+    else if (strncmp(response, "ERROR:", 6) == 0) {
+        printf("  Error: %s\n", response + 6);
+    }
+    else if (strncmp(response, "OK:", 3) == 0) {
+        printf("  OK: %s\n", response + 3);
+    }
+    else if (strncmp(response, "SCAN_RESULT:", 12) == 0) {
+        printf("  Scan Result: %s\n", response + 12);
+    }
+}
+
+// Find Wi-Fi Provisioning service and characteristics
+static bool gattClientFindWifiProvHandles(void)
+{
+    gWifiProvClientServiceIndex = -1;
+    gWifiProvClientInfoHandle = -1;
+    gWifiProvClientCtrlHandle = -1;
+    gWifiProvClientDataHandle = -1;
+
+    // 1) Find the 128-bit WiFi Provisioning service
+    gWifiProvClientServiceIndex = findServiceByUuid128(kWifiProvServiceUuid);
+    if (gWifiProvClientServiceIndex < 0) {
+        printf("[WiFi Prov] Service not found (UUID: 14387800-130c-49e7-...)\n");
+        return false;
+    }
+
+    printf("[WiFi Prov] Found service at index %d\n", gWifiProvClientServiceIndex);
+
+    // 2) Find Info characteristic
+    for (int i = 0; i < gGattCharacteristicCount; i++) {
+        GattCharacteristic_t *ch = &gGattCharacteristics[i];
+        if (ch->connHandle != gGattServices[gWifiProvClientServiceIndex].connHandle)
+            continue;
+        if (ch->uuidLength == 16 && memcmp(ch->uuid, kWifiProvInfoCharUuid, 16) == 0) {
+            gWifiProvClientInfoHandle = ch->valueHandle;
+            printf("[WiFi Prov] Info handle=0x%04X\n", gWifiProvClientInfoHandle);
+        }
+    }
+
+    // 3) Find Control Point characteristic
+    for (int i = 0; i < gGattCharacteristicCount; i++) {
+        GattCharacteristic_t *ch = &gGattCharacteristics[i];
+        if (ch->connHandle != gGattServices[gWifiProvClientServiceIndex].connHandle)
+            continue;
+        if (ch->uuidLength == 16 && memcmp(ch->uuid, kWifiProvCtrlCharUuid, 16) == 0) {
+            gWifiProvClientCtrlHandle = ch->valueHandle;
+            printf("[WiFi Prov] Control Point handle=0x%04X\n", gWifiProvClientCtrlHandle);
+        }
+    }
+
+    // 4) Find Data Out characteristic
+    for (int i = 0; i < gGattCharacteristicCount; i++) {
+        GattCharacteristic_t *ch = &gGattCharacteristics[i];
+        if (ch->connHandle != gGattServices[gWifiProvClientServiceIndex].connHandle)
+            continue;
+        if (ch->uuidLength == 16 && memcmp(ch->uuid, kWifiProvDataCharUuid, 16) == 0) {
+            gWifiProvClientDataHandle = ch->valueHandle;
+            printf("[WiFi Prov] Data Out handle=0x%04X CCCD=0x%04X\n",
+                   gWifiProvClientDataHandle, gWifiProvClientDataHandle + 1);
+        }
+    }
+
+    if (gWifiProvClientCtrlHandle < 0) {
+        printf("[WiFi Prov] Missing Control Point characteristic\n");
+        return false;
+    }
+
+    if (gWifiProvClientDataHandle < 0) {
+        printf("[WiFi Prov] Missing Data Out characteristic\n");
+        return false;
+    }
+
+    return true;
+}
+
+// Subscribe to Data Out notifications
+static void gattClientSubscribeWifiProv(void)
+{
+    if (gWifiProvClientDataHandle < 0) {
+        printf("[WiFi Prov] Invalid Data handle\n");
+        return;
+    }
+
+    int32_t cccdHandle = gWifiProvClientDataHandle + 1;
+    uint8_t cccd[2] = {0x01, 0x00};  // Enable notifications
+
+    int32_t result = uCxGattClientWrite(&gUcxHandle, gCurrentGattConnHandle,
+                                        cccdHandle, cccd, sizeof(cccd));
+    if (result == 0) {
+        printf("[WiFi Prov] Subscribed to Data Out notifications\n");
+    } else {
+        printf("[WiFi Prov] Failed to enable notifications (code %d)\n", result);
+    }
+}
+
+// Send command to Control Point
+static void gattClientWifiProvSendCommand(const char *cmd)
+{
+    if (gWifiProvClientCtrlHandle < 0) {
+        printf("[WiFi Prov] Control Point handle invalid\n");
+        return;
+    }
+
+    size_t len = strlen(cmd);
+    int32_t result = uCxGattClientWrite(&gUcxHandle, gCurrentGattConnHandle,
+                                        gWifiProvClientCtrlHandle,
+                                        (uint8_t *)cmd, (int32_t)len);
+    if (result == 0) {
+        printf("[WiFi Prov] Command sent: %s\n", cmd);
+    } else {
+        printf("[WiFi Prov] Failed to send command (code %d)\n", result);
+    }
+}
+
+// Wi-Fi Provisioning client example
+static void gattClientWifiProvExample(void)
+{
+    printf("\n--- GATT Client: Nordic Wi-Fi Provisioning Service ---\n");
+    printf("Spec: https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/bluetooth/services/wifi_prov.html\n");
+    printf("Connect to a remote device to configure its Wi-Fi credentials.\n\n");
+
+    if (!gUcxConnected || gCurrentGattConnHandle < 0) {
+        printf("ERROR: No active GATT connection\n");
+        return;
+    }
+
+    // 1. Discover services/characteristics
+    gattClientDiscoverServices();
+    gattClientDiscoverCharacteristics();
+
+    // 2. Find Wi-Fi Provisioning handles
+    if (!gattClientFindWifiProvHandles())
+        return;
+
+    // 3. Read device info if available
+    if (gWifiProvClientInfoHandle > 0) {
+        uint8_t buf[64];
+        uByteArray_t value;
+        value.pData = buf;
+        value.length = 0;
+        
+        bool success = uCxGattClientReadBegin(&gUcxHandle, gCurrentGattConnHandle,
+                                              gWifiProvClientInfoHandle, &value);
+        int32_t result = uCxEnd(&gUcxHandle);
+        if (success && result == 0 && value.length > 0) {
+            printf("[WiFi Prov] Device Info: %.*s\n\n", (int)value.length, value.pData);
+        }
+    }
+
+    // 4. Subscribe to Data Out notifications
+    gattClientSubscribeWifiProv();
+
+    printf("\n[WiFi Prov] Client ready\n");
+    printf("Commands:\n");
+    printf("  status  - Get current Wi-Fi status\n");
+    printf("  scan    - Start Wi-Fi scan\n");
+    printf("  config  - Configure Wi-Fi credentials\n");
+    printf("  connect - Connect to configured network\n");
+    printf("  forget  - Clear stored credentials\n");
+    printf("  exit    - Exit\n\n");
+
+    // 5. Interactive command loop
+    while (1) {
+        char cmd[256];
+        printf("WiFi> ");
+        fflush(stdout);
+
+        if (!fgets(cmd, sizeof(cmd), stdin))
+            break;
+
+        cmd[strcspn(cmd, "\r\n")] = 0;  // Strip newline
+
+        if (strcmp(cmd, "exit") == 0)
+            break;
+
+        if (strcmp(cmd, "status") == 0) {
+            gattClientWifiProvSendCommand("GET_STATUS");
+        }
+        else if (strcmp(cmd, "scan") == 0) {
+            gattClientWifiProvSendCommand("START_SCAN");
+        }
+        else if (strcmp(cmd, "connect") == 0) {
+            gattClientWifiProvSendCommand("CONNECT");
+        }
+        else if (strcmp(cmd, "forget") == 0) {
+            gattClientWifiProvSendCommand("FORGET");
+        }
+        else if (strcmp(cmd, "config") == 0) {
+            char ssid[64], password[64], auth[16];
+            
+            printf("Enter SSID: ");
+            fflush(stdout);
+            if (fgets(ssid, sizeof(ssid), stdin)) {
+                ssid[strcspn(ssid, "\r\n")] = 0;
+            }
+            
+            printf("Enter Password: ");
+            fflush(stdout);
+            if (fgets(password, sizeof(password), stdin)) {
+                password[strcspn(password, "\r\n")] = 0;
+            }
+            
+            printf("Auth type (OPEN/WPA2/WPA3) [WPA2]: ");
+            fflush(stdout);
+            if (fgets(auth, sizeof(auth), stdin)) {
+                auth[strcspn(auth, "\r\n")] = 0;
+            }
+            if (strlen(auth) == 0) {
+                strcpy(auth, "WPA2");
+            }
+            
+            char configCmd[256];
+            snprintf(configCmd, sizeof(configCmd), "SET_CONFIG:%s:%s:%s", ssid, password, auth);
+            gattClientWifiProvSendCommand(configCmd);
+        }
+        else if (strlen(cmd) > 0) {
+            // Send raw command
+            gattClientWifiProvSendCommand(cmd);
+        }
+
+        // Wait briefly for response
+        U_CX_PORT_SLEEP_MS(200);
+    }
+
+    printf("[WiFi Prov] Client finished\n");
 }
 
 // ============================================================================
@@ -11024,6 +11482,143 @@ static void gattServerSetupSpsService(void)
         printf("  1. Connected to the GATT server\n");
         printf("  2. Written 0x0001 to FIFO CCCD handle %d to enable notifications\n", gSpsServerFifoCccdHandle);
     }
+    
+    printf("\n");
+}
+
+// ============================================================================
+// GATT SERVER - NORDIC WI-FI PROVISIONING SERVICE
+// Spec: https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/bluetooth/services/wifi_prov.html
+// ============================================================================
+// This service allows remote BLE clients (e.g., nRF Toolbox, nRF Connect) to
+// configure Wi-Fi credentials on the device. The protocol uses a simplified
+// text-based format for demonstration purposes.
+//
+// Protocol (simplified, non-protobuf):
+// - Control Point writes:
+//   SET_CONFIG:<SSID>:<PASSWORD>:<AUTH_TYPE>  - Set Wi-Fi credentials
+//   START_SCAN                                 - Request Wi-Fi scan
+//   GET_STATUS                                 - Get current Wi-Fi status
+//   CONNECT                                    - Connect using stored credentials
+//   FORGET                                     - Clear stored credentials
+// - Data Out notifications:
+//   STATUS:<CONNECTED|DISCONNECTED|ERROR>:<SSID>:<IP>
+//   SCAN_RESULT:<RSSI>:<SSID>
+//   OK / ERROR:<message>
+// ============================================================================
+
+static void gattServerSetupWifiProvService(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+
+    printf("\n--- GATT Server: Nordic Wi-Fi Provisioning ---\n");
+    printf("Spec: https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/bluetooth/services/wifi_prov.html\n");
+    printf("Service UUID: 14387800-130c-49e7-b877-2881c89cb258\n\n");
+    
+    // Ensure legacy advertisements are enabled for incoming connections
+    if (!ensureLegacyAdvertisementEnabled()) {
+        printf("WARNING: Failed to enable advertisements - remote devices may not connect\n");
+    }
+    printf("\n");
+
+    // Define Wi-Fi Provisioning service (128-bit UUID)
+    int32_t result = uCxGattServerServiceDefine(&gUcxHandle,
+                                                (uint8_t *)kWifiProvServiceUuid, 16,
+                                                &gWifiProvServerServiceHandle);
+    if (result != 0) {
+        printf("ERROR: Failed to define Wi-Fi Provisioning service (code %d)\n", result);
+        return;
+    }
+    printf("✓ Wi-Fi Provisioning service handle=%d\n", gWifiProvServerServiceHandle);
+
+    // Info characteristic (Read) - returns device/service version info
+    uint8_t propsRead[] = {0x02}; // Read
+    uint8_t infoInit[] = "NORA-W36 WiFi-Prov 1.0";
+    uCxGattServerCharDefine_t infoRsp;
+    result = uCxGattServerCharDefine6(&gUcxHandle,
+                                      (uint8_t *)kWifiProvInfoCharUuid, 16,
+                                      propsRead, 1,
+                                      U_GATT_SERVER_READ_SECURITY_NONE,
+                                      U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                      infoInit, sizeof(infoInit) - 1,
+                                      64,
+                                      &infoRsp);
+    if (result != 0) {
+        printf("ERROR: Failed to add Info characteristic (code %d)\n", result);
+        return;
+    }
+    gWifiProvServerInfoHandle = infoRsp.value_handle;
+    printf("✓ Info characteristic handle=%d\n", gWifiProvServerInfoHandle);
+
+    // Control Point characteristic (Write) - receives commands
+    uint8_t propsWrite[] = {0x08}; // Write
+    uint8_t ctrlInit[1] = {0x00};
+    uCxGattServerCharDefine_t ctrlRsp;
+    result = uCxGattServerCharDefine6(&gUcxHandle,
+                                      (uint8_t *)kWifiProvCtrlCharUuid, 16,
+                                      propsWrite, 1,
+                                      U_GATT_SERVER_READ_SECURITY_NONE,
+                                      U_GATT_SERVER_WRITE_SECURITY_UNAUTHENTICATED,
+                                      ctrlInit, sizeof(ctrlInit),
+                                      256,  // Max command length (SSID + password)
+                                      &ctrlRsp);
+    if (result != 0) {
+        printf("ERROR: Failed to add Control Point characteristic (code %d)\n", result);
+        return;
+    }
+    gWifiProvServerCtrlHandle = ctrlRsp.value_handle;
+    printf("✓ Control Point characteristic handle=%d\n", gWifiProvServerCtrlHandle);
+
+    // Data Out characteristic (Notify) - sends responses/status
+    uint8_t propsNotify[] = {0x10}; // Notify
+    uint8_t dataInit[1] = {0x00};
+    uCxGattServerCharDefine_t dataRsp;
+    result = uCxGattServerCharDefine6(&gUcxHandle,
+                                      (uint8_t *)kWifiProvDataCharUuid, 16,
+                                      propsNotify, 1,
+                                      U_GATT_SERVER_READ_SECURITY_NONE,
+                                      U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                      dataInit, sizeof(dataInit),
+                                      256,  // Max response length
+                                      &dataRsp);
+    if (result != 0) {
+        printf("ERROR: Failed to add Data Out characteristic (code %d)\n", result);
+        return;
+    }
+    gWifiProvServerDataHandle = dataRsp.value_handle;
+    gWifiProvServerDataCccdHandle = dataRsp.cccd_handle;
+    printf("✓ Data Out characteristic handle=%d, CCCD=%d\n",
+           gWifiProvServerDataHandle, gWifiProvServerDataCccdHandle);
+
+    // Activate service
+    result = uCxGattServerServiceActivate(&gUcxHandle);
+    if (result != 0) {
+        printf("ERROR: Failed to activate Wi-Fi Provisioning service (code %d)\n", result);
+        return;
+    }
+    printf("✓ Wi-Fi Provisioning service activated\n\n");
+    
+    // Show connection info
+    showGattServerConnectionInfo();
+    
+    printf("Waiting for BLE client to connect...\n");
+    printf("Use nRF Connect or nRF Toolbox to connect and send commands.\n\n");
+    printf("Supported commands (write to Control Point):\n");
+    printf("  SET_CONFIG:<SSID>:<PASSWORD>:<AUTH>  - Set credentials (AUTH: OPEN/WPA2/WPA3)\n");
+    printf("  GET_STATUS                            - Get Wi-Fi status\n");
+    printf("  START_SCAN                            - Scan for networks\n");
+    printf("  CONNECT                               - Connect to configured network\n");
+    printf("  FORGET                                - Clear stored credentials\n\n");
+    
+    printf("Press Enter when client has connected...\n");
+    getchar();
+    
+    printf("\n[Wi-Fi Prov] Service running. Commands will be processed via URCs.\n");
+    printf("Press Enter to exit service mode...\n");
+    getchar();
     
     printf("\n");
 }
@@ -21794,6 +22389,7 @@ static void printMenu(void)
             printf("  [l] Location & Navigation (LNS) - GPS coordinates\n");
             printf("  [c] Current Time Service (CTS) - Broadcast PC time\n");
             printf("  [a] Automation IO Service - Digital + Analog I/O\n");
+            printf("  [w] Nordic Wi-Fi Provisioning - Configure Wi-Fi via BLE\n");
             printf("\n");
             printf("  [k] HID Keyboard + Battery - Full HID device\n");
             printf("\n");
@@ -21833,6 +22429,7 @@ static void printMenu(void)
             printf("  [b] Battery Service (BAS) - battery percentage\n");
             printf("  [d] Device Information Service (DIS) - device details\n");
             printf("  [a] Automation IO (AIO) - digital + analog I/O\n");
+            printf("  [w] Nordic Wi-Fi Provisioning - Configure remote Wi-Fi\n");
             printf("\n");
             printf("  [j] GATT Client generic operations\n");
             printf("  [0] Back to main menu  [q] Quit\n");
@@ -22948,6 +23545,10 @@ static void handleUserInput(void)
                             gattServerSetupCtsService();  // Current Time Service (Server)
                             break;
                         }
+                        if (firstChar == 'w') {
+                            gattServerSetupWifiProvService();  // Wi-Fi Provisioning Service
+                            break;
+                        }
                         // Navigation to other GATT menus
                         if (firstChar == 'g') {
                             // Navigate to GATT Client menu
@@ -23037,6 +23638,10 @@ static void handleUserInput(void)
                         }
                         if (firstChar == 'a') {
                             gattClientAioExample();
+                            break;
+                        }
+                        if (firstChar == 'w') {
+                            gattClientWifiProvExample();
                             break;
                         }
                         // Navigation to GATT Client generic operations
