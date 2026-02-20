@@ -53,10 +53,19 @@
 #include <setupapi.h>  // For device enumeration
 #include <devguid.h>   // For GUID_DEVCLASS_PORTS
 #include <regstr.h>    // For registry string constants
+#include <cfgmgr32.h>  // For CM_Get_Parent, CM_Get_DevNode_PropertyW
+#include <devpropdef.h> // For DEVPROPKEY type
+
+// Define DEVPKEY_Device_BusReportedDeviceDesc manually to avoid INITGUID issues
+// {540b947e-8b40-45bc-a8a2-6a0b894cbda2}, 4
+static const DEVPROPKEY MY_DEVPKEY_BusReportedDeviceDesc = {
+    {0x540b947e, 0x8b40, 0x45bc, {0xa8, 0xa2, 0x6a, 0x0b, 0x89, 0x4c, 0xbd, 0xa2}}, 4
+};
 #include <wincrypt.h>  // For SHA256 hash calculation
 
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "setupapi.lib")
+#pragma comment(lib, "cfgmgr32.lib")  // Configuration Manager for device tree
 #pragma comment(lib, "ws2_32.lib")  // Windows Sockets library
 #pragma comment(lib, "iphlpapi.lib")  // IP Helper API library
 #pragma comment(lib, "crypt32.lib")  // Windows Crypto API
@@ -9421,34 +9430,22 @@ static bool gattClientFindWifiProvHandles(void)
 
     printf("[WiFi Prov] Found service at index %d\n", gWifiProvClientServiceIndex);
 
-    // 2) Find Info characteristic
+    // 2) Find Info, Control Point, and Data Out characteristics in a single pass
+    int32_t svcConnHandle = gGattServices[gWifiProvClientServiceIndex].connHandle;
     for (int i = 0; i < gGattCharacteristicCount; i++) {
         GattCharacteristic_t *ch = &gGattCharacteristics[i];
-        if (ch->connHandle != gGattServices[gWifiProvClientServiceIndex].connHandle)
+        if (ch->connHandle != svcConnHandle || ch->uuidLength != 16)
             continue;
-        if (ch->uuidLength == 16 && memcmp(ch->uuid, kWifiProvInfoCharUuid, 16) == 0) {
+
+        if (memcmp(ch->uuid, kWifiProvInfoCharUuid, 16) == 0) {
             gWifiProvClientInfoHandle = ch->valueHandle;
             printf("[WiFi Prov] Info handle=0x%04X\n", gWifiProvClientInfoHandle);
         }
-    }
-
-    // 3) Find Control Point characteristic
-    for (int i = 0; i < gGattCharacteristicCount; i++) {
-        GattCharacteristic_t *ch = &gGattCharacteristics[i];
-        if (ch->connHandle != gGattServices[gWifiProvClientServiceIndex].connHandle)
-            continue;
-        if (ch->uuidLength == 16 && memcmp(ch->uuid, kWifiProvCtrlCharUuid, 16) == 0) {
+        else if (memcmp(ch->uuid, kWifiProvCtrlCharUuid, 16) == 0) {
             gWifiProvClientCtrlHandle = ch->valueHandle;
             printf("[WiFi Prov] Control Point handle=0x%04X\n", gWifiProvClientCtrlHandle);
         }
-    }
-
-    // 4) Find Data Out characteristic
-    for (int i = 0; i < gGattCharacteristicCount; i++) {
-        GattCharacteristic_t *ch = &gGattCharacteristics[i];
-        if (ch->connHandle != gGattServices[gWifiProvClientServiceIndex].connHandle)
-            continue;
-        if (ch->uuidLength == 16 && memcmp(ch->uuid, kWifiProvDataCharUuid, 16) == 0) {
+        else if (memcmp(ch->uuid, kWifiProvDataCharUuid, 16) == 0) {
             gWifiProvClientDataHandle = ch->valueHandle;
             printf("[WiFi Prov] Data Out handle=0x%04X CCCD=0x%04X\n",
                    gWifiProvClientDataHandle, gWifiProvClientDataHandle + 1);
@@ -9479,8 +9476,8 @@ static void gattClientSubscribeWifiProv(void)
     int32_t cccdHandle = gWifiProvClientDataHandle + 1;
     uint8_t cccd[2] = {0x01, 0x00};  // Enable notifications
 
-    int32_t result = uCxGattClientWrite(&gUcxHandle, gCurrentGattConnHandle,
-                                        cccdHandle, cccd, sizeof(cccd));
+    int32_t result = uCxGattClientWriteNoRsp(&gUcxHandle, gCurrentGattConnHandle,
+                                             cccdHandle, cccd, sizeof(cccd));
     if (result == 0) {
         printf("[WiFi Prov] Subscribed to Data Out notifications\n");
     } else {
@@ -9514,8 +9511,15 @@ static void gattClientWifiProvExample(void)
     printf("Spec: https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/bluetooth/services/wifi_prov.html\n");
     printf("Connect to a remote device to configure its Wi-Fi credentials.\n\n");
 
-    if (!gUcxConnected || gCurrentGattConnHandle < 0) {
-        printf("ERROR: No active GATT connection\n");
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device. Use [c] to connect first.\n");
+        return;
+    }
+
+    if (gCurrentGattConnHandle < 0) {
+        printf("ERROR: No active BLE connection to a remote device.\n");
+        printf("Use the Bluetooth menu [b] to connect to a device running\n");
+        printf("the Wi-Fi Provisioning service first.\n");
         return;
     }
 
@@ -11563,7 +11567,7 @@ static void gattServerSetupWifiProvService(void)
                                       U_GATT_SERVER_READ_SECURITY_NONE,
                                       U_GATT_SERVER_WRITE_SECURITY_UNAUTHENTICATED,
                                       ctrlInit, sizeof(ctrlInit),
-                                      256,  // Max command length (SSID + password)
+                                      244,  // Max ATT value is 244 bytes
                                       &ctrlRsp);
     if (result != 0) {
         printf("ERROR: Failed to add Control Point characteristic (code %d)\n", result);
@@ -11582,7 +11586,7 @@ static void gattServerSetupWifiProvService(void)
                                       U_GATT_SERVER_READ_SECURITY_NONE,
                                       U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       dataInit, sizeof(dataInit),
-                                      256,  // Max response length
+                                      244,  // Max ATT value is 244 bytes
                                       &dataRsp);
     if (result != 0) {
         printf("ERROR: Failed to add Data Out characteristic (code %d)\n", result);
@@ -25380,27 +25384,57 @@ static bool initFtd2xxLibrary(void)
                 GetTempPath(MAX_PATH, dllPath);
                 strcat(dllPath, "ftd2xx64_embedded.dll");
                 
-                // Write DLL to temp file
-                HANDLE hFile = CreateFile(dllPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-                if (hFile != INVALID_HANDLE_VALUE) {
-                    DWORD dwBytesWritten;
-                    if (WriteFile(hFile, pResourceData, dwResourceSize, &dwBytesWritten, NULL)) {
-                        if (dwBytesWritten == dwResourceSize) {
-                            dllExtracted = true;
-                            printf("Extracted embedded FTDI DLL to: %s\n", dllPath);
-                        }
+                // Check if already extracted and correct size
+                WIN32_FILE_ATTRIBUTE_DATA fileAttr;
+                bool needsExtract = true;
+                if (GetFileAttributesEx(dllPath, GetFileExInfoStandard, &fileAttr)) {
+                    if (fileAttr.nFileSizeLow == dwResourceSize && fileAttr.nFileSizeHigh == 0) {
+                        needsExtract = false;
+                        dllExtracted = true;
                     }
-                    CloseHandle(hFile);
                 }
+                
+                if (needsExtract) {
+                    // Write DLL to temp file
+                    HANDLE hFile = CreateFile(dllPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                    if (hFile != INVALID_HANDLE_VALUE) {
+                        DWORD dwBytesWritten;
+                        if (WriteFile(hFile, pResourceData, dwResourceSize, &dwBytesWritten, NULL)) {
+                            if (dwBytesWritten == dwResourceSize) {
+                                dllExtracted = true;
+                                U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Extracted embedded FTDI DLL (%lu bytes) to: %s",
+                                             dwResourceSize, dllPath);
+                            } else {
+                                U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "FTDI DLL extraction incomplete: wrote %lu of %lu bytes",
+                                             dwBytesWritten, dwResourceSize);
+                            }
+                        } else {
+                            U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "FTDI DLL WriteFile failed, error: %lu", GetLastError());
+                        }
+                        CloseHandle(hFile);
+                    } else {
+                        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to create FTDI DLL temp file: %s, error: %lu",
+                                     dllPath, GetLastError());
+                    }
+                }
+            } else {
+                U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "FTDI DLL resource found but data invalid (size=%lu)",
+                             SizeofResource(NULL, hResource));
             }
+        } else {
+            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "LoadResource failed for embedded FTDI DLL");
         }
+    } else {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No embedded FTDI DLL resource found in executable");
     }
     
     // Step 2: Try to load the extracted DLL
     if (dllExtracted) {
         gFtd2xxModule = LoadLibrary(dllPath);
         if (gFtd2xxModule != NULL) {
-            printf("Loaded embedded FTDI DLL successfully\n");
+            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Loaded FTDI DLL from: %s", dllPath);
+        } else {
+            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "LoadLibrary failed for %s, error: %lu", dllPath, GetLastError());
         }
     }
     
@@ -25422,6 +25456,8 @@ static bool initFtd2xxLibrary(void)
         
         if (gFtd2xxModule != NULL) {
             U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Loaded external FTDI DLL");
+        } else {
+            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Could not load FTDI D2XX library (not critical - using SetupAPI fallback)");
         }
     }
     
@@ -25437,6 +25473,7 @@ static bool initFtd2xxLibrary(void)
     gpFT_Close = (PFN_FT_Close)GetProcAddress(gFtd2xxModule, "FT_Close");
     
     if (!gpFT_ListDevices || !gpFT_Open || !gpFT_GetComPortNumber || !gpFT_Close) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "FTDI DLL loaded but missing required functions");
         FreeLibrary(gFtd2xxModule);
         gFtd2xxModule = NULL;
         return false;
@@ -25625,6 +25662,71 @@ static bool getDeviceInfoFromSetupAPI(const char *portName, char *deviceDesc, si
                             }
                         }
                         
+                    }
+                    
+                    // If the friendly name is generic (e.g. "USB Serial Port"),
+                    // walk up the USB device tree to find the real device name.
+                    // This is needed for FTDI-based EVK boards where the VCP driver
+                    // doesn't expose the EEPROM description in the FriendlyName.
+                    if (strstr(friendlyName, "USB Serial Port") && 
+                        !strstr(friendlyName, "NORA") && !strstr(friendlyName, "EVK")) {
+                        DEVINST parentInst, currentInst;
+                        currentInst = deviceInfoData.DevInst;
+                        
+                        // Walk up to 3 levels of parent devices
+                        for (int level = 0; level < 3; level++) {
+                            if (CM_Get_Parent(&parentInst, currentInst, 0) != CR_SUCCESS) {
+                                break;
+                            }
+                            
+                            // Try to get BusReportedDeviceDesc from parent
+                            WCHAR busDesc[256];
+                            ULONG busDescSize = sizeof(busDesc);
+                            DEVPROPTYPE propType;
+                            
+                            if (CM_Get_DevNode_PropertyW(parentInst,
+                                                         &MY_DEVPKEY_BusReportedDeviceDesc,
+                                                         &propType, (PBYTE)busDesc, &busDescSize,
+                                                         0) == CR_SUCCESS &&
+                                propType == DEVPROP_TYPE_STRING) {
+                                // Convert wide string to narrow
+                                char busDescA[256];
+                                WideCharToMultiByte(CP_UTF8, 0, busDesc, -1,
+                                                   busDescA, sizeof(busDescA), NULL, NULL);
+                                
+                                // Check if this contains a known device name
+                                if (strstr(busDescA, "NORA") || strstr(busDescA, "EVK")) {
+                                    // Use the bus-reported description as device name
+                                    snprintf(deviceDesc, deviceDescSize, "%s (%s)",
+                                            busDescA, portName);
+                                    
+                                    // Determine port function from device instance ID
+                                    // FTDI FT4232H channels: A=AT, B=unused, C=LOG, D=unused
+                                    char instanceId[256];
+                                    DWORD instanceIdSize = sizeof(instanceId);
+                                    if (SetupDiGetDeviceInstanceIdA(deviceInfoSet, &deviceInfoData,
+                                                                     instanceId, instanceIdSize,
+                                                                     &instanceIdSize)) {
+                                        // Instance ID format: FTDIBUS\VID_0403+PID_6011+UBX...A\0000
+                                        // The channel letter is the last char before \0000
+                                        char *backslash = strrchr(instanceId, '\\');
+                                        if (backslash && backslash > instanceId) {
+                                            char channel = *(backslash - 1);
+                                            if (channel == 'A') {
+                                                strncpy(portLabel, "AT", portLabelSize - 1);
+                                                portLabel[portLabelSize - 1] = '\0';
+                                            } else if (channel == 'C') {
+                                                strncpy(portLabel, "LOG", portLabelSize - 1);
+                                                portLabel[portLabelSize - 1] = '\0';
+                                            }
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            
+                            currentInst = parentInst;
+                        }
                     }
                     
                     found = true;
