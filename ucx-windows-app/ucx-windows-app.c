@@ -599,6 +599,12 @@ static char gDeviceFirmware[64] = "";         // Firmware version (e.g., "3.1.0"
 static bool gAutoFlashMode = false;
 static char gAutoFlashPath[256] = "";
 
+// Bootloader flash mode (triggered by command-line "bootloader" argument)
+// In bootloader mode, device has no AT interface - it presents a ">" prompt
+// and accepts commands like "x" to start XMODEM transfer
+static bool gBootloaderFlashMode = false;
+static int32_t gBootloaderBaudRate = 115200;  // Default bootloader baud rate
+
 // Auto-HID mode (triggered by command-line "hid" argument)
 static bool gAutoHidMode = false;
 
@@ -1020,6 +1026,7 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - extractZipFile()                 Extract ZIP archive
 //   - saveBinaryFile()                 Save binary to disk
 //   - firmwareUpdateProgress()         Progress callback
+//   - bootloaderFlashFirmware()        Flash via bootloader mode (no AT)
 //   - getProductFirmwarePath()         Get saved firmware path
 //   - setProductFirmwarePath()         Save firmware path
 //
@@ -1092,6 +1099,7 @@ static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortS
 static char* selectComPortFromList(const char *recommendedPort);
 static void listAllApiCommands(void);
 static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred, void *pUserData);
+static bool bootloaderFlashFirmware(const char *comPort, const char *firmwarePath, int32_t baudRate);
 static void httpDownloadProgress(const uint8_t *data, int32_t len);
 static void httpUploadProgress(int32_t bytesSent);
 
@@ -21242,13 +21250,33 @@ int main(int argc, char *argv[])
         gAutoFlashMode = true;
     }
     
+    // Check for "bootloader" argument to enable bootloader flash mode
+    if (argc > 1 && strcmp(argv[1], "bootloader") == 0) {
+        gBootloaderFlashMode = true;
+        // Check for optional baud rate argument: bootloader [baud_rate] [firmware_path]
+        if (argc > 2) {
+            int baud = atoi(argv[2]);
+            if (baud > 0) {
+                gBootloaderBaudRate = baud;
+            } else {
+                // argv[2] is not a baud rate, might be a firmware path
+                strncpy(gAutoFlashPath, argv[2], sizeof(gAutoFlashPath) - 1);
+                gAutoFlashPath[sizeof(gAutoFlashPath) - 1] = '\0';
+            }
+        }
+        if (argc > 3) {
+            strncpy(gAutoFlashPath, argv[3], sizeof(gAutoFlashPath) - 1);
+            gAutoFlashPath[sizeof(gAutoFlashPath) - 1] = '\0';
+        }
+    }
+    
     // Check for "hid" argument to enable auto-HID mode
     if (argc > 1 && strcmp(argv[1], "hid") == 0) {
         gAutoHidMode = true;
     }
     
-    // Check for COM port argument (skip if it's a flag like -v, --version, "flash", or "hid")
-    if (argc > 1 && argv[1][0] != '-' && strcmp(argv[1], "flash") != 0 && strcmp(argv[1], "hid") != 0) {
+    // Check for COM port argument (skip if it's a flag like -v, --version, "flash", "bootloader", or "hid")
+    if (argc > 1 && argv[1][0] != '-' && strcmp(argv[1], "flash") != 0 && strcmp(argv[1], "bootloader") != 0 && strcmp(argv[1], "hid") != 0) {
         strncpy(gComPort, argv[1], sizeof(gComPort) - 1);
         gComPort[sizeof(gComPort) - 1] = '\0';
     } else {
@@ -21345,6 +21373,45 @@ int main(int argc, char *argv[])
         printf("Press Enter to exit...");
         getchar();
         return 0;
+    }
+    
+    // If bootloader mode is enabled, go directly to bootloader flash
+    // Bootloader mode doesn't require AT connection (device has no AT interface)
+    if (gBootloaderFlashMode) {
+        printf("\n");
+        printf("=================================================================\n");
+        printf("  BOOTLOADER FLASH MODE\n");
+        printf("=================================================================\n");
+        printf("  Port: %s\n", gComPort);
+        printf("  Baud: %d\n", (int)gBootloaderBaudRate);
+        if (gAutoFlashPath[0] != '\0') {
+            printf("  Firmware: %s\n", gAutoFlashPath);
+        }
+        printf("=================================================================\n");
+        printf("\n");
+        
+        // Close AT client if it was connected (we need raw UART access)
+        if (autoConnected) {
+            uCxAtClientClose(&gUcxAtClient);
+            gUcxConnected = false;
+            gUartHandle = NULL;
+        }
+        
+        if (gAutoFlashPath[0] != '\0') {
+            // Flash directly with the provided firmware path
+            bool success = bootloaderFlashFirmware(gComPort, gAutoFlashPath, gBootloaderBaudRate);
+            if (success) {
+                printf("\nBootloader flash completed successfully!\n");
+            } else {
+                printf("\nBootloader flash failed!\n");
+            }
+            printf("\nPress Enter to exit...");
+            getchar();
+            return success ? 0 : 1;
+        } else {
+            // No firmware path specified, go to firmware update menu
+            gMenuState = MENU_FIRMWARE_UPDATE;
+        }
     }
     
     // If HID mode is enabled and we're connected, go to HID menu and setup HID keyboard
@@ -22569,14 +22636,24 @@ static void printMenu(void)
                 }
             }
             printf("\n");
-            printf("  [1] Select new firmware file and start update\n");
-            printf("  [2] Download firmware from GitHub\n"); //(WinHTTP)\n");
-            //printf("  [3] Download firmware from GitHub (UCX HTTP API)\n");
+            if (gUcxConnected) {
+                printf("  [1] Select new firmware file and start update\n");
+                printf("  [2] Download firmware from GitHub\n");
+            } else {
+                printf("  [1] Select firmware file (requires connection)\n");
+                printf("  [2] Download firmware (requires connection)\n");
+            }
             printf("\n");
-            printf("TIP: Press ENTER to flash the last used firmware file!\n");
-            printf("     You can also drag-and-drop a .bin or .zip file path directly!\n");
-            printf("     (ZIP files will be extracted automatically)\n");
+            printf("BOOTLOADER MODE\n");
+            printf("  [b] Bootloader mode flash (for devices in bootloader)\n");
+            printf("      No AT connection needed - sends XMODEM via bootloader prompt\n");
             printf("\n");
+            if (gUcxConnected) {
+                printf("TIP: Press ENTER to flash the last used firmware file!\n");
+                printf("     You can also drag-and-drop a .bin or .zip file path directly!\n");
+                printf("     (ZIP files will be extracted automatically)\n");
+                printf("\n");
+            }
             printf("  [0] Back to main menu\n");
             break;
             
@@ -22956,11 +23033,7 @@ static void handleUserInput(void)
                     }
                     break;
                 case 16:  // Also accept 'f' or 'F' - Firmware update
-                    if (!gUcxConnected) {
-                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
-                    } else {
-                        gMenuState = MENU_FIRMWARE_UPDATE;
-                    }
+                    gMenuState = MENU_FIRMWARE_UPDATE;
                     break;
                 case 50:  // Also accept 's' or 'S' - SPS (Serial Port Service)
                     if (!gUcxConnected) {
@@ -23791,7 +23864,11 @@ static void handleUserInput(void)
         case MENU_FIRMWARE_UPDATE:
             switch (choice) {
                 case 1: {
-                    // Select firmware file and update
+                    // Select firmware file and update (requires AT connection)
+                    if (!gUcxConnected) {
+                        printf("ERROR: Device not connected. Use bootloader mode [b] or connect first.\n");
+                        break;
+                    }
                     char firmwarePath[256] = "";
                     
                     // Check if user provided a file path directly (drag-and-drop or paste)
@@ -24295,6 +24372,177 @@ static void handleUserInput(void)
                     break;
                 }
                 
+                case 11: {
+                    // Bootloader mode flash ('b' maps to 11 via generic letter conversion)
+                    // In bootloader mode, the device presents a ">" prompt (no AT interface)
+                    char firmwarePath[256] = "";
+                    
+                    // Check if user provided a file path directly (drag-and-drop or paste)
+                    if (strchr(trimmedInput, '\\') != NULL || strchr(trimmedInput, '/') != NULL ||
+                        strstr(trimmedInput, ".bin") != NULL || strstr(trimmedInput, ".zip") != NULL) {
+                        strncpy(firmwarePath, trimmedInput, sizeof(firmwarePath) - 1);
+                        firmwarePath[sizeof(firmwarePath) - 1] = '\0';
+                        // Remove quotes if present
+                        size_t pathLen2 = strlen(firmwarePath);
+                        if (pathLen2 > 2) {
+                            if ((firmwarePath[0] == '"' && firmwarePath[pathLen2-1] == '"') ||
+                                (firmwarePath[0] == '\'' && firmwarePath[pathLen2-1] == '\'')) {
+                                memmove(firmwarePath, firmwarePath + 1, pathLen2 - 1);
+                                firmwarePath[pathLen2 - 2] = '\0';
+                            }
+                        }
+                        printf("Using file: %s\n", firmwarePath);
+                    } else {
+                        // Try last used firmware first
+                        if (gDeviceModel[0] != '\0') {
+                            const char *lastFirmware = getProductFirmwarePath(gDeviceModel);
+                            if (lastFirmware && lastFirmware[0] != '\0') {
+                                printf("Last used firmware: %s\n", lastFirmware);
+                                printf("Use this file? (Y/n): ");
+                                char confirm[16];
+                                if (fgets(confirm, sizeof(confirm), stdin)) {
+                                    confirm[strcspn(confirm, "\r\n")] = '\0';
+                                    if (confirm[0] == '\0' || tolower(confirm[0]) == 'y') {
+                                        strncpy(firmwarePath, lastFirmware, sizeof(firmwarePath) - 1);
+                                        firmwarePath[sizeof(firmwarePath) - 1] = '\0';
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (firmwarePath[0] == '\0') {
+                            printf("Enter firmware file path (or drag-and-drop file): ");
+                            if (fgets(firmwarePath, sizeof(firmwarePath), stdin) == NULL) {
+                                printf("ERROR: Failed to read input\n");
+                                break;
+                            }
+                            firmwarePath[strcspn(firmwarePath, "\r\n")] = '\0';
+                            // Remove quotes
+                            size_t pathLen3 = strlen(firmwarePath);
+                            if (pathLen3 > 2) {
+                                if ((firmwarePath[0] == '"' && firmwarePath[pathLen3-1] == '"') ||
+                                    (firmwarePath[0] == '\'' && firmwarePath[pathLen3-1] == '\'')) {
+                                    memmove(firmwarePath, firmwarePath + 1, pathLen3 - 1);
+                                    firmwarePath[pathLen3 - 2] = '\0';
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (firmwarePath[0] == '\0') {
+                        printf("No firmware file specified.\n");
+                        break;
+                    }
+                    
+                    // Handle ZIP files
+                    size_t pathLen = strlen(firmwarePath);
+                    if (pathLen > 4 && (_stricmp(firmwarePath + pathLen - 4, ".zip") == 0)) {
+                        printf("\nDetected ZIP file. Extracting...\n");
+                        char tempDir[MAX_PATH];
+                        GetTempPathA(sizeof(tempDir), tempDir);
+                        strcat_s(tempDir, sizeof(tempDir), "ucxclient_fw_");
+                        char timestamp[32];
+                        snprintf(timestamp, sizeof(timestamp), "%lld", (long long)time(NULL));
+                        strcat_s(tempDir, sizeof(tempDir), timestamp);
+                        
+                        char extractCmd[1024];
+                        snprintf(extractCmd, sizeof(extractCmd),
+                                "powershell -Command \"Expand-Archive -Path '%s' -DestinationPath '%s' -Force\"",
+                                firmwarePath, tempDir);
+                        printf("Extracting to: %s\n", tempDir);
+                        int extractResult = system(extractCmd);
+                        if (extractResult != 0) {
+                            printf("ERROR: Failed to extract ZIP file\n");
+                            break;
+                        }
+                        
+                        char searchPattern[MAX_PATH];
+                        snprintf(searchPattern, sizeof(searchPattern), "%s\\NORA*.bin", tempDir);
+                        WIN32_FIND_DATAA findData;
+                        HANDLE hFind = FindFirstFileA(searchPattern, &findData);
+                        if (hFind == INVALID_HANDLE_VALUE) {
+                            printf("ERROR: No NORA*.bin file found in ZIP archive\n");
+                            break;
+                        }
+                        snprintf(firmwarePath, sizeof(firmwarePath), "%s\\%s", tempDir, findData.cFileName);
+                        FindClose(hFind);
+                        printf("Found firmware file: %s\n", findData.cFileName);
+                    }
+                    
+                    // If AT client is connected, close it first (we need the UART)
+                    if (gUcxConnected) {
+                        printf("Closing AT client connection for bootloader access...\n");
+                        uCxAtClientClose(&gUcxAtClient);
+                        gUcxConnected = false;
+                        gUartHandle = NULL;
+                    }
+                    
+                    // Do the bootloader flash
+                    bool success = bootloaderFlashFirmware(gComPort, firmwarePath, gBootloaderBaudRate);
+                    
+                    if (success && gDeviceModel[0] != '\0') {
+                        addProductFirmwareToHistory(gDeviceModel, firmwarePath);
+                    }
+                    
+                    // Try to reconnect AT client
+                    printf("\nWaiting for module to reboot (5 seconds)...\n");
+                    U_CX_PORT_SLEEP_MS(5000);
+                    
+                    printf("Attempting to reconnect AT client...\n");
+                    int32_t result = uCxAtClientOpen(&gUcxAtClient, 115200, false);
+                    if (result == 0) {
+                        gUartHandle = gUcxAtClient.uartHandle;
+                        U_CX_PORT_SLEEP_MS(500);
+                        
+                        // Wait for +STARTUP URC
+                        printf("Waiting for +STARTUP URC");
+                        fflush(stdout);
+                        bool startupReceived = waitEvent(URC_FLAG_STARTUP, 10);
+                        printf(startupReceived ? " Received!\n" : " Timeout! Continuing anyway...\n");
+                        
+                        // Disable echo and query firmware version
+                        uCxSystemSetEchoOff(&gUcxHandle);
+                        
+                        gDeviceModel[0] = '\0';
+                        gDeviceFirmware[0] = '\0';
+                        
+                        const char *model = NULL;
+                        if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
+                            strncpy(gDeviceModel, model, sizeof(gDeviceModel) - 1);
+                            gDeviceModel[sizeof(gDeviceModel) - 1] = '\0';
+                            strncpy(gLastDeviceModel, model, sizeof(gLastDeviceModel) - 1);
+                            gLastDeviceModel[sizeof(gLastDeviceModel) - 1] = '\0';
+                            uCxEnd(&gUcxHandle);
+                        } else {
+                            uCxEnd(&gUcxHandle);
+                        }
+                        
+                        const char *fwVersion = NULL;
+                        if (uCxGeneralGetSoftwareVersionBegin(&gUcxHandle, &fwVersion) && fwVersion != NULL) {
+                            strncpy(gDeviceFirmware, fwVersion, sizeof(gDeviceFirmware) - 1);
+                            gDeviceFirmware[sizeof(gDeviceFirmware) - 1] = '\0';
+                            uCxEnd(&gUcxHandle);
+                        } else {
+                            uCxEnd(&gUcxHandle);
+                        }
+                        
+                        gUcxConnected = true;
+                        
+                        if (gDeviceModel[0] != '\0' && gDeviceFirmware[0] != '\0') {
+                            printf("Device: %s\n", gDeviceModel);
+                            printf("New firmware version: %s\n", gDeviceFirmware);
+                        }
+                    } else {
+                        printf("Could not reconnect AT client (error %d).\n", result);
+                        printf("Device may need manual reset or is still rebooting.\n");
+                        gUcxConnected = false;
+                        gUartHandle = NULL;
+                    }
+                    
+                    saveSettings();
+                    break;
+                }
+                
                 case 0:
                     gMenuState = MENU_MAIN;
                     break;
@@ -24333,6 +24581,108 @@ static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred,
     if (percentComplete >= 100) {
         printf("\n");
     }
+}
+
+// ============================================================================
+// BOOTLOADER MODE FLASH
+// ============================================================================
+// Flash firmware via bootloader mode (no AT interface).
+// The device presents a ">" prompt and accepts single-character commands:
+//   x  - Start XMODEM receive (firmware upload)
+//   r  - Reboot
+//   ?  - Show help
+// Flow: Open UART -> wait for ">" -> send "x" -> XMODEM transfer -> done
+//
+static bool bootloaderFlashFirmware(const char *comPort, const char *firmwarePath, int32_t baudRate)
+{
+    printf("\n");
+    printf("=== BOOTLOADER MODE FLASH ===\n");
+    printf("Port:     %s\n", comPort);
+    printf("Firmware: %s\n", firmwarePath);
+    printf("Baud:     %d\n", (int)baudRate);
+    printf("\n");
+
+    // Check if file exists
+    FILE *testFile = fopen(firmwarePath, "rb");
+    if (testFile == NULL) {
+        printf("ERROR: Cannot open firmware file: %s\n", firmwarePath);
+        return false;
+    }
+    fclose(testFile);
+
+    // Open XMODEM config (this also opens the UART)
+    uCxXmodemConfig_t xmodemConfig;
+    uCxXmodemInit(comPort, &xmodemConfig);
+    xmodemConfig.use1K = true;  // Use 1K blocks for faster transfer
+
+    printf("Opening UART at %d baud...\n", (int)baudRate);
+    int32_t result = uCxXmodemOpen(&xmodemConfig, baudRate, false);
+    if (result != 0) {
+        printf("ERROR: Failed to open UART on %s (error %d)\n", comPort, result);
+        return false;
+    }
+
+    // Wait for bootloader ">" prompt
+    printf("Waiting for bootloader prompt '>'...\n");
+    printf("(If device is not in bootloader mode, press Ctrl+C to abort)\n");
+    uint8_t rxBuf[256];
+    bool promptFound = false;
+    int32_t startTime = uPortGetTickTimeMs();
+    int32_t timeoutMs = 30000;  // 30 second timeout for bootloader prompt
+
+    // Send a CR to trigger the prompt (bootloader may be waiting for input)
+    uint8_t cr = '\r';
+    uPortUartWrite(xmodemConfig.uartHandle, &cr, 1);
+
+    while (!promptFound && (uPortGetTickTimeMs() - startTime) < timeoutMs) {
+        int32_t bytesRead = uPortUartRead(xmodemConfig.uartHandle, rxBuf, sizeof(rxBuf) - 1, 500);
+        if (bytesRead > 0) {
+            rxBuf[bytesRead] = '\0';
+            // Print what we receive from bootloader (for debugging)
+            printf("[BOOTLOADER] %s", (char *)rxBuf);
+            // Look for '>' prompt in received data
+            for (int32_t i = 0; i < bytesRead; i++) {
+                if (rxBuf[i] == '>') {
+                    promptFound = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!promptFound) {
+        printf("\nERROR: Timeout waiting for bootloader prompt '>'\n");
+        printf("Make sure the device is in bootloader mode.\n");
+        printf("(Hold BOOT button during reset, or check documentation)\n");
+        uCxXmodemClose(&xmodemConfig);
+        return false;
+    }
+
+    printf("\nBootloader prompt detected!\n");
+
+    // Send 'x' command to start XMODEM receive
+    printf("Sending 'x' command to start XMODEM receive...\n");
+    uint8_t xCmd[] = "x\r\n";
+    uPortUartWrite(xmodemConfig.uartHandle, xCmd, 3);
+
+    // Small delay to let bootloader process the command
+    U_CX_PORT_SLEEP_MS(500);
+
+    // Now do the XMODEM transfer - the bootloader should start sending 'C' characters
+    printf("Transferring firmware file via XMODEM...\n");
+    result = uCxXmodemSendFile(&xmodemConfig, firmwarePath, firmwareUpdateProgress, NULL);
+
+    // Close XMODEM UART
+    uCxXmodemClose(&xmodemConfig);
+
+    if (result != 0) {
+        printf("\n\nERROR: Bootloader firmware transfer failed (error %d)\n", result);
+        return false;
+    }
+
+    printf("\n\nBootloader firmware transfer completed successfully!\n");
+    printf("The module should reboot with the new firmware.\n");
+    return true;
 }
 
 // HTTP download progress callback
