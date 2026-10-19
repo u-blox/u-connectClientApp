@@ -13466,6 +13466,8 @@ static void mqttConnect(void)
     }
     
     // Generate client ID with random component
+    // rand() is never seeded elsewhere, so without this every instance gets the same ID and the broker drops one.
+    srand((unsigned)(GetTickCount64() ^ (ULONGLONG)GetCurrentProcessId() << 16));
     snprintf(clientId, sizeof(clientId), "ucxclient-%d", rand() % 10000);
     
     printf("\nBroker: %s:%d (%s)\n", broker, port, useTls ? "MQTTS/TLS" : "Plain MQTT");
@@ -13711,7 +13713,8 @@ static void mqttPublish(void)
                                      (uMqttRetain_t)retain, topic, 
                                      (uint8_t*)message, (int32_t)strlen(message));
     
-    if (result == 0) {
+    // uCxMqttPublish returns the packet ID (>= 0) on success.
+    if (result >= 0) {
         printf("✓ Message published successfully\n");
     } else {
         printf("ERROR: Failed to publish (code %d)\n", result);
