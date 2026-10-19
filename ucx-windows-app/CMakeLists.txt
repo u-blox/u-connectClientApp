@@ -1,14 +1,15 @@
 cmake_minimum_required(VERSION 3.10)
 project(ucx-windows-app)
 
-# Include ucxclient library definitions from submodule
-include(../ucxclient/ucxclient.cmake)
+# Include u-connectClient library definitions from submodule
+set(UCX_MODULE "NORA-W36X" CACHE STRING "Generated API variant in u-connectClient/ucx_api/generated")
+include(../u-connectClient/u-connectClient.cmake)
 
 # ============================================================================
 # Auto-versioning: Use timestamp-based build number
 # ============================================================================
 set(APP_VERSION_MAJOR 3)
-set(APP_VERSION_MINOR 2)
+set(APP_VERSION_MINOR 4)
 set(APP_VERSION_PATCH 0)
 set(APP_VERSION_BUILD 0)
 
@@ -37,9 +38,9 @@ endif()
 
 set(U_EXAMPLE_UART "COM3" CACHE STRING "The UART device to use")
 
-# Port layer files for Windows (from ucxclient submodule)
-set(PORT_OS_SRC ../ucxclient/ports/os/u_port_windows.c)
-set(PORT_UART_SRC ../ucxclient/ports/uart/u_port_uart_windows.c)
+# Port layer files for Windows (from u-connectClient submodule)
+set(PORT_OS_SRC ../u-connectClient/ports/os/u_port_windows.c)
+set(PORT_UART_SRC ../u-connectClient/ports/uart/u_port_uart_windows.c)
 
 # FTDI D2XX library support
 set(FTDI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/ftdi")
@@ -48,14 +49,13 @@ set(FTDI_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/third-party/ftdi/ftd2xx.lib")
 # ucx-windows-app Application (Monolithic)
 add_executable(ucx-windows-app
   ucx-windows-app.c
+  src/ucx_obfuscate.c
   ${PORT_OS_SRC}
   ${PORT_UART_SRC}
   ucx-windows-app.rc
   third-party/qrcodegen/qrcodegen.c
-  ../ucxclient/src/u_cx_xmodem.c
-  ${UCXCLIENT_UCX_API_SRC}
-  ${UCXCLIENT_AT_API_SRC}
-  ${UCXCLIENT_HEADERS}
+  ${U_CONNECT_CLIENT_UCX_API_SRC}
+  ${U_CONNECT_CLIENT_AT_API_SRC}
 )
 
 target_compile_options(ucx-windows-app PRIVATE /W4 /FS /wd4200)
@@ -73,8 +73,8 @@ target_compile_definitions(ucx-windows-app PRIVATE
 )
 
 target_include_directories(ucx-windows-app PUBLIC 
-  ${UCXCLIENT_INC} 
-  ${UCXCLIENT_PORT_DIR} 
+  ${U_CONNECT_CLIENT_INC} 
+  ${U_CONNECT_CLIENT_PORT_DIR} 
   ${FTDI_INCLUDE_DIR} 
   ${CMAKE_CURRENT_SOURCE_DIR} 
   ${CMAKE_CURRENT_BINARY_DIR}

@@ -128,7 +128,7 @@ ucx-windows-app/
 │   │   └── ucx-windows-app-debug.exe   (Debug, gitignored)
 │   └── release/
 │       └── ucx-windows-app-signed.exe  (Signed release, tracked in git)
-├── ucxclient/                              (Git submodule)
+├── u-connectClient/                              (Git submodule)
 │   ├── src/                            (UCX client library source)
 │   ├── inc/                            (UCX client library headers)
 │   └── ucx_api/                        (UCX API definitions)

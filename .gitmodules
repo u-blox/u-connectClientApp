@@ -1,3 +1,3 @@
-[submodule "ucxclient"]
-	path = ucxclient
-	url = https://github.com/u-blox/ucxclient.git
+[submodule "u-connectClient"]
+	path = u-connectClient
+	url = https://github.com/u-blox/u-connectClient.git

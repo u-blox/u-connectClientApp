@@ -3,9 +3,10 @@ PyInvoke tasks for ucx-windows-app.
 
 """
 
-from invoke import task, Collection
 import os
 import platform
+
+from invoke import Collection, task
 
 
 def _is_windows():
@@ -53,11 +54,11 @@ def _build_target(c, target=None, clean=False):
     print(f"Building {target or 'ucx-windows-app'}...")
     c.run(f'cmake --build {build_dir}{target_name}')
 
-    print(f"\nBuild completed successfully!")
+    print("\nBuild completed successfully!")
     if target:
         print(f"Executable: bin/{target}.exe")
     else:
-        print(f"Executable: bin/ucx-windows-app.exe")
+        print("Executable: bin/ucx-windows-app.exe")
 
 
 @task(help={'clean': 'Clean build directory before building'})

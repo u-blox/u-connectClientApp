@@ -2,7 +2,7 @@
 
 A native C Windows application for testing and configuring u-connectXpress devices (NORA-W36, NORA-B26).
 
-This repo contains https://github.com/u-blox/ucxclient a small footprint AT command client for talking to the following u-blox u-connectXpress short-range modules:
+This repo contains https://github.com/u-blox/u-connectClient a small footprint AT command client for talking to the following u-blox u-connectXpress short-range modules:
 
 * NORA-W36
 * NORA-B26
@@ -32,8 +32,8 @@ This repo contains https://github.com/u-blox/ucxclient a small footprint AT comm
 git clone https://github.com/u-blox/ucx-windows-app.git
 cd ucx-windows-app
 
-# Initialize only the ucxclient submodule (without recursing into its submodules)
-git submodule update --init ucxclient
+# Initialize only the u-connectClient submodule (without recursing into its submodules)
+git submodule update --init u-connectClient
 
 # Launch (auto-builds on first run)
 .\launch-ucx-windows-app.cmd
@@ -51,7 +51,7 @@ git submodule update --init ucxclient
 # Debug build
 .\launch-ucx-windows-app.cmd debug
 
-# Update ucxclient submodule
+# Update u-connectClient submodule
 .\launch-ucx-windows-app.cmd update
 
 # Clean build artifacts
@@ -90,7 +90,7 @@ ucx-windows-app/
 │   ├── bin/                        # Build outputs (gitignored)
 │   ├── release/                    # Signed releases
 │   └── third-party/                # FTDI DLL, Bluetooth SIG, etc.
-├── ucxclient/                      # Git submodule
+├── u-connectClient/                      # Git submodule
 │   ├── src/                        # UCX client library
 │   ├── inc/                        # Headers
 │   ├── ucx_api/                    # UCX API definitions

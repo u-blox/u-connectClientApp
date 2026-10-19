@@ -3,7 +3,7 @@ REM Launch script for ucx-windows-app
 
 setlocal enabledelayedexpansion
 
-echo ucxclient Windows App Launcher
+echo u-connectClient Windows App Launcher
 echo.
 
 REM Change to project root directory
@@ -158,7 +158,7 @@ REM This allows the application to find and use a shared settings file
 if not exist "%SETTINGS_FILE%" (
     echo.
     echo Creating settings file: %SETTINGS_FILE%
-    echo # ucxclient Windows App Settings > "%SETTINGS_FILE%"
+    echo # u-connectClient Windows App Settings > "%SETTINGS_FILE%"
     echo # This file stores COM port and connection preferences >> "%SETTINGS_FILE%"
     echo. >> "%SETTINGS_FILE%"
 )
@@ -958,7 +958,7 @@ echo.
 echo   selftest              Run comprehensive workspace tests
 echo                         Tests workspace structure, builds, version checks
 echo.
-echo   update                Update ucxclient submodule to latest version
+echo   update                Update u-connectClient submodule to latest version
 echo                         Clones submodule if it doesn't exist
 echo.
 echo   help / --help / -h    Show this help message
@@ -1007,7 +1007,7 @@ echo   launch-ucx-windows-app.cmd selftest
 echo       Run comprehensive workspace tests and validation
 echo.
 echo   launch-ucx-windows-app.cmd update
-echo       Update ucxclient submodule to latest master branch
+echo       Update u-connectClient submodule to latest master branch
 echo.
 echo NOTES:
 echo   - Release is the default (optimized, no debug symbols)
@@ -1025,7 +1025,7 @@ REM ===================================
 :update_submodule
 echo.
 echo ========================================
-echo Update ucxclient Submodule
+echo Update u-connectClient Submodule
 echo ========================================
 echo.
 
@@ -1049,9 +1049,9 @@ if not exist ".git" (
     exit /b 1
 )
 
-REM Check if ucxclient submodule directory exists
-if not exist "ucxclient" (
-    echo [INFO] ucxclient submodule not found - initializing...
+REM Check if u-connectClient submodule directory exists
+if not exist "u-connectClient" (
+    echo [INFO] u-connectClient submodule not found - initializing...
     echo.
     git submodule init
     if errorlevel 1 (
@@ -1060,11 +1060,11 @@ if not exist "ucxclient" (
     )
 )
 
-REM Check if ucxclient directory is empty (not cloned yet)
-if exist "ucxclient" (
-    dir /b "ucxclient" 2>nul | findstr "^" >nul
+REM Check if u-connectClient directory is empty (not cloned yet)
+if exist "u-connectClient" (
+    dir /b "u-connectClient" 2>nul | findstr "^" >nul
     if errorlevel 1 (
-        echo [INFO] ucxclient directory is empty - cloning submodule...
+        echo [INFO] u-connectClient directory is empty - cloning submodule...
         echo [INFO] Skipping nested submodules (STM32CubeF4 not needed for Windows)
         echo.
         git submodule update --init
@@ -1073,15 +1073,15 @@ if exist "ucxclient" (
             exit /b 1
         )
         echo.
-        echo [SUCCESS] ucxclient submodule cloned successfully!
+        echo [SUCCESS] u-connectClient submodule cloned successfully!
         goto :update_complete
     )
 )
 
 REM Update existing submodule
-echo Updating ucxclient submodule to latest version...
+echo Updating u-connectClient submodule to latest version...
 echo.
-cd ucxclient
+cd u-connectClient
 git fetch origin
 if errorlevel 1 (
     echo [ERROR] Failed to fetch updates from remote!
@@ -1098,7 +1098,7 @@ echo Latest commit:  %LATEST_COMMIT%
 echo.
 
 if "%CURRENT_COMMIT%"=="%LATEST_COMMIT%" (
-    echo [INFO] ucxclient is already up to date!
+    echo [INFO] u-connectClient is already up to date!
     cd ..
     goto :update_complete
 )
@@ -1121,15 +1121,15 @@ cd ..
 REM Update the parent repository's submodule reference
 echo.
 echo Updating parent repository submodule reference...
-git add ucxclient
+git add u-connectClient
 if not errorlevel 1 (
     echo [INFO] Submodule reference updated in parent repository
     echo [INFO] You may want to commit this change:
-    echo         git commit -m "Update ucxclient submodule"
+    echo         git commit -m "Update u-connectClient submodule"
 )
 
 echo.
-echo [SUCCESS] ucxclient submodule updated successfully!
+echo [SUCCESS] u-connectClient submodule updated successfully!
 
 :update_complete
 echo.
@@ -1172,7 +1172,7 @@ echo [OK] Working directory is ucx-windows-app project root
 REM Check critical directory structure
 echo.
 echo Checking directory structure...
-set "REQUIRED_DIRS=ucxclient ucxclient\src ucxclient\inc ucxclient\ucx_api ucx-windows-app build"
+set "REQUIRED_DIRS=u-connectClient u-connectClient\src u-connectClient\inc u-connectClient\ucx_api ucx-windows-app build"
 for %%d in (%REQUIRED_DIRS%) do (
     if exist "%%d\" (
         echo [OK] %%d\
@@ -1185,7 +1185,7 @@ for %%d in (%REQUIRED_DIRS%) do (
 REM Check critical source files
 echo.
 echo Checking critical source files...
-set "REQUIRED_FILES=ucxclient\src\u_cx_at_client.c ucxclient\inc\u_cx_at_client.h ucx-windows-app\ucx-windows-app.c ucx-windows-app\CMakeLists.txt README.md"
+set "REQUIRED_FILES=u-connectClient\src\u_cx_at_client.c u-connectClient\inc\u_cx_at_client.h ucx-windows-app\ucx-windows-app.c ucx-windows-app\CMakeLists.txt README.md"
 for %%f in (%REQUIRED_FILES%) do (
     if exist "%%f" (
         echo [OK] %%f
@@ -1198,17 +1198,17 @@ for %%f in (%REQUIRED_FILES%) do (
 REM Check ucx_api generated files
 echo.
 echo Checking UCX API generated files...
-if exist "ucxclient\ucx_api\generated\" (
+if exist "u-connectClient\ucx_api\generated\" (
     set "API_FILES=0"
-    for %%f in (ucxclient\ucx_api\generated\u_cx_*.h) do set /a API_FILES+=1
+    for %%f in (u-connectClient\ucx_api\generated\u_cx_*.h) do set /a API_FILES+=1
     if !API_FILES! GTR 10 (
-        echo [OK] ucxclient\ucx_api\generated\ contains !API_FILES! header files
+        echo [OK] u-connectClient\ucx_api\generated\ contains !API_FILES! header files
     ) else (
-        echo [WARNING] ucxclient\ucx_api\generated\ has only !API_FILES! files ^(expected more^)
+        echo [WARNING] u-connectClient\ucx_api\generated\ has only !API_FILES! files ^(expected more^)
         set /a SELFTEST_WARNINGS+=1
     )
 ) else (
-    echo [ERROR] Missing ucxclient\ucx_api\generated\ directory
+    echo [ERROR] Missing u-connectClient\ucx_api\generated\ directory
     set /a SELFTEST_ERRORS+=1
 )
 
@@ -1372,7 +1372,7 @@ echo =======================================
 echo.
 
 REM Create temp directory
-set "TEMP_DIR=%TEMP%\ucxclient-master-%RANDOM%"
+set "TEMP_DIR=%TEMP%\u-connectClient-master-%RANDOM%"
 echo Creating temp directory: !TEMP_DIR!
 mkdir "!TEMP_DIR!" 2>nul
 
@@ -1404,7 +1404,7 @@ echo [OK] Master branch cloned successfully
 echo.
 
 REM Initialize and update submodules in the cloned repository (non-recursive to skip STM32CubeF4)
-echo Initializing ucxclient submodule in cloned master branch...
+echo Initializing u-connectClient submodule in cloned master branch...
 pushd "!TEMP_DIR!"
 git submodule update --init --depth 1
 if !errorlevel! equ 0 (
@@ -1419,7 +1419,7 @@ REM Compare directory structure
 echo Comparing directory structure...
 echo.
 
-set "COMPARE_DIRS=ucxclient ucxclient\src ucxclient\inc ucxclient\ucx_api ucx-windows-app build"
+set "COMPARE_DIRS=u-connectClient u-connectClient\src u-connectClient\inc u-connectClient\ucx_api ucx-windows-app build"
 for %%d in (!COMPARE_DIRS!) do (
     if exist "%%d\" (
         if exist "!TEMP_DIR!\%%d\" (
@@ -1463,7 +1463,7 @@ if exist "!TEMP_DIR!\ucx-windows-app\" (
 
 echo.
 echo Comparing core library files...
-set "CORE_FILES=ucxclient\src\u_cx_at_client.c ucxclient\inc\u_cx_at_client.h"
+set "CORE_FILES=u-connectClient\src\u_cx_at_client.c u-connectClient\inc\u_cx_at_client.h"
 for %%f in (!CORE_FILES!) do (
     if exist "%%f" (
         if exist "!TEMP_DIR!\%%f" (

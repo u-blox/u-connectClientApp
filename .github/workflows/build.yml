@@ -1,0 +1,46 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          python -m pip install --upgrade pip pytest ruff
+      - name: Run pytest (ruff + shellcheck + repo checks)
+        shell: bash
+        run: python -m pytest -q
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Configure
+        run: cmake -S ucx-windows-app -B build -A x64
+      - name: Build
+        run: cmake --build build --config Release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Smoke tests (drives the exe through a pseudo console, no hardware)
+        run: |
+          python -m pip install pytest pywinpty
+          python -m pytest tests/test_app_smoke.py -q
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ucx-windows-app
+          path: ucx-windows-app/bin/ucx-windows-app.exe

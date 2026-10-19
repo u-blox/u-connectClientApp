@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-ucx-windows-app is a Windows console application for testing u-connectXpress devices (NORA-W36, NORA-B26). It uses the ucxclient library as a git submodule.
+ucx-windows-app is a Windows console application for testing u-connectXpress devices (NORA-W36, NORA-B26). It uses the u-connectClient library as a git submodule.
 
 ## Building
 
@@ -45,14 +45,14 @@ cmake --build build --config Release
   - `bin/` - Build outputs (gitignored)
   - `release/` - Signed releases
   - `third-party/` - FTDI DLL, QR code generator
-- `ucxclient/` - AT command client library (git submodule)
+- `u-connectClient/` - AT command client library (git submodule)
 - `build/` - CMake artifacts (gitignored)
 
 ## Submodule Management
 
 ```powershell
 # Initialize submodule (first time)
-git submodule update --init ucxclient
+git submodule update --init u-connectClient
 
 # Update submodule to latest
 .\launch-ucx-windows-app.cmd update
@@ -66,6 +66,16 @@ git submodule update --init ucxclient
 - Use `_CRT_SECURE_NO_WARNINGS` for Windows APIs
 
 ## Testing
+
+```powershell
+# Static checks (ruff, shellcheck) and repo sanity checks
+python -m pip install pytest ruff
+python -m pytest
+```
+
+CI (`.github/workflows/build.yml`) runs pytest and a Windows Release build on every push.
+
+New code should go into `ucx-windows-app/src/` as separate modules instead of the monolithic `ucx-windows-app.c`.
 
 ```powershell
 # Run application with self-test

@@ -131,6 +131,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "u_port.h"
 
 #include "third-party/qrcodegen/qrcodegen.h"
+#include "src/ucx_obfuscate.h"
 
 // Bluetooth SIG name databases
 #include "third-party/bluetooth-sig/bt_company_identifiers.h"
@@ -1172,8 +1173,6 @@ static void wifiConfigureEnterpriseSecurity(void);
 static void getCurrentPCIPAddress(char *ipBuffer, size_t bufferSize);
 static void loadSettings(void);
 static void saveSettings(void);
-static void obfuscatePassword(const char *input, char *output, size_t outputSize);
-static void deobfuscatePassword(const char *input, char *output, size_t outputSize);
 static void tlsSetVersion(void);
 static void tlsShowConfig(void);
 static void tlsConfigureServerNameIndication(void);
@@ -3110,52 +3109,7 @@ static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSi
 // SETTINGS MANAGEMENT (Load/Save/Obfuscation)
 // ============================================================================
 
-// Simple XOR-based obfuscation (not cryptographically secure, but better than plaintext)
-#define OBFUSCATION_KEY "uBloxUcxClient"
-
-static void obfuscatePassword(const char *input, char *output, size_t outputSize)
-{
-    size_t inputLen = strlen(input);
-    size_t keyLen = strlen(OBFUSCATION_KEY);
-    
-    if (inputLen == 0) {
-        output[0] = '\0';
-        return;
-    }
-    
-    // Convert to hex with XOR
-    size_t outIdx = 0;
-    for (size_t i = 0; i < inputLen && outIdx < outputSize - 3; i++) {
-        unsigned char c = input[i] ^ OBFUSCATION_KEY[i % keyLen];
-        snprintf(&output[outIdx], outputSize - outIdx, "%02x", c);
-        outIdx += 2;
-    }
-    output[outIdx] = '\0';
-}
-
-static void deobfuscatePassword(const char *input, char *output, size_t outputSize)
-{
-    size_t inputLen = strlen(input);
-    size_t keyLen = strlen(OBFUSCATION_KEY);
-    
-    if (inputLen == 0 || inputLen % 2 != 0) {
-        output[0] = '\0';
-        return;
-    }
-    
-    // Convert from hex with XOR
-    size_t outIdx = 0;
-    for (size_t i = 0; i < inputLen && outIdx < outputSize - 1; i += 2) {
-        char hexByte[3];
-        hexByte[0] = input[i];
-        hexByte[1] = input[i+1];
-        hexByte[2] = '\0';
-        unsigned char c = (unsigned char)strtol(hexByte, NULL, 16);
-        output[outIdx] = c ^ OBFUSCATION_KEY[outIdx % keyLen];
-        outIdx++;
-    }
-    output[outIdx] = '\0';
-}
+// Password obfuscation lives in src/ucx_obfuscate.c
 
 // ----------------------------------------------------------------
 // URC Event Helper Functions
@@ -10761,7 +10715,7 @@ static void gattServerSetupHidKeyboard(void)
         0x03, 0x19, 0xC1, 0x03  // Appearance (Keyboard)
     };
     
-    result = uCxBluetoothSetLegacyAdvertiseData(&gUcxHandle, advData, sizeof(advData));
+    result = uCxBluetoothSetLegacyAdvertiseDataAndType1(&gUcxHandle, advData, sizeof(advData));
     
     if (result == 0) {
         printf("✓ Advertising data configured (Flags + HID/Battery services + Keyboard appearance)\n");
@@ -17991,6 +17945,8 @@ static void generateLocationQRCode(double lat, double lng)
     int size = qrcodegen_getSize(qrcode);
     int border = 2;
     
+    // Disable AT logging to prevent URC messages from corrupting QR code display
+    uCxLogDisable();
     for (int y = -border; y < size + border; y++) {
         printf("  ");  // Left margin
         for (int x = -border; x < size + border; x++) {
@@ -17999,6 +17955,7 @@ static void generateLocationQRCode(double lat, double lng)
         }
         printf("\n");
     }
+    uCxLogEnable();
     
     printf("\n");
     printf("Tip: Open your phone's camera app and point it at the QR code\n");
@@ -21190,6 +21147,19 @@ int main(int argc, char *argv[])
     // Set console to UTF-8 to properly display Unicode box drawing characters
     SetConsoleOutputCP(CP_UTF8);
     
+    // Optional "--ini <path>" (anywhere in argv) selects a settings file; removed from argv
+    const char *iniOverride = NULL;
+    for (int i = 1; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "--ini") == 0) {
+            iniOverride = argv[i + 1];
+            for (int j = i; j + 2 < argc; j++) {
+                argv[j] = argv[j + 2];
+            }
+            argc -= 2;
+            break;
+        }
+    }
+    
     // Initialize settings file path with smart location strategy:
     // 1. Check project root first (../../ucx-windows-app.ini from bin/ or release/)
     // 2. If not found in root, use/create in exe directory
@@ -21243,6 +21213,10 @@ int main(int argc, char *argv[])
     }
     
     // Load settings from file
+    if (iniOverride) {
+        strncpy(gSettingsFilePath, iniOverride, sizeof(gSettingsFilePath) - 1);
+        gSettingsFilePath[sizeof(gSettingsFilePath) - 1] = '\0';
+    }
     loadSettings();
     
     // Check for "flash" argument to enable auto-flash mode
@@ -21885,7 +21859,7 @@ static void printMenu(void)
             printf("\n");
             printf("═════════════════════════════════════════════════════════════════\n");
             printf("             u-blox ucxclient Windows App\n");
-            printf("     using ucxclient API v%s  |  Application v%s\n", U_CX_VERSION_STR, APP_VERSION_STRING);
+            printf("     using u-connectClient API v%s  |  Application v%s\n", U_CX_VERSION_STR, APP_VERSION_STRING);
             printf("═════════════════════════════════════════════════════════════════\n");
             
             // === STATUS DASHBOARD ===
@@ -27730,10 +27704,11 @@ static void showLegacyAdvertisementStatus(void)
     // Get and display advertisement data
     printf("\nAdvertisement Data:\n");
     uint8_t advDataBuffer[256];
-    uByteArray_t advData;
-    advData.pData = advDataBuffer;
+    uCxBtGetLegacyAdvertiseDataAndType_t advRsp;
+    advRsp.adv_data.pData = advDataBuffer;
     
-    if (uCxBluetoothGetLegacyAdvertiseDataBegin(&gUcxHandle, &advData)) {
+    if (uCxBluetoothGetLegacyAdvertiseDataAndTypeBegin(&gUcxHandle, &advRsp)) {
+        uByteArray_t advData = advRsp.adv_data;
         if (advData.length > 0) {
             printf("  Raw data (%zu bytes): ", advData.length);
             for (size_t i = 0; i < advData.length; i++) {
@@ -30322,6 +30297,8 @@ static void wifiApGenerateQrCode(void)
     
     // Print QR code to terminal using block characters
     // Using █ (full block) for dark modules and space for light modules
+    // Disable AT logging to prevent URC messages from corrupting QR code display
+    uCxLogDisable();
     for (int y = -border; y < size + border; y++) {
         for (int x = -border; x < size + border; x++) {
             // Print two characters per module for better aspect ratio
@@ -30330,6 +30307,7 @@ static void wifiApGenerateQrCode(void)
         }
         printf("\n");
     }
+    uCxLogEnable();
     
     printf("\n");
     printf("QR Code String: %s\n", qrCodeString);

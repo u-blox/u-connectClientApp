@@ -50,3 +50,7 @@ deep_*.py
 CMakeCache.txt
 CMakeFiles/
 *.vcxproj.user
+
+.venv/
+tests/logs/
+.tmp_*

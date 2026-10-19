@@ -15,6 +15,7 @@ Usage:
 
 import asyncio
 import sys
+
 from bleak import BleakClient, BleakScanner
 from bleak.backends.characteristic import BleakGATTCharacteristic
 
@@ -93,36 +94,36 @@ class HIDValidationResult:
         self.errors = []
         self.warnings = []
         self.info = []
-        
+
     def add_error(self, msg):
         self.errors.append(f"❌ ERROR: {msg}")
-        
+
     def add_warning(self, msg):
         self.warnings.append(f"⚠️  WARNING: {msg}")
-        
+
     def add_info(self, msg):
         self.info.append(f"✓ {msg}")
-        
+
     def print_summary(self):
         print(f"\n{'='*60}")
         print("VALIDATION SUMMARY")
         print(f"{'='*60}")
-        
+
         if self.info:
             print("\n✅ PASSED:")
             for msg in self.info:
                 print(f"  {msg}")
-                
+
         if self.warnings:
             print("\n⚠️  WARNINGS:")
             for msg in self.warnings:
                 print(f"  {msg}")
-                
+
         if self.errors:
             print("\n❌ ERRORS:")
             for msg in self.errors:
                 print(f"  {msg}")
-                
+
         print(f"\n{'='*60}")
         if self.errors:
             print(f"RESULT: FAILED ({len(self.errors)} errors, {len(self.warnings)} warnings)")
@@ -139,23 +140,16 @@ def notification_handler(characteristic: BleakGATTCharacteristic, data: bytearra
     print(f"\n[NOTIFICATION] {char_name}:")
     print(f"  UUID: {characteristic.uuid}")
     print(f"  Data ({len(data)} bytes): {data.hex()}")
-    
+
     # Parse HID keyboard report if it's a keyboard input
     if len(data) == 8:
         modifier = data[0]
         keys = data[2:8]
-        print(f"  Parsed as keyboard report:")
+        print("  Parsed as keyboard report:")
         print(f"    Modifier: 0x{modifier:02X}", end="")
         if modifier:
-            mods = []
-            if modifier & 0x01: mods.append("L-Ctrl")
-            if modifier & 0x02: mods.append("L-Shift")
-            if modifier & 0x04: mods.append("L-Alt")
-            if modifier & 0x08: mods.append("L-GUI")
-            if modifier & 0x10: mods.append("R-Ctrl")
-            if modifier & 0x20: mods.append("R-Shift")
-            if modifier & 0x40: mods.append("R-Alt")
-            if modifier & 0x80: mods.append("R-GUI")
+            names = ["L-Ctrl", "L-Shift", "L-Alt", "L-GUI", "R-Ctrl", "R-Shift", "R-Alt", "R-GUI"]
+            mods = [name for bit, name in enumerate(names) if modifier & (1 << bit)]
             print(f" ({', '.join(mods)})")
         else:
             print(" (none)")
@@ -205,11 +199,11 @@ def parse_hid_info(data: bytes) -> dict:
     """Parse HID Information characteristic value."""
     if len(data) < 4:
         return {"error": f"Too short ({len(data)} bytes, expected 4)"}
-    
+
     bcd_hid = (data[1] << 8) | data[0]  # Little-endian
     country_code = data[2]
     flags = data[3]
-    
+
     return {
         "bcdHID": f"{(bcd_hid >> 8) & 0xFF}.{bcd_hid & 0xFF:02d}",
         "bCountryCode": country_code,
@@ -236,13 +230,13 @@ async def scan_for_device(name_filter: str = None, timeout: float = 10.0):
     """Scan for BLE devices and find HID keyboard device."""
     print(f"\nScanning for BLE devices (timeout: {timeout}s)...")
     print(f"Filter mode: {'u-blox only' if UBLOX_ONLY else 'any HID device'}")
-    
+
     devices = await BleakScanner.discover(timeout=timeout, return_adv=True)
-    
+
     print(f"\nFound {len(devices)} devices:")
     hid_devices = []
-    
-    for address, (device, adv_data) in devices.items():
+
+    for device, adv_data in devices.values():
         # Check for HID service in advertisement
         is_hid = False
         service_uuids = adv_data.service_uuids or []
@@ -250,19 +244,19 @@ async def scan_for_device(name_filter: str = None, timeout: float = 10.0):
             if "1812" in svc_uuid.lower():  # HID Service
                 is_hid = True
                 break
-        
+
         # Check if it's a u-blox device
         is_ublox = device.name and "u-blox" in device.name
-        
+
         # Check name filter match
         name_match = False
         if name_filter and device.name:
             name_match = name_filter.lower() in device.name.lower()
-        
+
         # Decide whether to include this device
         include_device = False
         marker = ""
-        
+
         if UBLOX_ONLY:
             # Only include u-blox devices
             if is_ublox:
@@ -284,25 +278,25 @@ async def scan_for_device(name_filter: str = None, timeout: float = 10.0):
             elif name_match:
                 marker = " [NAME MATCH]"
                 include_device = True
-        
+
         # Only print devices with names
         if device.name:
             print(f"  {device.address}: {device.name}{marker}")
-            
+
             # Print service UUIDs if available
             if service_uuids:
                 for svc_uuid in service_uuids:
                     svc_name = get_service_name(svc_uuid)
                     print(f"    Service: {svc_name}")
-            
+
             # Print manufacturer data if available
             if adv_data.manufacturer_data:
                 for mfr_id, data in adv_data.manufacturer_data.items():
                     print(f"    Manufacturer Data (0x{mfr_id:04X}): {data.hex()}")
-        
+
         if include_device:
             hid_devices.append(device)
-    
+
     return hid_devices
 
 
@@ -320,16 +314,16 @@ async def test_hid_client(address: str):
     print(f"\n{'='*60}")
     print(f"Connecting to {address}...")
     print(f"{'='*60}")
-    
+
     result = HIDValidationResult()
-    
+
     # Force fresh service discovery by disabling caching
     async with BleakClient(address, winrt={"use_cached_services": False}) as client:
         print(f"\nConnected: {client.is_connected}")
-        
+
         # Small delay before pairing to let connection stabilize
         await asyncio.sleep(0.5)
-        
+
         # Try to pair if needed
         print("Attempting to pair...")
         try:
@@ -337,39 +331,39 @@ async def test_hid_client(address: str):
             print(f"Pairing result: {paired}")
         except Exception as e:
             print(f"Pairing note: {e} (may already be paired)")
-        
+
         # Wait a bit for services to be ready after pairing
         print("Waiting for GATT services to stabilize...")
         await asyncio.sleep(1.0)
-        
+
         print(f"MTU: {client.mtu_size}")
-        
+
         # Discover services
         print(f"\n{'='*60}")
         print("GATT Services Discovery")
         print(f"{'='*60}")
-        
+
         hid_service = None
         battery_service = None
-        
+
         # Track characteristics found
         hid_chars_found = {}
         report_chars = []  # Multiple Report characteristics
-        
+
         for service in client.services:
             svc_name = get_service_name(service.uuid)
             print(f"\nService: {svc_name}")
             print(f"  UUID: {service.uuid}")
             print(f"  Handle: {service.handle}")
-            
+
             if service.uuid.lower() == HID_SERVICE_UUID:
                 hid_service = service
                 print("  *** THIS IS THE HID SERVICE (0x1812) ***")
-                
+
             if service.uuid.lower() == BATTERY_SERVICE_UUID:
                 battery_service = service
                 print("  *** THIS IS THE BATTERY SERVICE (0x180F) ***")
-            
+
             for char in service.characteristics:
                 props = ", ".join(char.properties)
                 char_name = get_char_name(char.uuid)
@@ -377,7 +371,7 @@ async def test_hid_client(address: str):
                 print(f"    UUID: {char.uuid}")
                 print(f"    Handle: {char.handle}")
                 print(f"    Properties: [{props}]")
-                
+
                 # Track HID characteristics
                 if service.uuid.lower() == HID_SERVICE_UUID:
                     char_uuid_lower = char.uuid.lower()
@@ -385,7 +379,7 @@ async def test_hid_client(address: str):
                         report_chars.append(char)
                     else:
                         hid_chars_found[char_uuid_lower] = char
-                
+
                 # Print descriptors
                 for descriptor in char.descriptors:
                     desc_name = "CCCD" if "2902" in descriptor.uuid else \
@@ -393,35 +387,35 @@ async def test_hid_client(address: str):
                                "External Report Ref" if "2907" in descriptor.uuid else \
                                descriptor.uuid[:8]
                     print(f"    Descriptor: {desc_name} (handle: {descriptor.handle})")
-                    
+
                     # Read descriptor value
                     desc_value = await read_descriptor_value(client, descriptor.handle)
                     if desc_value:
                         print(f"      Value: {desc_value.hex()}")
-                        
+
                         # Parse Report Reference
                         if "2908" in descriptor.uuid and len(desc_value) >= 2:
                             report_id = desc_value[0]
                             report_type = desc_value[1]
                             type_name = {1: "Input", 2: "Output", 3: "Feature"}.get(report_type, "Unknown")
                             print(f"      → Report ID: {report_id}, Type: {type_name} ({report_type})")
-        
+
         # Validate HID Service
         print(f"\n{'='*60}")
         print("HID Service Validation")
         print(f"{'='*60}")
-        
+
         if not hid_service:
             result.add_error("HID Service (0x1812) NOT FOUND!")
             result.print_summary()
             return False
         else:
             result.add_info("HID Service (0x1812) found")
-        
+
         # Check required characteristics
         for uuid, spec in EXPECTED_HID_CHARACTERISTICS.items():
             name = spec["name"]
-            
+
             if spec.get("multiple"):
                 # Handle multiple Report characteristics
                 if uuid == HID_REPORT_CHAR_UUID:
@@ -430,11 +424,11 @@ async def test_hid_client(address: str):
                     else:
                         result.add_error(f"{name} characteristic NOT FOUND")
                 continue
-            
+
             if uuid in hid_chars_found:
                 char = hid_chars_found[uuid]
                 result.add_info(f"{name} found (handle: {char.handle})")
-                
+
                 # Check required properties
                 for req_prop in spec.get("required_props", []):
                     if req_prop in char.properties:
@@ -446,24 +440,24 @@ async def test_hid_client(address: str):
                     result.add_warning(f"{name} not found (optional for Report mode)")
                 else:
                     result.add_error(f"{name} NOT FOUND (required)")
-        
+
         # Validate Battery Service
         print(f"\n{'='*60}")
         print("Battery Service Validation")
         print(f"{'='*60}")
-        
+
         if battery_service:
             result.add_info("Battery Service (0x180F) found")
         else:
             result.add_warning("Battery Service (0x180F) not found (recommended for HID)")
-        
+
         # Test reading HID characteristics
         print(f"\n{'='*60}")
         print("Reading HID Characteristic Values")
         print(f"{'='*60}")
-        
+
         await asyncio.sleep(0.5)
-        
+
         # Read HID Information
         if HID_INFO_CHAR_UUID in hid_chars_found:
             print("\n[READ] HID Information...")
@@ -479,7 +473,7 @@ async def test_hid_client(address: str):
                 result.add_info("HID Information readable")
             except Exception as e:
                 result.add_error(f"Failed to read HID Information: {e}")
-        
+
         # Read Protocol Mode
         if HID_PROTOCOL_MODE_CHAR_UUID in hid_chars_found:
             print("\n[READ] Protocol Mode...")
@@ -490,7 +484,7 @@ async def test_hid_client(address: str):
                 result.add_info("Protocol Mode readable")
             except Exception as e:
                 result.add_error(f"Failed to read Protocol Mode: {e}")
-        
+
         # Read Report Map
         if HID_REPORT_MAP_CHAR_UUID in hid_chars_found:
             print("\n[READ] Report Map...")
@@ -504,7 +498,7 @@ async def test_hid_client(address: str):
                     result.add_info(f"Report Map readable ({len(value)} bytes)")
             except Exception as e:
                 result.add_error(f"Failed to read Report Map: {e}")
-        
+
         # Read Battery Level
         if battery_service:
             print("\n[READ] Battery Level...")
@@ -517,14 +511,14 @@ async def test_hid_client(address: str):
                         break
             except Exception as e:
                 result.add_warning(f"Failed to read Battery Level: {e}")
-        
+
         # Subscribe to notifications from Boot Keyboard Input
         print(f"\n{'='*60}")
         print("Testing Notifications")
         print(f"{'='*60}")
-        
+
         subscribed_chars = []
-        
+
         # Subscribe to Boot Keyboard Input
         if HID_BOOT_KBD_INPUT_CHAR_UUID in hid_chars_found:
             char = hid_chars_found[HID_BOOT_KBD_INPUT_CHAR_UUID]
@@ -537,7 +531,7 @@ async def test_hid_client(address: str):
                     result.add_info("Boot Keyboard Input notifications enabled")
                 except Exception as e:
                     result.add_error(f"Failed to subscribe to Boot Keyboard Input: {e}")
-        
+
         # Subscribe to Report characteristics with notify
         for i, char in enumerate(report_chars):
             if "notify" in char.properties or "indicate" in char.properties:
@@ -548,18 +542,18 @@ async def test_hid_client(address: str):
                     subscribed_chars.append(char)
                 except Exception as e:
                     print(f"  Error: {e}")
-        
+
         if subscribed_chars:
             print("\n[WAITING] Press keys on the HID keyboard (5 seconds)...")
             await asyncio.sleep(5)
-            
+
             # Unsubscribe
             for char in subscribed_chars:
                 try:
                     await client.stop_notify(char)
                 except Exception:
                     pass
-        
+
         result.print_summary()
         return len(result.errors) == 0
 
@@ -569,23 +563,23 @@ async def main():
     print("="*60)
     print("u-blox HID Keyboard GATT Client Test")
     print("="*60)
-    
+
     target = None
     if len(sys.argv) > 1:
         target = sys.argv[1]
         print(f"Target specified: {target}")
-    
+
     # If target looks like a MAC address, connect directly
     if target and (":" in target or "-" in target):
         await test_hid_client(target)
         return
-    
+
     # Otherwise scan for devices
     name_filter = target or DEFAULT_DEVICE_NAME
     devices = await scan_for_device(name_filter)
-    
+
     if not devices:
-        print(f"\nNo HID devices found.")
+        print("\nNo HID devices found.")
         print("\nPlease check:")
         print("  1. Device is advertising (wake it up if it's a mouse/keyboard)")
         print("  2. Bluetooth is enabled on this computer")
@@ -593,11 +587,11 @@ async def main():
             print("  3. Device name contains 'u-blox'")
             print("  Tip: Set UBLOX_ONLY = False in script to test with any HID device")
         return
-    
+
     # Connect to first found device
     device = devices[0]
     print(f"\nSelected device: {device.name} ({device.address})")
-    
+
     await test_hid_client(device.address)
 
 
