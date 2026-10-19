@@ -70,17 +70,23 @@ def wifi_link(a, b, ssid="ucxtest-ap", password="ucxtest123"):
     a.return_to_menu(WIFI_AP_MENU, 30)
     a.back_to_main()
 
-    b.menu("w", WIFI_MENU)
-    b.menu("4", r"Enter SSID:")
-    b.send(ssid)
-    b.expect(r"Enter password", 10)
-    b.send(password)
-    i, m = b.expect_any([r"Gateway: (\d+\.\d+\.\d+\.\d+)", r"Connection failed|ERROR"], 40)
-    assert i == 0, "station could not join the AP"
-    gateway = m.group(1)
-    b.return_to_menu(WIFI_MENU, 90)
-    b.back_to_main()
-    return gateway
+    return wifi_join(b, ssid, password)[1]
+
+
+def wifi_join(app, ssid, password):
+    """Join a network from the main menu with manual credentials; returns (own IP, gateway)."""
+    app.menu("w", WIFI_MENU)
+    app.menu("4", r"Enter SSID:")
+    app.send(ssid)
+    app.expect(r"Enter password", 10)
+    app.send(password)
+    i, m = app.expect_any([r"IP address: (\d+\.\d+\.\d+\.\d+)", r"Connection failed|ERROR"], 40)
+    assert i == 0, f"station could not join {ssid}"
+    ip = m.group(1)
+    gateway = app.expect(r"Gateway: (\d+\.\d+\.\d+\.\d+)", 10).group(1)
+    app.return_to_menu(WIFI_MENU, 90)
+    app.back_to_main()
+    return ip, gateway
 
 
 def open_socket_menu(app):
