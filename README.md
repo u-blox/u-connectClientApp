@@ -1,4 +1,4 @@
-# ucx-windows-app - Windows Console Application for u-connectXpress
+# u-connectClientApp - Windows Console Application for u-connectXpress
 
 A native C Windows application for testing and configuring u-connectXpress devices (NORA-W36, NORA-B26).
 
@@ -36,35 +36,35 @@ cd ucx-windows-app
 git submodule update --init u-connectClient
 
 # Launch (auto-builds on first run)
-.\launch-ucx-windows-app.cmd
+.\u-connectClientApp.cmd
 ```
 
 ## Launch Script Commands
 
 ```powershell
 # Run application (default: auto-build if needed)
-.\launch-ucx-windows-app.cmd
+.\u-connectClientApp.cmd
 
 # Firmware update mode (goes directly to firmware menu)
-.\launch-ucx-windows-app.cmd flash
+.\u-connectClientApp.cmd flash
 
 # Debug build
-.\launch-ucx-windows-app.cmd debug
+.\u-connectClientApp.cmd debug
 
 # Update u-connectClient submodule
-.\launch-ucx-windows-app.cmd update
+.\u-connectClientApp.cmd update
 
 # Clean build artifacts
-.\launch-ucx-windows-app.cmd clean
+.\u-connectClientApp.cmd clean
 
 # Rebuild from scratch
-.\launch-ucx-windows-app.cmd rebuild
+.\u-connectClientApp.cmd rebuild
 
 # Code sign for distribution
-.\launch-ucx-windows-app.cmd sign YOUR_CERT_THUMBPRINT
+.\u-connectClientApp.cmd sign YOUR_CERT_THUMBPRINT
 
 # Workspace validation
-.\launch-ucx-windows-app.cmd selftest
+.\u-connectClientApp.cmd selftest
 ```
 
 ## Key Features
@@ -77,15 +77,34 @@ git submodule update --init u-connectClient
 - **Dual Menu Modes**: Detailed and compact views
 - **Smart Auto-Detection**: FTDI device and COM port discovery
 
+## Command Layer (scriptable, portable)
+
+Besides the menu, the app has a small command layer (`u-connectClientApp/src/ucxapp_*.c`)
+with no Windows dependencies, intended to be reused on Linux and embedded targets.
+
+```powershell
+# Run commands non-interactively and exit (exit code 1 on first failure)
+u-connectClientApp.exe COM13 --exec "device.info" --exec "wifi.scan"
+u-connectClientApp.exe COM13 --exec "wifi.connect MySsid MyPassword" --exec "sock.open tcp"
+
+# Interactive command shell (or press [:] in the menu); type 'help'
+u-connectClientApp.exe COM13 --shell
+```
+
+Commands: `device.info`, `wifi.scan|connect|status|disconnect`,
+`sock.open|connect|send|read|close|list`, plus Windows-only `device.connect|disconnect`.
+A command is a table entry (`name`, `usage`, `help`, `run()`); see `src/ucxapp_cmds_wifi.c`.
+Full reference: [u-connectClientApp/UCXAPP_COMMANDS.md](u-connectClientApp/UCXAPP_COMMANDS.md).
+
 ## File Structure
 
 ```
-ucx-windows-app/
-├── launch-ucx-windows-app.cmd      # Launch script
-├── ucx-windows-app.ini             # Settings (auto-created)
+u-connectClientApp/
+├── u-connectClientApp.cmd      # Launch script
+├── u-connectClientApp.ini             # Settings (auto-created)
 ├── README.md
-├── ucx-windows-app/
-│   ├── ucx-windows-app.c           # Main application
+├── u-connectClientApp/
+│   ├── u-connectClientApp.c           # Main application
 │   ├── CMakeLists.txt
 │   ├── bin/                        # Build outputs (gitignored)
 │   ├── release/                    # Signed releases
@@ -102,24 +121,24 @@ ucx-windows-app/
 
 ```powershell
 # Using CMake
-cmake -S ucx-windows-app -B build
+cmake -S u-connectClientApp -B build
 cmake --build build --config Release
 
 # Using Visual Studio
-# Open build/ucx-windows-app.sln
+# Open build/u-connectClientApp.sln
 ```
 
 ## Production Deployment
 
 ```powershell
 # Build release version
-.\launch-ucx-windows-app.cmd
+.\u-connectClientApp.cmd
 
-# Code sign (creates ucx-windows-app-signed.exe in release/)
-.\launch-ucx-windows-app.cmd sign YOUR_CERT_THUMBPRINT
+# Code sign (creates u-connectClientApp-signed.exe in release/)
+.\u-connectClientApp.cmd sign YOUR_CERT_THUMBPRINT
 ```
 
-**Distribution**: `ucx-windows-app/release/ucx-windows-app-signed.exe` is self-contained (~2.5 MB) with FTDI DLL embedded.
+**Distribution**: `u-connectClientApp/release/u-connectClientApp-signed.exe` is self-contained (~2.5 MB) with FTDI DLL embedded.
 
 ---
 

@@ -30,7 +30,7 @@ jobs:
         with:
           submodules: true
       - name: Configure
-        run: cmake -S ucx-windows-app -B build -A x64
+        run: cmake -S u-connectClientApp -B build -A x64
       - name: Build
         run: cmake --build build --config Release
       - uses: actions/setup-python@v5
@@ -42,5 +42,5 @@ jobs:
           python -m pytest tests/test_app_smoke.py -q
       - uses: actions/upload-artifact@v4
         with:
-          name: ucx-windows-app
-          path: ucx-windows-app/bin/ucx-windows-app.exe
+          name: u-connectClientApp
+          path: u-connectClientApp/bin/u-connectClientApp.exe

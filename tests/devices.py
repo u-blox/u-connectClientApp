@@ -1,4 +1,4 @@
-"""Menu-driving helpers shared by the hardware tests (app text patterns follow ucx-windows-app.c)."""
+"""Menu-driving helpers shared by the hardware tests (app text patterns follow u-connectClientApp.c)."""
 
 import re
 

@@ -8,13 +8,13 @@ bin/*.ilk
 bin/*.dll
 !bin/.gitkeep
 
-# ucx-windows-app build outputs
-ucx-windows-app/bin/ucx-windows-app.exe
-ucx-windows-app/bin/ucx-windows-app-debug.exe
+# u-connectClientApp build outputs
+u-connectClientApp/bin/u-connectClientApp.exe
+u-connectClientApp/bin/u-connectClientApp-debug.exe
 
 # Release binaries (tracked in git for distribution)
-!ucx-windows-app/release/
-!ucx-windows-app/release/*.exe
+!u-connectClientApp/release/
+!u-connectClientApp/release/*.exe
 
 # Python
 __pycache__/
@@ -26,7 +26,7 @@ __pycache__/
 .vscode/
 
 # User settings (contains credentials)
-ucx-windows-app.ini
+u-connectClientApp.ini
 
 # OS
 .DS_Store

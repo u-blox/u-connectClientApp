@@ -132,6 +132,8 @@ static PFN_FT_Close gpFT_Close = NULL;
 
 #include "third-party/qrcodegen/qrcodegen.h"
 #include "src/ucx_obfuscate.h"
+#include "src/ucxapp.h"
+#include "src/ucxapp_cmd.h"
 
 // Bluetooth SIG name databases
 #include "third-party/bluetooth-sig/bt_company_identifiers.h"
@@ -163,32 +165,12 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define EXCELLENT_LOCAL_PING_MS 50
 #define EXCELLENT_INTERNET_PING_MS 100
 
-// URC Event flags
-#define URC_FLAG_NETWORK_UP         (1 << 0)  // Wi-Fi Station Network UP (IP assigned)
-#define URC_FLAG_NETWORK_DOWN       (1 << 1)  // Wi-Fi Station Network DOWN (IP lost)
-#define URC_FLAG_SOCK_CONNECTED     (1 << 2)
-#define URC_FLAG_SOCK_DATA          (1 << 3)
-#define URC_FLAG_SPS_CONNECTED      (1 << 4)
-#define URC_FLAG_SPS_DISCONNECTED   (1 << 5)
-#define URC_FLAG_SPS_DATA           (1 << 6)
-#define URC_FLAG_STARTUP            (1 << 7)
-#define URC_FLAG_PING_COMPLETE      (1 << 8)
-#define URC_FLAG_WIFI_LINK_UP       (1 << 9)  // Wi-Fi Link UP (connected to AP)
-#define URC_FLAG_WIFI_LINK_DOWN     (1 << 10) // Wi-Fi Link DOWN (disconnected from AP)
-#define URC_FLAG_MQTT_CONNECTED     (1 << 11) // MQTT connected (+UEMQC)
-#define URC_FLAG_MQTT_DATA          (1 << 12) // MQTT data received (+UEMQDA)
-#define URC_FLAG_BT_CONNECTED       (1 << 13) // Bluetooth connected (+UEBTC)
-#define URC_FLAG_BT_DISCONNECTED    (1 << 14) // Bluetooth disconnected (+UEBTDC)
-#define URC_FLAG_HTTP_RESPONSE_READY (1 << 15) // HTTP response ready (+UEHTCRS)
-#define URC_FLAG_HTTP_DISCONNECTED  (1 << 16) // HTTP disconnected (+UEHTCDC)
-#define URC_FLAG_BT_PASSKEY_REQUEST (1 << 17) // Bluetooth passkey entry requested
-#define URC_FLAG_SOCK_CLOSED        (1 << 18) // Socket closed (+UESOCL)
-#define URC_FLAG_MQTT_DISCONNECTED  (1 << 19) // MQTT disconnected (+UEMQDC)
 
 // Global handles
 static uCxAtClient_t gUcxAtClient;
 static uCxHandle_t gUcxHandle;
 static bool gUcxConnected = false;  // UCX client connection status (COM port)
+static ucxapp_t gApp;               // Portable app context used by the command layer
 static uPortUartHandle_t gUartHandle = NULL;
 static uCxAtClientConfig_t gAtConfig;
 static char gRxBuffer[8192];
@@ -616,9 +598,6 @@ static int gCertificateCount = 0;              // Number of installed certificat
 static int gBluetoothMode = 0;                 // Bluetooth mode (0=disabled, 1=central, 2=peripheral, 3=both)
 static bool gLegacyAdvertising = false;        // Legacy advertisement enabled status
 
-// URC event handling
-static U_CX_MUTEX_HANDLE gUrcMutex;
-static volatile uint32_t gUrcEventFlags = 0;
 
 // Bluetooth pairing - passkey entry address storage (URC_FLAG_BT_PASSKEY_REQUEST event)
 static uBtLeAddress_t gPasskeyRequestAddress;
@@ -1093,6 +1072,8 @@ static void handleUserInput(void);
 static bool ucxclientConnect(const char *comPort);
 static bool quickConnectToLastDevice(void);
 static void ucxclientDisconnect(void);
+static void syncApp(void);
+static void registerPlatformCmds(void);
 static void moduleStartupInit(void);
 static void queryDeviceStatus(void);
 static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortSize, 
@@ -2879,21 +2860,21 @@ static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSi
     
     // Wait for HTTP response status URC
     printf("Waiting for response...\n");
-    U_CX_MUTEX_LOCK(gUrcMutex);
+    ucxapp_events_lock();
     gHttpLastStatusCode = 0;
     gHttpLastSessionId = -1;
     gHttpConnected = true;  // Assume connected after request
-    U_CX_MUTEX_UNLOCK(gUrcMutex);
+    ucxapp_events_unlock();
     
     // Wait up to 5 seconds for response status URC or disconnect
     int waitCount = 0;
     while (waitCount < 50) {
         U_CX_PORT_SLEEP_MS(100);
-        U_CX_MUTEX_LOCK(gUrcMutex);
+        ucxapp_events_lock();
         bool gotResponse = (gHttpLastStatusCode != 0 && gHttpLastSessionId == sessionId);
         bool gotDisconnect = !gHttpConnected;
         int32_t statusCode = gHttpLastStatusCode;
-        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        ucxapp_events_unlock();
         
         if (gotDisconnect && !gotResponse) {
             printf("\nServer disconnected without sending response status.\n");
@@ -3117,32 +3098,17 @@ static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSi
 
 static bool waitEvent(uint32_t evtFlag, uint32_t timeoutS)
 {
-    int32_t timeoutMs = timeoutS * 1000;
-    int32_t startTime = U_CX_PORT_GET_TIME_MS();
-
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "waitEvent(%d, %d)", evtFlag, timeoutS);
-    do {
-        U_CX_MUTEX_TRY_LOCK(gUrcMutex, 100);
-        if (gUrcEventFlags & evtFlag) {
-            gUrcEventFlags &= ~evtFlag;  // Clear the flag
-            U_CX_MUTEX_UNLOCK(gUrcMutex);
-            return true;
-        }
-        U_CX_MUTEX_UNLOCK(gUrcMutex);
-        
-        // Sleep to allow RX thread and AT client to process URCs
-        U_CX_PORT_SLEEP_MS(50);  // Check every 50ms instead of spinning
-    } while (U_CX_PORT_GET_TIME_MS() - startTime < timeoutMs);
-
-    U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Timeout waiting for: %d", evtFlag);
-    return false;
+    bool got = ucxapp_events_wait(evtFlag, timeoutS);
+    if (!got) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Timeout waiting for: %d", evtFlag);
+    }
+    return got;
 }
 
 static void signalEvent(uint32_t evtFlag)
 {
-    U_CX_MUTEX_LOCK(gUrcMutex);
-    gUrcEventFlags |= evtFlag;
-    U_CX_MUTEX_UNLOCK(gUrcMutex);
+    ucxapp_events_signal(evtFlag);
 }
 
 // ============================================================================
@@ -21163,6 +21129,36 @@ int main(int argc, char *argv[])
         }
     }
     
+    // Optional "--exec <command>" (repeatable) and "--shell": command layer without the menu
+    const char *execCmds[16];
+    int execCount = 0;
+    bool shellMode = false;
+    for (int i = 1; i < argc; ) {
+        if (strcmp(argv[i], "--exec") == 0 && i + 1 < argc) {
+            if (execCount < 16) {
+                execCmds[execCount++] = argv[i + 1];
+            }
+            for (int j = i; j + 2 < argc; j++) {
+                argv[j] = argv[j + 2];
+            }
+            argc -= 2;
+        } else if (strcmp(argv[i], "--shell") == 0) {
+            shellMode = true;
+            for (int j = i; j + 1 < argc; j++) {
+                argv[j] = argv[j + 1];
+            }
+            argc -= 1;
+        } else {
+            i++;
+        }
+    }
+    
+    ucxapp_io_set(&ucxapp_io_stdio);
+    ucxapp_register_device_cmds();
+    ucxapp_register_wifi_cmds();
+    ucxapp_register_sock_cmds();
+    registerPlatformCmds();
+    
     // Initialize settings file path with smart location strategy:
     // 1. Check project root first (../../ucx-windows-app.ini from bin/ or release/)
     // 2. If not found in root, use/create in exe directory
@@ -21256,7 +21252,7 @@ int main(int argc, char *argv[])
     if (argc > 1 && argv[1][0] != '-' && strcmp(argv[1], "flash") != 0 && strcmp(argv[1], "bootloader") != 0 && strcmp(argv[1], "hid") != 0) {
         strncpy(gComPort, argv[1], sizeof(gComPort) - 1);
         gComPort[sizeof(gComPort) - 1] = '\0';
-    } else {
+    } else if (execCount == 0 && !shellMode) {
         // No argument provided - show available ports and let user choose
         char recommendedPort[32];
         char recommendedDevice[64];
@@ -21297,9 +21293,32 @@ int main(int argc, char *argv[])
         autoConnected = true;
     } else {
         printf("\nFailed to connect. You can try again from the menu.\n");
-        
-        // Show welcome guide for first-time users
-        printWelcomeGuide();
+        if (execCount == 0 && !shellMode) {
+            // Show welcome guide for first-time users
+            printWelcomeGuide();
+        }
+    }
+
+    // Non-interactive command mode: run --exec commands (or a shell) and exit
+    if (execCount > 0 || shellMode) {
+        int rc = 0;
+        syncApp();
+        for (int i = 0; i < execCount; i++) {
+            char line[256];
+            strncpy(line, execCmds[i], sizeof(line) - 1);
+            line[sizeof(line) - 1] = '\0';
+            if (ucxapp_cmd_exec(&gApp, line) != UCXAPP_OK) {
+                rc = 1;
+                break;
+            }
+        }
+        if (shellMode) {
+            ucxapp_shell_run(&gApp);
+        }
+        if (gUcxConnected) {
+            ucxclientDisconnect();
+        }
+        return rc;
     }
     
     // If flash mode is enabled and we're connected, go to firmware menu
@@ -21440,12 +21459,12 @@ int main(int argc, char *argv[])
     
     while (gMenuState != MENU_EXIT) {
         // Handle module restart - check event flag like socket does
-        U_CX_MUTEX_LOCK(gUrcMutex);
-        bool startupPending = (gUrcEventFlags & URC_FLAG_STARTUP) != 0;
+        ucxapp_events_lock();
+        bool startupPending = (gUcxappEventFlags & URC_FLAG_STARTUP) != 0;
         if (startupPending) {
-            gUrcEventFlags &= ~URC_FLAG_STARTUP;  // Clear the flag
+            gUcxappEventFlags &= ~URC_FLAG_STARTUP;  // Clear the flag
         }
-        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        ucxapp_events_unlock();
         
         if (startupPending && gUcxConnected) {
             printf("\n  Reconfiguring module after restart...\n");
@@ -21476,12 +21495,12 @@ int main(int argc, char *argv[])
         }
         
         // Handle passkey entry request (from URC)
-        U_CX_MUTEX_LOCK(gUrcMutex);
-        bool passkeyPending = (gUrcEventFlags & URC_FLAG_BT_PASSKEY_REQUEST) != 0;
+        ucxapp_events_lock();
+        bool passkeyPending = (gUcxappEventFlags & URC_FLAG_BT_PASSKEY_REQUEST) != 0;
         if (passkeyPending) {
-            gUrcEventFlags &= ~URC_FLAG_BT_PASSKEY_REQUEST;  // Clear the flag
+            gUcxappEventFlags &= ~URC_FLAG_BT_PASSKEY_REQUEST;  // Clear the flag
         }
-        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        ucxapp_events_unlock();
         
         if (passkeyPending) {
             
@@ -21549,12 +21568,12 @@ int main(int argc, char *argv[])
         }
         
         // Auto-read Socket data (URC_FLAG_SOCK_DATA event)
-        U_CX_MUTEX_LOCK(gUrcMutex);
-        bool socketDataPending = (gUrcEventFlags & URC_FLAG_SOCK_DATA) != 0;
+        ucxapp_events_lock();
+        bool socketDataPending = (gUcxappEventFlags & URC_FLAG_SOCK_DATA) != 0;
         if (socketDataPending) {
-            gUrcEventFlags &= ~URC_FLAG_SOCK_DATA;
+            gUcxappEventFlags &= ~URC_FLAG_SOCK_DATA;
         }
-        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        ucxapp_events_unlock();
         
         if (socketDataPending && gUcxConnected && gPendingSocketRead.socket_handle >= 0) {
             int32_t sockHandle = gPendingSocketRead.socket_handle;
@@ -21582,12 +21601,12 @@ int main(int argc, char *argv[])
         }
         
         // Auto-read SPS data (URC_FLAG_SPS_DATA event)
-        U_CX_MUTEX_LOCK(gUrcMutex);
-        bool spsDataPending = (gUrcEventFlags & URC_FLAG_SPS_DATA) != 0;
+        ucxapp_events_lock();
+        bool spsDataPending = (gUcxappEventFlags & URC_FLAG_SPS_DATA) != 0;
         if (spsDataPending) {
-            gUrcEventFlags &= ~URC_FLAG_SPS_DATA;
+            gUcxappEventFlags &= ~URC_FLAG_SPS_DATA;
         }
-        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        ucxapp_events_unlock();
         
         if (spsDataPending && gUcxConnected && gPendingSpsRead.connection_handle >= 0) {
             int32_t connHandle = gPendingSpsRead.connection_handle;
@@ -21615,12 +21634,12 @@ int main(int argc, char *argv[])
         }
         
         // Auto-read MQTT data (URC_FLAG_MQTT_DATA event)
-        U_CX_MUTEX_LOCK(gUrcMutex);
-        bool mqttDataPending = (gUrcEventFlags & URC_FLAG_MQTT_DATA) != 0;
+        ucxapp_events_lock();
+        bool mqttDataPending = (gUcxappEventFlags & URC_FLAG_MQTT_DATA) != 0;
         if (mqttDataPending) {
-            gUrcEventFlags &= ~URC_FLAG_MQTT_DATA;
+            gUcxappEventFlags &= ~URC_FLAG_MQTT_DATA;
         }
-        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        ucxapp_events_unlock();
         
         if (mqttDataPending && gUcxConnected && gPendingMqttRead.mqtt_client_id >= 0) {
             int32_t clientId = gPendingMqttRead.mqtt_client_id;
@@ -22094,7 +22113,7 @@ static void printMenu(void)
             if (!gUcxConnected) {
                 printf("Tip: Connect a device to unlock all features\n");
             } else {
-                printf("Tip: Press [?] for help, [t] for AT terminal\n");
+                printf("Tip: Press [?] for help, [t] for AT terminal, [:] for command shell\n");
             }
             break;
             
@@ -22782,6 +22801,8 @@ static void handleUserInput(void)
                 choice = 12;  // List UCX API commands (works when connected or not)
             } else if (firstChar == '?') {
                 choice = 95;  // Help (works whether connected or not)
+            } else if (firstChar == ':') {
+                choice = 96;  // Command shell
             } else if (firstChar == 'c') {
                 choice = 94;  // Toggle menu mode (detailed/compact)
             } else if (firstChar == 'd') {
@@ -23106,6 +23127,10 @@ static void handleUserInput(void)
                     break;
                 case 95:  // Help
                     printHelp();
+                    break;
+                case 96:  // ':' - command shell
+                    syncApp();
+                    ucxapp_shell_run(&gApp);
                     break;
                 case 0:
                     // Don't exit on Enter/0 in main menu - only 'q' should quit
@@ -24984,7 +25009,7 @@ static bool ucxclientConnect(const char *comPort)
     gUcxHandle.callbacks.STARTUP = startupUrc;
     
     // Create mutex for URC event handling
-    U_CX_MUTEX_CREATE(gUrcMutex);
+    ucxapp_events_init();
     
     // Register all URC handlers
     enableAllUrcs();
@@ -25064,7 +25089,7 @@ static void ucxclientDisconnect(void)
     }
     
     // Delete mutex
-    U_CX_MUTEX_DELETE(gUrcMutex);
+    ucxapp_events_deinit();
 
     // Close AT client (this stops the RX task and closes the UART)
     uCxAtClientClose(&gUcxAtClient);
@@ -25125,6 +25150,64 @@ static bool quickConnectToLastDevice(void)
         printf("\nQuick connect failed. Please use [1] to connect manually.\n");
         return false;
     }
+}
+
+// ----------------------------------------------------------------
+// Platform (Windows) commands for the command layer
+// ----------------------------------------------------------------
+
+static void syncApp(void)
+{
+    gApp.ucx = gUcxConnected ? &gUcxHandle : NULL;
+}
+
+static int cmdDeviceConnect(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    if (argc > 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (gUcxConnected) {
+        ucxapp_print("Already connected to %s\n", gComPort);
+        return UCXAPP_OK;
+    }
+    if (argc > 1 && argv[1] != gComPort) {
+        strncpy(gComPort, argv[1], sizeof(gComPort) - 1);
+        gComPort[sizeof(gComPort) - 1] = '\0';
+    }
+    if (gComPort[0] == '\0') {
+        ucxapp_print("ERROR: no port given and none saved\n");
+        return UCXAPP_ERR_USAGE;
+    }
+    bool ok = ucxclientConnect(gComPort);
+    syncApp();
+    if (!ok) {
+        return UCXAPP_ERR_FAILED;
+    }
+    saveSettings();
+    return UCXAPP_OK;
+}
+
+static int cmdDeviceDisconnect(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    (void)argc;
+    (void)argv;
+    if (gUcxConnected) {
+        ucxclientDisconnect();
+    }
+    syncApp();
+    return UCXAPP_OK;
+}
+
+static const ucxapp_cmd_t gPlatformCmds[] = {
+    { "device.connect",    "[port]", "Connect to the module (default: saved port)", 0, cmdDeviceConnect },
+    { "device.disconnect", "",       "Disconnect from the module",                  0, cmdDeviceDisconnect },
+};
+
+static void registerPlatformCmds(void)
+{
+    ucxapp_cmd_register(gPlatformCmds, sizeof(gPlatformCmds) / sizeof(gPlatformCmds[0]));
 }
 
 // ----------------------------------------------------------------
@@ -27093,10 +27176,10 @@ static void executeModuleReboot(void)
     printf("\n--- Module Reboot/Switch Off ---\n");
     
     // Clear any pending STARTUP flag and timestamp from previous operations
-    U_CX_MUTEX_LOCK(gUrcMutex);
-    gUrcEventFlags &= ~URC_FLAG_STARTUP;
+    ucxapp_events_lock();
+    gUcxappEventFlags &= ~URC_FLAG_STARTUP;
     gStartupTimestamp = 0;
-    U_CX_MUTEX_UNLOCK(gUrcMutex);
+    ucxapp_events_unlock();
     
     // WORKAROUND for NORA-W36 firmware bug: Enable echo before AT+CPWROFF
     // Bug: When echo is OFF, module doesn't send OK before rebooting
@@ -27198,10 +27281,10 @@ static void executeFactoryReset(void)
     printf("\n--- Factory Reset ---\n");
     
     // Clear any pending STARTUP flag and timestamp
-    U_CX_MUTEX_LOCK(gUrcMutex);
-    gUrcEventFlags &= ~URC_FLAG_STARTUP;
+    ucxapp_events_lock();
+    gUcxappEventFlags &= ~URC_FLAG_STARTUP;
     gStartupTimestamp = 0;
-    U_CX_MUTEX_UNLOCK(gUrcMutex);
+    ucxapp_events_unlock();
     
     // Step 1: Factory reset (AT+USYFR)
     printf("Sending AT+USYFR (factory reset)...\n");
@@ -27238,12 +27321,12 @@ static void executeFactoryReset(void)
             printf(".");
             fflush(stdout);
             
-            U_CX_MUTEX_LOCK(gUrcMutex);
-            bool startupReceived = (gUrcEventFlags & URC_FLAG_STARTUP) != 0;
+            ucxapp_events_lock();
+            bool startupReceived = (gUcxappEventFlags & URC_FLAG_STARTUP) != 0;
             if (startupReceived) {
-                gUrcEventFlags &= ~URC_FLAG_STARTUP;  // Clear the flag
+                gUcxappEventFlags &= ~URC_FLAG_STARTUP;  // Clear the flag
             }
-            U_CX_MUTEX_UNLOCK(gUrcMutex);
+            ucxapp_events_unlock();
             
             if (startupReceived) {
                 ULONGLONG elapsedMs = gStartupTimestamp - startTime;
@@ -29565,9 +29648,9 @@ static bool connectToWifiProfile(int profileIndex, bool quickConnect, bool verbo
     }
     
     // Clear event flags
-    U_CX_MUTEX_LOCK(gUrcMutex);
-    gUrcEventFlags &= ~(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
-    U_CX_MUTEX_UNLOCK(gUrcMutex);
+    ucxapp_events_lock();
+    gUcxappEventFlags &= ~(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
+    ucxapp_events_unlock();
     
     // Connect
     int32_t err = uCxWifiStationConnect(&gUcxHandle, 0);
@@ -29596,9 +29679,9 @@ static bool connectToWifiProfile(int profileIndex, bool quickConnect, bool verbo
             fflush(stdout);
         }
         
-        U_CX_MUTEX_LOCK(gUrcMutex);
-        bool netUp = (gUrcEventFlags & URC_FLAG_NETWORK_UP) != 0;
-        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        ucxapp_events_lock();
+        bool netUp = (gUcxappEventFlags & URC_FLAG_NETWORK_UP) != 0;
+        ucxapp_events_unlock();
         
         if (netUp) {
             connected = true;
@@ -29853,9 +29936,9 @@ static void wifiConnect(void)
     }
     
     // Clear any pending network event flags before connecting
-    U_CX_MUTEX_LOCK(gUrcMutex);
-    gUrcEventFlags &= ~(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
-    U_CX_MUTEX_UNLOCK(gUrcMutex);
+    ucxapp_events_lock();
+    gUcxappEventFlags &= ~(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
+    ucxapp_events_unlock();
     
     // Initiate connection
     printf("Initiating connection...\n");
@@ -29962,9 +30045,9 @@ static void wifiDisconnect(void)
     printf("Disconnecting from Wi-Fi...\n");
     
     // Clear any pending disconnect event flags
-    U_CX_MUTEX_LOCK(gUrcMutex);
-    gUrcEventFlags &= ~(URC_FLAG_NETWORK_DOWN | URC_FLAG_WIFI_LINK_DOWN);
-    U_CX_MUTEX_UNLOCK(gUrcMutex);
+    ucxapp_events_lock();
+    gUcxappEventFlags &= ~(URC_FLAG_NETWORK_DOWN | URC_FLAG_WIFI_LINK_DOWN);
+    ucxapp_events_unlock();
     
     if (uCxWifiStationDisconnect(&gUcxHandle) == 0) {
         // Wait for Wi-Fi link down URC event (max 3 seconds)

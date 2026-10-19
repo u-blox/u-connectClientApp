@@ -14,13 +14,13 @@ def test_submodule_is_u_connect_client():
 
 
 def test_cmake_references_existing_submodule_files():
-    cmake = (ROOT / "ucx-windows-app" / "CMakeLists.txt").read_text(encoding="utf-8")
+    cmake = (ROOT / "u-connectClientApp" / "CMakeLists.txt").read_text(encoding="utf-8")
     for rel in re.findall(r"\.\./(u-connectClient/[\w./-]+\.(?:cmake|c))\b", cmake):
         assert (ROOT / rel).is_file(), f"{rel} referenced by CMakeLists.txt is missing (submodule not initialised?)"
 
 
 def test_no_stale_ucxclient_paths_in_build_files():
-    for rel in ("launch-ucx-windows-app.cmd", "ucx-windows-app/CMakeLists.txt"):
+    for rel in ("u-connectClientApp.cmd", "u-connectClientApp/CMakeLists.txt"):
         text = (ROOT / rel).read_text(encoding="utf-8")
         assert not re.search(r"(?<![\w-])ucxclient[\\/]", text), f"{rel} still references ucxclient/"
 

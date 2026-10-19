@@ -1,5 +1,5 @@
 @echo off
-REM Launch script for ucx-windows-app
+REM Launch script for u-connectClientApp
 
 setlocal enabledelayedexpansion
 
@@ -148,10 +148,10 @@ if /i "%1"=="debug" (
     echo.
 )
 
-REM Set build directory to ucx-windows-app/bin (where CMake outputs executables)
-set BUILD_DIR=ucx-windows-app\bin
-set FTDI_DLL=ucx-windows-app\third-party\ftdi\ftd2xx64.dll
-set SETTINGS_FILE=ucx-windows-app.ini
+REM Set build directory to u-connectClientApp/bin (where CMake outputs executables)
+set BUILD_DIR=u-connectClientApp\bin
+set FTDI_DLL=u-connectClientApp\third-party\ftdi\ftd2xx64.dll
+set SETTINGS_FILE=u-connectClientApp.ini
 
 REM Create settings file in project root if it doesn't exist
 REM This allows the application to find and use a shared settings file
@@ -165,16 +165,16 @@ if not exist "%SETTINGS_FILE%" (
 
 REM Determine executable name based on configuration
 if /i "!CONFIG!"=="Debug" (
-    set EXE_NAME=ucx-windows-app-debug.exe
+    set EXE_NAME=u-connectClientApp-debug.exe
 ) else (
-    set EXE_NAME=ucx-windows-app.exe
+    set EXE_NAME=u-connectClientApp.exe
 )
 
 REM Check if executable exists and if source files are newer
 set NEED_BUILD=0
 set EXE_PATH=!BUILD_DIR!\!EXE_NAME!
-set SOURCE_FILE=ucx-windows-app\ucx-windows-app.c
-set SIGNED_EXE=ucx-windows-app\release\ucx-windows-app-signed.exe
+set SOURCE_FILE=u-connectClientApp\u-connectClientApp.c
+set SIGNED_EXE=u-connectClientApp\release\u-connectClientApp-signed.exe
 set USE_SIGNED=0
 
 if not exist "!EXE_PATH!" (
@@ -213,7 +213,7 @@ if not exist "!EXE_PATH!" (
     
     REM Simple comparison: if source is newer, rebuild
     if "!SOURCE_FILE!" NEQ "" (
-        forfiles /P "ucx-windows-app" /M "ucx-windows-app.c" /D +0 /C "cmd /c if @fdate GTR !EXE_TIME! set NEED_BUILD=1" 2>nul
+        forfiles /P "u-connectClientApp" /M "u-connectClientApp.c" /D +0 /C "cmd /c if @fdate GTR !EXE_TIME! set NEED_BUILD=1" 2>nul
         if exist "!SOURCE_FILE!" (
             powershell -Command "if ((Get-Item '!SOURCE_FILE!').LastWriteTime -gt (Get-Item '!EXE_PATH!').LastWriteTime) { exit 1 }" >nul 2>&1
             if errorlevel 1 (
@@ -233,7 +233,7 @@ if !NEED_BUILD! EQU 1 (
     REM Configure if needed
     if not exist "build\CMakeCache.txt" (
         echo Configuring CMake...
-        cmake -S ucx-windows-app -B build
+        cmake -S u-connectClientApp -B build
         if errorlevel 1 (
             echo ERROR: CMake configuration failed!
             exit /b 1
@@ -242,7 +242,7 @@ if !NEED_BUILD! EQU 1 (
     
     REM Build
     echo Building !EXE_NAME! in !CONFIG! configuration...
-    cmake --build build --config !CONFIG! --target ucx-windows-app
+    cmake --build build --config !CONFIG! --target u-connectClientApp
     if errorlevel 1 (
         echo ERROR: Build failed!
         exit /b 1
@@ -275,8 +275,8 @@ if /i "%CONFIG%"=="Debug" (
     echo.
     echo To debug in VS Code:
     echo   1. Open workspace in VS Code
-    echo   2. Set breakpoints in ucx-windows-app.c
-    echo   3. Press F5 to start debugging (or Run and Debug ^> C/C++: ucx-windows-app^)
+    echo   2. Set breakpoints in u-connectClientApp.c
+    echo   3. Press F5 to start debugging (or Run and Debug ^> C/C++: u-connectClientApp^)
     echo.
     echo Or run directly: !EXE_PATH!
     echo.
@@ -290,8 +290,8 @@ echo.
 REM If USE_SIGNED flag is set from earlier check, use signed version
 if !USE_SIGNED! EQU 1 (
     set LAUNCH_EXE=!SIGNED_EXE!
-    set LAUNCH_DIR=ucx-windows-app\release
-    echo Launching ucx-windows-app-signed.exe ^(for fast getting started^)...
+    set LAUNCH_DIR=u-connectClientApp\release
+    echo Launching u-connectClientApp-signed.exe ^(for fast getting started^)...
     echo [INFO] This is the pre-built signed version.
     echo [INFO] If you modify the source code, it will be rebuilt automatically on next launch.
     goto :do_launch
@@ -303,8 +303,8 @@ if exist "!SIGNED_EXE!" (
     powershell -Command "if ((Get-Item '!SIGNED_EXE!').LastWriteTime -ge (Get-Item '!EXE_PATH!').LastWriteTime) { exit 0 } else { exit 1 }" >nul 2>&1
     if not errorlevel 1 (
         set LAUNCH_EXE=!SIGNED_EXE!
-        set LAUNCH_DIR=ucx-windows-app\release
-        echo Launching ucx-windows-app-signed.exe ^(Signed Release - newer or equal^)...
+        set LAUNCH_DIR=u-connectClientApp\release
+        echo Launching u-connectClientApp-signed.exe ^(Signed Release - newer or equal^)...
     ) else (
         set LAUNCH_EXE=!EXE_PATH!
         set LAUNCH_DIR=!BUILD_DIR!
@@ -346,24 +346,24 @@ echo Launching Signed Release
 echo ===================================
 echo.
 
-set SIGNED_EXE=ucx-windows-app\release\ucx-windows-app-signed.exe
+set SIGNED_EXE=u-connectClientApp\release\u-connectClientApp-signed.exe
 
 if not exist "!SIGNED_EXE!" (
     echo [ERROR] Signed executable not found: !SIGNED_EXE!
     echo.
     echo Please sign the executable first:
-    echo   launch-ucx-windows-app.cmd sign [thumbprint]
+    echo   u-connectClientApp.cmd sign [thumbprint]
     echo.
     exit /b 1
 )
 
-echo Launching ucx-windows-app-signed.exe...
+echo Launching u-connectClientApp-signed.exe...
 echo.
 
 cd ucx-windows-app\release
 
 REM Pass arguments (skip first argument which is --signed)
-ucx-windows-app-signed.exe %2 %3 %4 %5 %6 %7 %8 %9
+u-connectClientApp-signed.exe %2 %3 %4 %5 %6 %7 %8 %9
 
 REM Store exit code
 set APP_EXIT_CODE=%ERRORLEVEL%
@@ -384,18 +384,18 @@ echo ===================================
 echo.
 
 REM Use unsigned (development) version for HID mode
-set UNSIGNED_EXE=ucx-windows-app\bin\ucx-windows-app.exe
+set UNSIGNED_EXE=u-connectClientApp\bin\u-connectClientApp.exe
 
 if exist "!UNSIGNED_EXE!" (
     echo Launching development version with HID mode...
     echo.
     cd ucx-windows-app\bin
-    ucx-windows-app.exe hid %2 %3 %4 %5 %6 %7 %8 %9
+    u-connectClientApp.exe hid %2 %3 %4 %5 %6 %7 %8 %9
 ) else (
     echo [ERROR] No executable found!
     echo.
     echo Please build the application first:
-    echo   launch-ucx-windows-app.cmd
+    echo   u-connectClientApp.cmd
     echo.
     exit /b 1
 )
@@ -510,7 +510,7 @@ cmake --build build --config %REBUILD_CONFIG% --target clean 2>nul
 REM Force CMake reconfigure to pick up latest Git commit count
 echo Step 2: Reconfiguring CMake...
 del /Q build\CMakeCache.txt 2>nul
-cmake -S ucx-windows-app -B build
+cmake -S u-connectClientApp -B build
 if errorlevel 1 (
     echo ERROR: CMake configuration failed!
     pause
@@ -519,7 +519,7 @@ if errorlevel 1 (
 
 REM Build
 echo Step 3: Building...
-cmake --build build --config %REBUILD_CONFIG% --target ucx-windows-app
+cmake --build build --config %REBUILD_CONFIG% --target u-connectClientApp
 if errorlevel 1 (
     echo ERROR: Build failed!
     exit /b 1
@@ -545,9 +545,9 @@ echo This will build both Debug and Release configurations.
 echo.
 
 REM Configure if needed
-if not exist "build\ucx-windows-app.vcxproj" (
+if not exist "build\u-connectClientApp.vcxproj" (
     echo Configuring CMake...
-    cmake -S ucx-windows-app -B build
+    cmake -S u-connectClientApp -B build
     if errorlevel 1 (
         echo ERROR: CMake configuration failed!
         exit /b 1
@@ -560,7 +560,7 @@ echo ===================================
 echo [1/2] Building Debug Configuration
 echo ===================================
 echo.
-cmake --build build --config Debug --target ucx-windows-app
+cmake --build build --config Debug --target u-connectClientApp
 if errorlevel 1 (
     echo ERROR: Debug build failed!
     exit /b 1
@@ -574,7 +574,7 @@ echo ===================================
 echo [2/2] Building Release Configuration
 echo ===================================
 echo.
-cmake --build build --config Release --target ucx-windows-app
+cmake --build build --config Release --target u-connectClientApp
 if errorlevel 1 (
     echo ERROR: Release build failed!
     exit /b 1
@@ -588,8 +588,8 @@ echo All Configurations Built Successfully!
 echo ===================================
 echo.
 echo Output files:
-echo   ucx-windows-app\bin\ucx-windows-app-debug.exe
-echo   ucx-windows-app\bin\ucx-windows-app.exe
+echo   u-connectClientApp\bin\u-connectClientApp-debug.exe
+echo   u-connectClientApp\bin\u-connectClientApp.exe
 echo.
 exit /b 0
 
@@ -598,15 +598,15 @@ REM Sign command
 REM ===================================
 :sign
 echo ===================================
-echo Code Signing ucx-windows-app.exe
+echo Code Signing u-connectClientApp.exe
 echo ===================================
 echo.
 
 REM Always sign Release configuration
 set SIGN_CONFIG=Release
 
-set SIGN_EXE=ucx-windows-app\bin\ucx-windows-app.exe
-set SIGN_EXE_SIGNED=ucx-windows-app\release\ucx-windows-app-signed.exe
+set SIGN_EXE=u-connectClientApp\bin\u-connectClientApp.exe
+set SIGN_EXE_SIGNED=u-connectClientApp\release\u-connectClientApp-signed.exe
 
 REM Accept thumbprint from either %1 (called as subroutine) or %2 (called from command line)
 if not "%~1"=="" (
@@ -620,7 +620,7 @@ if not exist "!SIGN_EXE!" (
     echo [ERROR] Executable not found: !SIGN_EXE!
     echo.
     echo Build the Release version first:
-    echo   launch-ucx-windows-app.cmd rebuild
+    echo   u-connectClientApp.cmd rebuild
     echo.
     exit /b 1
 )
@@ -630,10 +630,10 @@ if not defined CERT_THUMBPRINT (
     echo [ERROR] Certificate thumbprint required!
     echo.
     echo USAGE:
-    echo   launch-ucx-windows-app.cmd sign [thumbprint]
+    echo   u-connectClientApp.cmd sign [thumbprint]
     echo.
     echo EXAMPLE:
-    echo   launch-ucx-windows-app.cmd sign 1234567890ABCDEF...
+    echo   u-connectClientApp.cmd sign 1234567890ABCDEF...
     echo.
     echo To find your certificate thumbprint:
     echo   1. Open Certificate Manager: certmgr.msc
@@ -709,8 +709,8 @@ echo ===================================
 echo.
 
 REM Create release folder if it doesn't exist
-if not exist "ucx-windows-app\release" (
-    mkdir "ucx-windows-app\release"
+if not exist "u-connectClientApp\release" (
+    mkdir "u-connectClientApp\release"
 )
 
 REM Copy the signed executable to release folder
@@ -774,14 +774,14 @@ if defined SIGN_THUMBPRINT (
     call :sign !SIGN_THUMBPRINT!
     if errorlevel 1 (
         echo [WARNING] Signing failed, continuing with unsigned binary
-        set RELEASE_FILE=ucx-windows-app\bin\ucx-windows-app.exe
+        set RELEASE_FILE=u-connectClientApp\bin\u-connectClientApp.exe
     ) else (
-        set RELEASE_FILE=ucx-windows-app\release\ucx-windows-app-signed.exe
+        set RELEASE_FILE=u-connectClientApp\release\u-connectClientApp-signed.exe
     )
 ) else (
     echo [Step 2/5] Skipping signing (no thumbprint provided)
     echo.
-    set RELEASE_FILE=ucx-windows-app\bin\ucx-windows-app.exe
+    set RELEASE_FILE=u-connectClientApp\bin\u-connectClientApp.exe
 )
 
 REM Step 3: Commit the built/signed executable
@@ -879,7 +879,7 @@ echo 1. Go to: https://github.com/u-blox/ucx-windows-app/releases/new
 echo.
 echo 2. Fill in the release form:
 echo    Tag:   v%RELEASE_VERSION%
-echo    Title: ucx-windows-app v%RELEASE_VERSION%
+echo    Title: u-connectClientApp v%RELEASE_VERSION%
 echo.
 echo 3. Release notes (copy this):
 echo ----------------------------------------
@@ -898,7 +898,7 @@ echo ## SHA256 Checksum
 echo sha256:!SHA256_HASH!
 echo.
 echo ## Installation
-echo Download ucx-windows-app-signed.exe and run - no installation required.
+echo Download u-connectClientApp-signed.exe and run - no installation required.
 echo FTDI drivers are embedded in the executable.
 echo ----------------------------------------
 echo.
@@ -915,7 +915,7 @@ REM ===================================
 :help
 echo.
 echo USAGE:
-echo   launch-ucx-windows-app.cmd [options] [arguments]
+echo   u-connectClientApp.cmd [options] [arguments]
 echo.
 echo BASIC USAGE:
 echo   (no args)             Run Release build (auto-selects signed if newer)
@@ -964,49 +964,49 @@ echo.
 echo   help / --help / -h    Show this help message
 echo.
 echo EXAMPLES:
-echo   launch-ucx-windows-app.cmd
+echo   u-connectClientApp.cmd
 echo       Launch Release build (auto-selects signed if newer)
 echo.
-echo   launch-ucx-windows-app.cmd signed
+echo   u-connectClientApp.cmd signed
 echo       Force launch signed version from release folder
 echo.
-echo   launch-ucx-windows-app.cmd debug
+echo   u-connectClientApp.cmd debug
 echo       Launch Debug build (auto-builds if needed)
 echo.
-echo   launch-ucx-windows-app.cmd COM4
+echo   u-connectClientApp.cmd COM4
 echo       Launch Release build and pass COM4 to the app
 echo.
-echo   launch-ucx-windows-app.cmd signed COM4
+echo   u-connectClientApp.cmd signed COM4
 echo       Launch signed version and pass COM4 to the app
 echo.
-echo   launch-ucx-windows-app.cmd debug COM4
+echo   u-connectClientApp.cmd debug COM4
 echo       Launch Debug build and pass COM4 to the app
 echo.
-echo   launch-ucx-windows-app.cmd hid
+echo   u-connectClientApp.cmd hid
 echo       Start directly in HID Keyboard mode (auto-setup HID service)
 echo.
-echo   launch-ucx-windows-app.cmd clean
+echo   u-connectClientApp.cmd clean
 echo       Clean all configurations (Debug and Release)
 echo.
-echo   launch-ucx-windows-app.cmd clean debug
+echo   u-connectClientApp.cmd clean debug
 echo       Clean only Debug configuration
 echo.
-echo   launch-ucx-windows-app.cmd rebuild
+echo   u-connectClientApp.cmd rebuild
 echo       Clean and rebuild Release configuration
 echo.
-echo   launch-ucx-windows-app.cmd rebuild debug
+echo   u-connectClientApp.cmd rebuild debug
 echo       Clean and rebuild Debug configuration
 echo.
-echo   launch-ucx-windows-app.cmd all
+echo   u-connectClientApp.cmd all
 echo       Build both Debug and Release configurations
 echo.
-echo   launch-ucx-windows-app.cmd sign 1234567890ABCDEF...
-echo       Sign Release build and save to ucx-windows-app-signed.exe
+echo   u-connectClientApp.cmd sign 1234567890ABCDEF...
+echo       Sign Release build and save to u-connectClientApp-signed.exe
 echo.
-echo   launch-ucx-windows-app.cmd selftest
+echo   u-connectClientApp.cmd selftest
 echo       Run comprehensive workspace tests and validation
 echo.
-echo   launch-ucx-windows-app.cmd update
+echo   u-connectClientApp.cmd update
 echo       Update u-connectClient submodule to latest master branch
 echo.
 echo NOTES:
@@ -1014,8 +1014,8 @@ echo   - Release is the default (optimized, no debug symbols)
 echo   - Debug is for development/troubleshooting (symbols, no optimization)
 echo   - First launch auto-configures CMake if needed
 echo   - Auto-builds if executable is missing or outdated
-echo   - Settings file: ucx-windows-app.ini in project root (launcher creates it)
-echo   - Exe-only usage: Creates ucx-windows-app.ini next to executable
+echo   - Settings file: u-connectClientApp.ini in project root (launcher creates it)
+echo   - Exe-only usage: Creates u-connectClientApp.ini next to executable
 echo.
 exit /b 0
 
@@ -1043,7 +1043,7 @@ REM Check if this is a git repository
 if not exist ".git" (
     echo [ERROR] Not a git repository!
     echo.
-    echo This command requires the ucx-windows-app repository to be cloned from GitHub.
+    echo This command requires the u-connectClientApp repository to be cloned from GitHub.
     echo Clone with: git clone --recurse-submodules https://github.com/u-blox/ucx-windows-app.git
     echo.
     exit /b 1
@@ -1146,7 +1146,7 @@ REM ===================================
 :selftest
 echo.
 echo ========================================
-echo ucx-windows-app SELFTEST
+echo u-connectClientApp SELFTEST
 echo ========================================
 echo.
 echo This will verify the workspace integrity by checking:
@@ -1161,18 +1161,18 @@ set "SELFTEST_ERRORS=0"
 set "SELFTEST_WARNINGS=0"
 
 REM Check current directory is project root
-if not exist "ucx-windows-app\ucx-windows-app.c" (
-    echo [ERROR] Not in ucx-windows-app project root!
+if not exist "u-connectClientApp\u-connectClientApp.c" (
+    echo [ERROR] Not in u-connectClientApp project root!
     echo Current directory: %CD%
-    echo Expected to find: ucx-windows-app\ucx-windows-app.c
+    echo Expected to find: u-connectClientApp\u-connectClientApp.c
     exit /b 1
 )
-echo [OK] Working directory is ucx-windows-app project root
+echo [OK] Working directory is u-connectClientApp project root
 
 REM Check critical directory structure
 echo.
 echo Checking directory structure...
-set "REQUIRED_DIRS=u-connectClient u-connectClient\src u-connectClient\inc u-connectClient\ucx_api ucx-windows-app build"
+set "REQUIRED_DIRS=u-connectClient u-connectClient\src u-connectClient\inc u-connectClient\ucx_api u-connectClientApp build"
 for %%d in (%REQUIRED_DIRS%) do (
     if exist "%%d\" (
         echo [OK] %%d\
@@ -1185,7 +1185,7 @@ for %%d in (%REQUIRED_DIRS%) do (
 REM Check critical source files
 echo.
 echo Checking critical source files...
-set "REQUIRED_FILES=u-connectClient\src\u_cx_at_client.c u-connectClient\inc\u_cx_at_client.h ucx-windows-app\ucx-windows-app.c ucx-windows-app\CMakeLists.txt README.md"
+set "REQUIRED_FILES=u-connectClient\src\u_cx_at_client.c u-connectClient\inc\u_cx_at_client.h u-connectClientApp\u-connectClientApp.c u-connectClientApp\CMakeLists.txt README.md"
 for %%f in (%REQUIRED_FILES%) do (
     if exist "%%f" (
         echo [OK] %%f
@@ -1223,10 +1223,10 @@ if exist "build\CMakeCache.txt" (
     set /a SELFTEST_WARNINGS+=1
 )
 
-if exist "build\ucx-windows-app.sln" (
+if exist "build\u-connectClientApp.sln" (
     echo [OK] Visual Studio solution generated
 ) else (
-    echo [WARNING] ucx-windows-app.sln not found
+    echo [WARNING] u-connectClientApp.sln not found
     echo          Run the launcher to generate build files
     set /a SELFTEST_WARNINGS+=1
 )
@@ -1234,9 +1234,9 @@ if exist "build\ucx-windows-app.sln" (
 REM Check executables
 echo.
 echo Checking executables...
-set "RELEASE_EXE=ucx-windows-app\bin\ucx-windows-app.exe"
-set "DEBUG_EXE=ucx-windows-app\bin\ucx-windows-app-debug.exe"
-set "SIGNED_EXE=ucx-windows-app\release\ucx-windows-app-signed.exe"
+set "RELEASE_EXE=u-connectClientApp\bin\u-connectClientApp.exe"
+set "DEBUG_EXE=u-connectClientApp\bin\u-connectClientApp-debug.exe"
+set "SIGNED_EXE=u-connectClientApp\release\u-connectClientApp-signed.exe"
 
 if exist "!RELEASE_EXE!" (
     echo [OK] Release executable exists
@@ -1263,7 +1263,7 @@ if exist "!DEBUG_EXE!" (
         set /a SELFTEST_WARNINGS+=1
     )
 ) else (
-    echo [INFO] Debug executable not built yet ^(use: launch-ucx-windows-app.cmd debug^)
+    echo [INFO] Debug executable not built yet ^(use: u-connectClientApp.cmd debug^)
 )
 
 if exist "!SIGNED_EXE!" (
@@ -1277,13 +1277,13 @@ if exist "!SIGNED_EXE!" (
         set /a SELFTEST_WARNINGS+=1
     )
 ) else (
-    echo [INFO] Signed executable not created yet ^(use: launch-ucx-windows-app.cmd sign^)
+    echo [INFO] Signed executable not created yet ^(use: u-connectClientApp.cmd sign^)
 )
 
 REM Check launcher script itself
 echo.
 echo Checking launcher script...
-if exist "launch-ucx-windows-app.cmd" (
+if exist "u-connectClientApp.cmd" (
     echo [OK] Launcher script exists
 ) else (
     echo [ERROR] Launcher script not found!
@@ -1419,7 +1419,7 @@ REM Compare directory structure
 echo Comparing directory structure...
 echo.
 
-set "COMPARE_DIRS=u-connectClient u-connectClient\src u-connectClient\inc u-connectClient\ucx_api ucx-windows-app build"
+set "COMPARE_DIRS=u-connectClient u-connectClient\src u-connectClient\inc u-connectClient\ucx_api u-connectClientApp build"
 for %%d in (!COMPARE_DIRS!) do (
     if exist "%%d\" (
         if exist "!TEMP_DIR!\%%d\" (
@@ -1435,29 +1435,29 @@ for %%d in (!COMPARE_DIRS!) do (
 )
 
 echo.
-echo Checking if ucx-windows-app exists in master...
-if exist "!TEMP_DIR!\ucx-windows-app\" (
-    echo [INFO] ucx-windows-app\ EXISTS in master
+echo Checking if u-connectClientApp exists in master...
+if exist "!TEMP_DIR!\u-connectClientApp\" (
+    echo [INFO] u-connectClientApp\ EXISTS in master
     echo.
     echo Comparing file counts:
     
     REM Count .c files
     set "LOCAL_C=0"
     set "MASTER_C=0"
-    for %%f in (ucx-windows-app\*.c) do set /a LOCAL_C+=1
-    for %%f in (!TEMP_DIR!\ucx-windows-app\*.c) do set /a MASTER_C+=1
+    for %%f in (u-connectClientApp\*.c) do set /a LOCAL_C+=1
+    for %%f in (!TEMP_DIR!\u-connectClientApp\*.c) do set /a MASTER_C+=1
     echo   Local .c files:  !LOCAL_C!
     echo   Master .c files: !MASTER_C!
     
     REM Count .h files
     set "LOCAL_H=0"
     set "MASTER_H=0"
-    for %%f in (ucx-windows-app\*.h) do set /a LOCAL_H+=1
-    for %%f in (!TEMP_DIR!\ucx-windows-app\*.h) do set /a MASTER_H+=1
+    for %%f in (u-connectClientApp\*.h) do set /a LOCAL_H+=1
+    for %%f in (!TEMP_DIR!\u-connectClientApp\*.h) do set /a MASTER_H+=1
     echo   Local .h files:  !LOCAL_H!
     echo   Master .h files: !MASTER_H!
 ) else (
-    echo [INFO] ucx-windows-app\ does NOT exist in master
+    echo [INFO] u-connectClientApp\ does NOT exist in master
     echo       This is your new contribution not yet merged!
 )
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(ucx-windows-app)
+project(u-connectClientApp)
 
 # Include u-connectClient library definitions from submodule
 set(UCX_MODULE "NORA-W36X" CACHE STRING "Generated API variant in u-connectClient/ucx_api/generated")
@@ -33,7 +33,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 
 # Windows-specific settings
 if(NOT WIN32)
-  message(FATAL_ERROR "ucx-windows-app requires Windows")
+  message(FATAL_ERROR "u-connectClientApp requires Windows")
 endif()
 
 set(U_EXAMPLE_UART "COM3" CACHE STRING "The UART device to use")
@@ -46,21 +46,28 @@ set(PORT_UART_SRC ../u-connectClient/ports/uart/u_port_uart_windows.c)
 set(FTDI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/ftdi")
 set(FTDI_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/third-party/ftdi/ftd2xx.lib")
 
-# ucx-windows-app Application (Monolithic)
-add_executable(ucx-windows-app
-  ucx-windows-app.c
+# u-connectClientApp Application (Monolithic)
+add_executable(u-connectClientApp
+  u-connectClientApp.c
   src/ucx_obfuscate.c
+  src/ucxapp_events.c
+  src/ucxapp_io.c
+  src/ucxapp_io_stdio.c
+  src/ucxapp_cmd.c
+  src/ucxapp_cmds_device.c
+  src/ucxapp_cmds_wifi.c
+  src/ucxapp_cmds_sock.c
   ${PORT_OS_SRC}
   ${PORT_UART_SRC}
-  ucx-windows-app.rc
+  u-connectClientApp.rc
   third-party/qrcodegen/qrcodegen.c
   ${U_CONNECT_CLIENT_UCX_API_SRC}
   ${U_CONNECT_CLIENT_AT_API_SRC}
 )
 
-target_compile_options(ucx-windows-app PRIVATE /W4 /FS /wd4200)
+target_compile_options(u-connectClientApp PRIVATE /W4 /FS /wd4200)
 
-target_compile_definitions(ucx-windows-app PRIVATE
+target_compile_definitions(u-connectClientApp PRIVATE
   U_PORT_WINDOWS
   U_CX_PORT_HEADER_FILE="os/u_port_windows.h"
   U_CX_XMODEM_FILE_SUPPORT=1
@@ -72,7 +79,7 @@ target_compile_definitions(ucx-windows-app PRIVATE
   APP_VERSION_BUILD=${APP_VERSION_BUILD}
 )
 
-target_include_directories(ucx-windows-app PUBLIC 
+target_include_directories(u-connectClientApp PUBLIC 
   ${U_CONNECT_CLIENT_INC} 
   ${U_CONNECT_CLIENT_PORT_DIR} 
   ${FTDI_INCLUDE_DIR} 
@@ -80,10 +87,10 @@ target_include_directories(ucx-windows-app PUBLIC
   ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_link_libraries(ucx-windows-app PRIVATE setupapi ${FTDI_LIBRARY})
+target_link_libraries(u-connectClientApp PRIVATE setupapi ${FTDI_LIBRARY})
 
 # Set different output names for Debug and Release builds
-set_target_properties(ucx-windows-app PROPERTIES
-  OUTPUT_NAME_DEBUG "ucx-windows-app-debug"
-  OUTPUT_NAME_RELEASE "ucx-windows-app"
+set_target_properties(u-connectClientApp PROPERTIES
+  OUTPUT_NAME_DEBUG "u-connectClientApp-debug"
+  OUTPUT_NAME_RELEASE "u-connectClientApp"
 )

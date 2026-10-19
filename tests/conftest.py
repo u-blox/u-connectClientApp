@@ -1,7 +1,7 @@
-"""Shared fixtures for tests that run the real ucx-windows-app.exe.
+"""Shared fixtures for tests that run the real u-connectClientApp.exe.
 
 Environment:
-  UCX_APP_EXE   path to the exe (default: ucx-windows-app/bin/ucx-windows-app.exe)
+  UCX_APP_EXE   path to the exe (default: u-connectClientApp/bin/u-connectClientApp.exe)
   UCX_PORT_A    COM port of the first NORA-W36 (enables hardware tests)
   UCX_PORT_B    COM port of the second NORA-W36 (enables two-device tests)
 """
@@ -13,12 +13,12 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_EXE = ROOT / "ucx-windows-app" / "bin" / "ucx-windows-app.exe"
+DEFAULT_EXE = ROOT / "u-connectClientApp" / "bin" / "u-connectClientApp.exe"
 
 
 def pytest_configure(config):
     for marker in (
-        "app: runs the built ucx-windows-app.exe (Windows only, no hardware needed)",
+        "app: runs the built u-connectClientApp.exe (Windows only, no hardware needed)",
         "hardware: needs a NORA-W36 on UCX_PORT_A",
         "two_devices: needs NORA-W36 modules on both UCX_PORT_A and UCX_PORT_B",
         "pc_ble: needs a NORA-W36 on UCX_PORT_A plus the PC's built-in Bluetooth LE radio",

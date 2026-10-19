@@ -1,5 +1,5 @@
 """
-PyInvoke tasks for ucx-windows-app.
+PyInvoke tasks for u-connectClientApp.
 
 """
 
@@ -51,20 +51,20 @@ def _build_target(c, target=None, clean=False):
 
     # Build
     target_name = f" --target {target}" if target else ""
-    print(f"Building {target or 'ucx-windows-app'}...")
+    print(f"Building {target or 'u-connectClientApp'}...")
     c.run(f'cmake --build {build_dir}{target_name}')
 
     print("\nBuild completed successfully!")
     if target:
         print(f"Executable: bin/{target}.exe")
     else:
-        print("Executable: bin/ucx-windows-app.exe")
+        print("Executable: bin/u-connectClientApp.exe")
 
 
 @task(help={'clean': 'Clean build directory before building'})
 def build(c, clean=False):
-    """Build ucx-windows-app."""
-    _build_target(c, target='ucx-windows-app', clean=clean)
+    """Build u-connectClientApp."""
+    _build_target(c, target='u-connectClientApp', clean=clean)
 
 
 @task

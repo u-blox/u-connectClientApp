@@ -1,6 +1,6 @@
 # FTDI D2XX: Embedded DLL Extraction & COM Port Detection
 
-Reusable patterns from ucx-windows-app for any Windows application using FTDI USB-serial devices.
+Reusable patterns from u-connectClientApp for any Windows application using FTDI USB-serial devices.
 
 ---
 

@@ -1,4 +1,4 @@
-"""Drive ucx-windows-app from Python through a Windows pseudo console (ConPTY).
+"""Drive u-connectClientApp from Python through a Windows pseudo console (ConPTY).
 
 The app polls the console with _kbhit(), so piped stdin does not work; a ConPTY gives it a
 real console while the script reads the screen text and types lines like a user.
