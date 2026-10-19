@@ -1,0 +1,607 @@
+/* Windows backend for ucxapp_platform.h */
+
+#define U_CX_LOG_DEBUG 1
+#define U_CX_LOG_USE_ANSI_COLOR 1
+
+#include "ucxapp_platform.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <winsock2.h>
+#include <windows.h>
+#include <conio.h>
+#include <winhttp.h>
+#include <setupapi.h>
+#include <devguid.h>
+#include <cfgmgr32.h>
+#include <devpropdef.h>
+
+#include "u_cx_log.h"
+
+#pragma comment(lib, "winhttp.lib")
+#pragma comment(lib, "setupapi.lib")
+#pragma comment(lib, "cfgmgr32.lib")
+
+/* DEVPKEY_Device_BusReportedDeviceDesc, defined here to avoid INITGUID issues */
+static const DEVPROPKEY MY_DEVPKEY_BusReportedDeviceDesc = {
+    {0x540b947e, 0x8b40, 0x45bc, {0xa8, 0xa2, 0x6a, 0x0b, 0x89, 0x4c, 0xbd, 0xa2}}, 4
+};
+
+/* FT_HANDLE in FTD2XX is a pointer despite being typedef'd as ULONG */
+typedef PVOID FT_HANDLE;
+typedef ULONG FT_STATUS;
+
+#define FT_OK 0
+#define FT_LIST_NUMBER_ONLY     0x80000000
+#define FT_LIST_BY_INDEX        0x40000000
+#define FT_OPEN_BY_DESCRIPTION   2
+
+typedef FT_STATUS (WINAPI *PFN_FT_ListDevices)(PVOID, PVOID, DWORD);
+typedef FT_STATUS (WINAPI *PFN_FT_Open)(int, FT_HANDLE*);
+typedef FT_STATUS (WINAPI *PFN_FT_OpenEx)(PVOID, DWORD, FT_HANDLE*);
+typedef FT_STATUS (WINAPI *PFN_FT_GetComPortNumber)(FT_HANDLE, LPLONG);
+typedef FT_STATUS (WINAPI *PFN_FT_Close)(FT_HANDLE);
+
+static HMODULE gFtd2xxModule = NULL;
+static PFN_FT_ListDevices gpFT_ListDevices = NULL;
+static PFN_FT_Open gpFT_Open = NULL;
+static PFN_FT_OpenEx gpFT_OpenEx = NULL;
+static PFN_FT_GetComPortNumber gpFT_GetComPortNumber = NULL;
+static PFN_FT_Close gpFT_Close = NULL;
+
+void ucxapp_platform_init(void)
+{
+    SetConsoleOutputCP(CP_UTF8);
+}
+
+uint32_t ucxapp_platform_tick_ms(void)
+{
+    return (uint32_t)GetTickCount64();
+}
+
+bool ucxapp_platform_key_pressed(void)
+{
+    return _kbhit() != 0;
+}
+
+int ucxapp_platform_get_key(void)
+{
+    return _getch();
+}
+
+void ucxapp_platform_exe_dir(char *buffer, size_t bufferSize)
+{
+    GetModuleFileNameA(NULL, buffer, (DWORD)bufferSize);
+    char *lastSlash = strrchr(buffer, '\\');
+    if (lastSlash) {
+        *(lastSlash + 1) = '\0';
+    }
+}
+
+static char *winHttpGet(const char *host, const char *path, bool binary, size_t *outSize)
+{
+    wchar_t wHost[256];
+    wchar_t wPath[512];
+    HINTERNET hSession = NULL;
+    HINTERNET hConnect = NULL;
+    HINTERNET hRequest = NULL;
+    char *buffer = NULL;
+    char *result = NULL;
+    size_t totalSize = 0;
+
+    if (outSize) *outSize = 0;
+    if (mbstowcs(wHost, host, 256) == (size_t)-1 || mbstowcs(wPath, path, 512) == (size_t)-1) {
+        return NULL;
+    }
+
+    hSession = WinHttpOpen(L"ucxclient/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                           WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession) goto cleanup;
+
+    hConnect = WinHttpConnect(hSession, wHost, INTERNET_DEFAULT_HTTPS_PORT, 0);
+    if (!hConnect) goto cleanup;
+
+    hRequest = WinHttpOpenRequest(hConnect, L"GET", wPath, NULL, WINHTTP_NO_REFERER,
+                                  WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+    if (!hRequest) goto cleanup;
+
+    /* GitHub release downloads redirect to a CDN */
+    DWORD dwRedirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &dwRedirectPolicy, sizeof(dwRedirectPolicy));
+
+    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0)) goto cleanup;
+    if (!WinHttpReceiveResponse(hRequest, NULL)) goto cleanup;
+
+    for (;;) {
+        DWORD dwSize = 0;
+        DWORD dwDownloaded = 0;
+        if (!WinHttpQueryDataAvailable(hRequest, &dwSize) || dwSize == 0) break;
+
+        char *newBuffer = (char *)realloc(buffer, totalSize + dwSize + 1);
+        if (!newBuffer) goto cleanup;
+        buffer = newBuffer;
+
+        if (!WinHttpReadData(hRequest, buffer + totalSize, dwSize, &dwDownloaded)) break;
+        totalSize += dwDownloaded;
+
+        if (binary && totalSize % 10240 == 0) {
+            printf("\rDownloaded: %zu KB", totalSize / 1024);
+            fflush(stdout);
+        }
+    }
+
+    if (totalSize > 0) {
+        buffer[totalSize] = '\0';
+        result = buffer;
+        buffer = NULL;
+        if (outSize) *outSize = totalSize;
+        if (binary) {
+            printf("\rDownloaded: %zu KB - Complete!\n", totalSize / 1024);
+        }
+    }
+
+cleanup:
+    free(buffer);
+    if (hRequest) WinHttpCloseHandle(hRequest);
+    if (hConnect) WinHttpCloseHandle(hConnect);
+    if (hSession) WinHttpCloseHandle(hSession);
+    return result;
+}
+
+char *ucxapp_platform_https_get_text(const char *host, const char *path)
+{
+    return winHttpGet(host, path, false, NULL);
+}
+
+char *ucxapp_platform_https_get_binary(const char *host, const char *path, size_t *outSize)
+{
+    return winHttpGet(host, path, true, outSize);
+}
+
+// Initialize FTD2XX library (dynamic loading)
+// Resource ID for embedded FTDI DLL (must match u-connectClientApp.rc)
+#define IDR_FTD2XX_DLL 101
+
+static bool initFtd2xxLibrary(void)
+{
+    if (gFtd2xxModule != NULL) {
+        return true;  // Already loaded
+    }
+    
+    char dllPath[MAX_PATH];
+    bool dllExtracted = false;
+    
+    // Step 1: Try to extract embedded DLL from resources
+    HRSRC hResource = FindResource(NULL, MAKEINTRESOURCE(IDR_FTD2XX_DLL), RT_RCDATA);
+    if (hResource) {
+        HGLOBAL hLoadedResource = LoadResource(NULL, hResource);
+        if (hLoadedResource) {
+            LPVOID pResourceData = LockResource(hLoadedResource);
+            DWORD dwResourceSize = SizeofResource(NULL, hResource);
+            
+            if (pResourceData && dwResourceSize > 0) {
+                // Extract to temp directory
+                GetTempPath(MAX_PATH, dllPath);
+                strcat(dllPath, "ftd2xx64_embedded.dll");
+                
+                // Check if already extracted and correct size
+                WIN32_FILE_ATTRIBUTE_DATA fileAttr;
+                bool needsExtract = true;
+                if (GetFileAttributesEx(dllPath, GetFileExInfoStandard, &fileAttr)) {
+                    if (fileAttr.nFileSizeLow == dwResourceSize && fileAttr.nFileSizeHigh == 0) {
+                        needsExtract = false;
+                        dllExtracted = true;
+                    }
+                }
+                
+                if (needsExtract) {
+                    // Write DLL to temp file
+                    HANDLE hFile = CreateFile(dllPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                    if (hFile != INVALID_HANDLE_VALUE) {
+                        DWORD dwBytesWritten;
+                        if (WriteFile(hFile, pResourceData, dwResourceSize, &dwBytesWritten, NULL)) {
+                            if (dwBytesWritten == dwResourceSize) {
+                                dllExtracted = true;
+                                U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Extracted embedded FTDI DLL (%lu bytes) to: %s",
+                                             dwResourceSize, dllPath);
+                            } else {
+                                U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "FTDI DLL extraction incomplete: wrote %lu of %lu bytes",
+                                             dwBytesWritten, dwResourceSize);
+                            }
+                        } else {
+                            U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "FTDI DLL WriteFile failed, error: %lu", GetLastError());
+                        }
+                        CloseHandle(hFile);
+                    } else {
+                        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to create FTDI DLL temp file: %s, error: %lu",
+                                     dllPath, GetLastError());
+                    }
+                }
+            } else {
+                U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "FTDI DLL resource found but data invalid (size=%lu)",
+                             SizeofResource(NULL, hResource));
+            }
+        } else {
+            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "LoadResource failed for embedded FTDI DLL");
+        }
+    } else {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No embedded FTDI DLL resource found in executable");
+    }
+    
+    // Step 2: Try to load the extracted DLL
+    if (dllExtracted) {
+        gFtd2xxModule = LoadLibrary(dllPath);
+        if (gFtd2xxModule != NULL) {
+            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Loaded FTDI DLL from: %s", dllPath);
+        } else {
+            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "LoadLibrary failed for %s, error: %lu", dllPath, GetLastError());
+        }
+    }
+    
+    // Step 3: Fallback - try external DLL file
+    if (gFtd2xxModule == NULL) {
+        // Try to load ftd2xx64.dll from executable directory
+        GetModuleFileName(NULL, dllPath, sizeof(dllPath));
+        char *lastSlash = strrchr(dllPath, '\\');
+        if (lastSlash) {
+            *(lastSlash + 1) = '\0';
+            strcat(dllPath, "ftd2xx64.dll");
+        }
+        
+        gFtd2xxModule = LoadLibrary(dllPath);
+        if (gFtd2xxModule == NULL) {
+            // Try current directory
+            gFtd2xxModule = LoadLibrary("ftd2xx64.dll");
+        }
+        
+        if (gFtd2xxModule != NULL) {
+            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Loaded external FTDI DLL");
+        } else {
+            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Could not load FTDI D2XX library (not critical - using SetupAPI fallback)");
+        }
+    }
+    
+    if (gFtd2xxModule == NULL) {
+        return false;
+    }
+    
+    // Load function pointers
+    gpFT_ListDevices = (PFN_FT_ListDevices)GetProcAddress(gFtd2xxModule, "FT_ListDevices");
+    gpFT_Open = (PFN_FT_Open)GetProcAddress(gFtd2xxModule, "FT_Open");
+    gpFT_OpenEx = (PFN_FT_OpenEx)GetProcAddress(gFtd2xxModule, "FT_OpenEx");
+    gpFT_GetComPortNumber = (PFN_FT_GetComPortNumber)GetProcAddress(gFtd2xxModule, "FT_GetComPortNumber");
+    gpFT_Close = (PFN_FT_Close)GetProcAddress(gFtd2xxModule, "FT_Close");
+    
+    if (!gpFT_ListDevices || !gpFT_Open || !gpFT_GetComPortNumber || !gpFT_Close) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "FTDI DLL loaded but missing required functions");
+        FreeLibrary(gFtd2xxModule);
+        gFtd2xxModule = NULL;
+        return false;
+    }
+    
+    return true;
+}
+
+// Helper function to get FTDI device info using FTD2XX library
+static bool getFtdiDeviceInfo(const char *portName, char *deviceDesc, size_t deviceDescSize, char *portLabel, size_t portLabelSize)
+{
+    DWORD numDevs = 0;
+    FT_STATUS status;
+    
+    // Initialize outputs
+    deviceDesc[0] = '\0';
+    portLabel[0] = '\0';
+    
+    // Initialize library if not already done
+    if (!initFtd2xxLibrary()) {
+        return false;
+    }
+    
+    // Get number of devices
+    status = gpFT_ListDevices(&numDevs, NULL, FT_LIST_NUMBER_ONLY);
+    if (status != FT_OK || numDevs == 0) {
+        return false;
+    }
+    
+    // Enumerate devices and find the one with matching COM port
+    for (DWORD i = 0; i < numDevs; i++) {
+        char description[256];
+        
+        // Get device description by index
+        status = gpFT_ListDevices((PVOID)(DWORD_PTR)i, description, FT_LIST_BY_INDEX | FT_OPEN_BY_DESCRIPTION);
+        if (status != FT_OK) {
+            continue;
+        }
+        
+        // Try to open the device to get its COM port number
+        FT_HANDLE ftHandle;
+        status = gpFT_Open(i, &ftHandle);
+        if (status == FT_OK) {
+            LONG comPortNumber = -1;
+            status = gpFT_GetComPortNumber(ftHandle, &comPortNumber);
+            
+            gpFT_Close(ftHandle);
+            
+            if (status == FT_OK && comPortNumber > 0) {
+                char comPortStr[16];
+                snprintf(comPortStr, sizeof(comPortStr), "COM%ld", comPortNumber);
+                
+                if (strcmp(comPortStr, portName) == 0) {
+                    // Found it!
+                    strncpy(deviceDesc, description, deviceDescSize - 1);
+                    deviceDesc[deviceDescSize - 1] = '\0';
+                    
+                    // Extract label from description
+                    // Common formats: 
+                    // "EVK-NORA-W36 A" -> A = AT command port
+                    // "EVK-NORA-W36 B" -> B = (not used)
+                    // "EVK-NORA-W36 C" -> C = LOG port
+                    // "EVK-NORA-W36 D" -> D = (not used)
+                    
+                    // Check for single letter suffix (A, B, C, D)
+                    size_t len = strlen(description);
+                    if (len >= 2 && description[len-2] == ' ') {
+                        char suffix = description[len-1];
+                        if (suffix == 'A') {
+                            strncpy(portLabel, "AT", portLabelSize - 1);
+                            portLabel[portLabelSize - 1] = '\0';
+                        } else if (suffix == 'C') {
+                            strncpy(portLabel, "LOG", portLabelSize - 1);
+                            portLabel[portLabelSize - 1] = '\0';
+                        }
+                    } else {
+                        // Try to extract from " - XXX" format
+                        char *dashPos = strrchr(description, '-');
+                        if (dashPos) {
+                            dashPos++;
+                            while (*dashPos == ' ') dashPos++;
+                            
+                            if (strncmp(dashPos, "AT", 2) == 0 || strncmp(dashPos, "LOG", 3) == 0) {
+                                strncpy(portLabel, dashPos, portLabelSize - 1);
+                                portLabel[portLabelSize - 1] = '\0';
+                                
+                                // Remove any trailing spaces
+                                char *end = portLabel + strlen(portLabel) - 1;
+                                while (end > portLabel && *end == ' ') {
+                                    *end = '\0';
+                                    end--;
+                                }
+                            }
+                        }
+                    }
+                    
+                    return true;
+                }
+            }
+        }
+    }
+    
+    return false;
+}
+
+// Helper function to get device info using Windows SetupAPI
+// This works without admin rights and for all COM port devices
+static bool getDeviceInfoFromSetupAPI(const char *portName, char *deviceDesc, size_t deviceDescSize, char *portLabel, size_t portLabelSize)
+{
+    HDEVINFO deviceInfoSet;
+    SP_DEVINFO_DATA deviceInfoData;
+    DWORD i;
+    bool found = false;
+    
+    // Initialize outputs
+    deviceDesc[0] = '\0';
+    portLabel[0] = '\0';
+    
+    // Get the device information set for all COM ports
+    deviceInfoSet = SetupDiGetClassDevs(&GUID_DEVCLASS_PORTS, NULL, NULL, DIGCF_PRESENT);
+    if (deviceInfoSet == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    
+    // Enumerate through all devices
+    deviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+    for (i = 0; SetupDiEnumDeviceInfo(deviceInfoSet, i, &deviceInfoData); i++) {
+        HKEY hDeviceRegistryKey;
+        char portNameFromReg[256];
+        DWORD dataType;
+        DWORD dataSize;
+        
+        // Open the device registry key
+        hDeviceRegistryKey = SetupDiOpenDevRegKey(deviceInfoSet, &deviceInfoData,
+                                                   DICS_FLAG_GLOBAL, 0,
+                                                   DIREG_DEV, KEY_QUERY_VALUE);
+        
+        if (hDeviceRegistryKey == INVALID_HANDLE_VALUE) {
+            continue;
+        }
+        
+        // Get the port name from registry
+        dataSize = sizeof(portNameFromReg);
+        if (RegQueryValueEx(hDeviceRegistryKey, "PortName", NULL, &dataType,
+                           (LPBYTE)portNameFromReg, &dataSize) == ERROR_SUCCESS) {
+            
+            // Check if this is the port we're looking for
+            if (strcmp(portNameFromReg, portName) == 0) {
+                // Found it! Get the friendly name
+                char friendlyName[256];
+                if (SetupDiGetDeviceRegistryProperty(deviceInfoSet, &deviceInfoData,
+                                                     SPDRP_FRIENDLYNAME,
+                                                     &dataType,
+                                                     (PBYTE)friendlyName,
+                                                     sizeof(friendlyName),
+                                                     &dataSize)) {
+                    strncpy(deviceDesc, friendlyName, deviceDescSize - 1);
+                    deviceDesc[deviceDescSize - 1] = '\0';
+                    
+                    // Try to extract port label from friendly name
+                    // Format can be: "USB Serial Port (COM25) - AT" or "EVK NORA-W36 - AT (COM25)"
+                    char *dashPos = strrchr(friendlyName, '-');
+                    if (dashPos) {
+                        // Skip whitespace after dash
+                        dashPos++;
+                        while (*dashPos == ' ') dashPos++;
+                        
+                        // Extract label
+                        char *comPos = strstr(dashPos, " (COM");
+                        if (comPos) {
+                            size_t len = comPos - dashPos;
+                            if (len >= portLabelSize) len = portLabelSize - 1;
+                            strncpy(portLabel, dashPos, len);
+                            portLabel[len] = '\0';
+                        } else {
+                            // Check for space or end of string
+                            char *spacePos = strchr(dashPos, ' ');
+                            if (spacePos) {
+                                size_t len = spacePos - dashPos;
+                                if (len >= portLabelSize) len = portLabelSize - 1;
+                                strncpy(portLabel, dashPos, len);
+                                portLabel[len] = '\0';
+                            } else {
+                                strncpy(portLabel, dashPos, portLabelSize - 1);
+                                portLabel[portLabelSize - 1] = '\0';
+                            }
+                        }
+                        
+                    }
+                    
+                    // If the friendly name is generic (e.g. "USB Serial Port"),
+                    // walk up the USB device tree to find the real device name.
+                    // This is needed for FTDI-based EVK boards where the VCP driver
+                    // doesn't expose the EEPROM description in the FriendlyName.
+                    if (strstr(friendlyName, "USB Serial Port") && 
+                        !strstr(friendlyName, "NORA") && !strstr(friendlyName, "EVK")) {
+                        DEVINST parentInst, currentInst;
+                        currentInst = deviceInfoData.DevInst;
+                        
+                        // Walk up to 3 levels of parent devices
+                        for (int level = 0; level < 3; level++) {
+                            if (CM_Get_Parent(&parentInst, currentInst, 0) != CR_SUCCESS) {
+                                break;
+                            }
+                            
+                            // Try to get BusReportedDeviceDesc from parent
+                            WCHAR busDesc[256];
+                            ULONG busDescSize = sizeof(busDesc);
+                            DEVPROPTYPE propType;
+                            
+                            if (CM_Get_DevNode_PropertyW(parentInst,
+                                                         &MY_DEVPKEY_BusReportedDeviceDesc,
+                                                         &propType, (PBYTE)busDesc, &busDescSize,
+                                                         0) == CR_SUCCESS &&
+                                propType == DEVPROP_TYPE_STRING) {
+                                // Convert wide string to narrow
+                                char busDescA[256];
+                                WideCharToMultiByte(CP_UTF8, 0, busDesc, -1,
+                                                   busDescA, sizeof(busDescA), NULL, NULL);
+                                
+                                // Check if this contains a known device name
+                                if (strstr(busDescA, "NORA") || strstr(busDescA, "EVK")) {
+                                    // Use the bus-reported description as device name
+                                    snprintf(deviceDesc, deviceDescSize, "%s (%s)",
+                                            busDescA, portName);
+                                    
+                                    // Determine port function from device instance ID
+                                    // FTDI FT4232H channels: A=AT, B=unused, C=LOG, D=unused
+                                    char instanceId[256];
+                                    DWORD instanceIdSize = sizeof(instanceId);
+                                    if (SetupDiGetDeviceInstanceIdA(deviceInfoSet, &deviceInfoData,
+                                                                     instanceId, instanceIdSize,
+                                                                     &instanceIdSize)) {
+                                        // Instance ID format: FTDIBUS\VID_0403+PID_6011+UBX...A\0000
+                                        // The channel letter is the last char before \0000
+                                        char *backslash = strrchr(instanceId, '\\');
+                                        if (backslash && backslash > instanceId) {
+                                            char channel = *(backslash - 1);
+                                            if (channel == 'A') {
+                                                strncpy(portLabel, "AT", portLabelSize - 1);
+                                                portLabel[portLabelSize - 1] = '\0';
+                                            } else if (channel == 'C') {
+                                                strncpy(portLabel, "LOG", portLabelSize - 1);
+                                                portLabel[portLabelSize - 1] = '\0';
+                                            }
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            
+                            currentInst = parentInst;
+                        }
+                    }
+                    
+                    found = true;
+                }
+            }
+        }
+        
+        RegCloseKey(hDeviceRegistryKey);
+        
+        if (found) break;
+    }
+    
+    SetupDiDestroyDeviceInfoList(deviceInfoSet);
+    return found;
+}
+
+
+int ucxapp_platform_list_serial_ports(ucxapp_serial_port_t *ports, int maxPorts)
+{
+    HKEY hKey;
+    int count = 0;
+
+    if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, "HARDWARE\\DEVICEMAP\\SERIALCOMM", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        for (DWORD index = 0; count < maxPorts; index++) {
+            char valueName[256];
+            DWORD valueNameSize = sizeof(valueName);
+            BYTE data[256];
+            DWORD dataSize = sizeof(data);
+            DWORD type;
+
+            LONG result = RegEnumValue(hKey, index, valueName, &valueNameSize, NULL, &type, data, &dataSize);
+            if (result == ERROR_NO_MORE_ITEMS) {
+                break;
+            }
+            if (result != ERROR_SUCCESS || type != REG_SZ) {
+                continue;
+            }
+
+            ucxapp_serial_port_t *port = &ports[count++];
+            memset(port, 0, sizeof(*port));
+            data[sizeof(data) - 1] = '\0';
+            snprintf(port->name, sizeof(port->name), "%s", (char *)data);
+
+            char fullName[48];
+            snprintf(fullName, sizeof(fullName), "\\\\.\\%s", port->name);
+            HANDLE hPort = CreateFile(fullName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+            if (hPort != INVALID_HANDLE_VALUE) {
+                CloseHandle(hPort);
+                port->available = true;
+            }
+
+            if (!getFtdiDeviceInfo(port->name, port->desc, sizeof(port->desc), port->label, sizeof(port->label)) &&
+                !getDeviceInfoFromSetupAPI(port->name, port->desc, sizeof(port->desc), port->label, sizeof(port->label))) {
+                snprintf(port->desc, sizeof(port->desc), "%s", valueName);
+            }
+        }
+        RegCloseKey(hKey);
+        return count;
+    }
+
+    /* Registry unavailable: probe the common port numbers */
+    for (int i = 1; i <= 256 && count < maxPorts; i++) {
+        char fullName[48];
+        snprintf(fullName, sizeof(fullName), "\\\\.\\COM%d", i);
+        HANDLE hPort = CreateFile(fullName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+        if (hPort != INVALID_HANDLE_VALUE) {
+            CloseHandle(hPort);
+            ucxapp_serial_port_t *port = &ports[count++];
+            memset(port, 0, sizeof(*port));
+            snprintf(port->name, sizeof(port->name), "COM%d", i);
+            port->available = true;
+        }
+    }
+    return count;
+}

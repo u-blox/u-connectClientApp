@@ -90,12 +90,16 @@ In `--exec` mode the process exits with 1 on the first non-zero result, otherwis
 | `ucxapp_cmd.h/.c` | Command registry, tokenizer, `help`, shell loop |
 | `ucxapp_io.c`, `ucxapp_io_stdio.c` | `ucxapp_print` / `ucxapp_readline` and the stdio backend |
 | `ucxapp_events.c` | URC event flags with a mutex; `ucxapp_events_wait()` blocks until a flag is set |
-| `ucxapp_cmds_device.c`, `_wifi.c`, `_sock.c` | Command packs |
+| `ucxapp_cmds_device.c`, `_wifi.c`, `_sock.c`, `_net.c`, `_sys.c`, `_mqtt.c`, `_bt.c` | Command packs |
+| `ucxapp_platform.h` | Host OS services: console init, tick, key press, executable directory, serial-port listing, HTTPS GET |
+| `ucxapp_platform_win.c` | Windows backend (registry, SetupAPI, FTDI D2XX, WinHTTP, `conio`) |
 
 Rules for portable code: use `ucxapp_print()` / `ucxapp_readline()` for all I/O, and only
 u-connectClient APIs and its `U_CX_PORT_*` macros for OS services.
 
+
 Known firmware behaviour: on NORA-W36 an MQTT publish made while a subscription is active returned ERROR:15 in testing, and back-to-back MQTT operations get ERROR:15 while the previous one is in flight; the commands retry the latter automatically.
+
 ## Adding a command
 
 A command is a table entry. Register the table once at startup.

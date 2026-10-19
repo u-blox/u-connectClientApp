@@ -92,8 +92,10 @@ u-connectClientApp.exe COM13 --shell
 ```
 
 Commands: `device.info`, `wifi.scan|connect|status|disconnect`,
-`sock.open|connect|send|read|close|list`, plus Windows-only `device.connect|disconnect`.
-A command is a table entry (`name`, `usage`, `help`, `run()`); see `src/ucxapp_cmds_wifi.c`.
+`sock.open|connect|send|read|close|list`, `net.ping|dns`, `http.get`, `mqtt.*`, `bt.*`, `at`, plus Windows-only `device.connect|disconnect`.
+A command is a table entry (`name`, `usage`, `help`, `run()`); see `src/ucxapp_cmds_wifi.c`.
+Host-OS services (COM-port discovery, HTTPS download, key input) sit behind `src/ucxapp_platform.h`,
+with the Windows backend in `src/ucxapp_platform_win.c`.
 Full reference: [u-connectClientApp/UCXAPP_COMMANDS.md](u-connectClientApp/UCXAPP_COMMANDS.md).
 
 ## File Structure

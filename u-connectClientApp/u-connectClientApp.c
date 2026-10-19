@@ -48,52 +48,13 @@
 #include <ws2tcpip.h>  // For getaddrinfo and related functions
 #include <iphlpapi.h>  // For GetAdaptersAddresses
 #include <windows.h>  // For Windows API
-#include <conio.h>  // For _kbhit() and _getch()
-#include <winhttp.h>  // For HTTP client to fetch from GitHub
-#include <setupapi.h>  // For device enumeration
-#include <devguid.h>   // For GUID_DEVCLASS_PORTS
-#include <regstr.h>    // For registry string constants
-#include <cfgmgr32.h>  // For CM_Get_Parent, CM_Get_DevNode_PropertyW
-#include <devpropdef.h> // For DEVPROPKEY type
 
-// Define DEVPKEY_Device_BusReportedDeviceDesc manually to avoid INITGUID issues
-// {540b947e-8b40-45bc-a8a2-6a0b894cbda2}, 4
-static const DEVPROPKEY MY_DEVPKEY_BusReportedDeviceDesc = {
-    {0x540b947e, 0x8b40, 0x45bc, {0xa8, 0xa2, 0x6a, 0x0b, 0x89, 0x4c, 0xbd, 0xa2}}, 4
-};
 #include <wincrypt.h>  // For SHA256 hash calculation
 
-#pragma comment(lib, "winhttp.lib")
-#pragma comment(lib, "setupapi.lib")
-#pragma comment(lib, "cfgmgr32.lib")  // Configuration Manager for device tree
 #pragma comment(lib, "ws2_32.lib")  // Windows Sockets library
 #pragma comment(lib, "iphlpapi.lib")  // IP Helper API library
 #pragma comment(lib, "crypt32.lib")  // Windows Crypto API
 
-// FTD2XX library dynamic loading
-// Note: FT_HANDLE in FTD2XX is actually a pointer type despite being typedef'd as ULONG
-typedef PVOID FT_HANDLE;
-typedef ULONG FT_STATUS;
-
-#define FT_OK 0
-#define FT_LIST_NUMBER_ONLY     0x80000000
-#define FT_LIST_BY_INDEX        0x40000000
-#define FT_LIST_ALL             0x20000000
-#define FT_OPEN_BY_SERIAL_NUMBER 1
-#define FT_OPEN_BY_DESCRIPTION   2
-
-typedef FT_STATUS (WINAPI *PFN_FT_ListDevices)(PVOID, PVOID, DWORD);
-typedef FT_STATUS (WINAPI *PFN_FT_Open)(int, FT_HANDLE*);
-typedef FT_STATUS (WINAPI *PFN_FT_OpenEx)(PVOID, DWORD, FT_HANDLE*);
-typedef FT_STATUS (WINAPI *PFN_FT_GetComPortNumber)(FT_HANDLE, LPLONG);
-typedef FT_STATUS (WINAPI *PFN_FT_Close)(FT_HANDLE);
-
-static HMODULE gFtd2xxModule = NULL;
-static PFN_FT_ListDevices gpFT_ListDevices = NULL;
-static PFN_FT_Open gpFT_Open = NULL;
-static PFN_FT_OpenEx gpFT_OpenEx = NULL;
-static PFN_FT_GetComPortNumber gpFT_GetComPortNumber = NULL;
-static PFN_FT_Close gpFT_Close = NULL;
 
 // Disable MSVC warnings for auto-generated UCX API headers
 // C4200: zero-sized array in struct (valid C99/C11 feature)
@@ -134,6 +95,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "src/ucx_obfuscate.h"
 #include "src/ucxapp.h"
 #include "src/ucxapp_cmd.h"
+#include "src/ucxapp_platform.h"
 
 // Bluetooth SIG name databases
 #include "third-party/bluetooth-sig/bt_company_identifiers.h"
@@ -718,7 +680,6 @@ static char gSettingsFilePath[MAX_PATH] = "";
 // 
 // UTILITY & INITIALIZATION
 //   - main()                           Application entry point
-//   - getExecutableDirectory()         Get path to executable
 //   - moduleStartupInit()              Initialize module after startup
 //   - queryDeviceStatus()              Query device status (WiFi, BT, sockets, certs)
 //   - parseBluetoothAddress()          Parse BT address from string
@@ -848,8 +809,6 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - httpJsonPlaceholderExample()     JSONPlaceholder API example
 //
 // HTTP HELPER FUNCTIONS
-//   - winHttpGetRequest()              HTTP GET (text) via WinHTTP
-//   - winHttpGetBinaryRequest()        HTTP GET (binary) via WinHTTP
 //   - ucxHttpGetRequest()              HTTP GET via UCX API
 //   - httpSafeDisconnect()             Safe HTTP session disconnect
 //   - readHttpHeaders()                Read HTTP response headers
@@ -1063,7 +1022,6 @@ static char gSettingsFilePath[MAX_PATH] = "";
 // ============================================================================
 
 // Forward declarations
-static void getExecutableDirectory(char *buffer, size_t bufferSize);
 static void printHeader(void);
 static void printWelcomeGuide(void);
 static void printHelp(void);
@@ -1085,8 +1043,6 @@ static bool bootloaderFlashFirmware(const char *comPort, const char *firmwarePat
 static void httpDownloadProgress(const uint8_t *data, int32_t len);
 static void httpUploadProgress(int32_t bytesSent);
 
-static char* winHttpGetRequest(const wchar_t *server, const wchar_t *path);
-static char* winHttpGetBinaryRequest(const wchar_t *server, const wchar_t *path, size_t *outSize);
 static char* ucxHttpGetRequest(const char *server, const char *path, int32_t *outSize);
 static bool downloadFirmwareFromGitHub(const char *product, char *downloadedPath, size_t pathSize);
 static const char* getProductFirmwarePath(const char *productName);
@@ -1435,181 +1391,6 @@ static bool parseBluetoothAddress(const char *addrStr, uBtLeAddress_t *addr)
     return true;
 }
 
-// ============================================================================
-// HTTP CLIENT HELPER FUNCTIONS (WinHTTP)
-// ============================================================================
-
-static char* winHttpGetRequest(const wchar_t *server, const wchar_t *path)
-{
-    HINTERNET hSession = NULL;
-    HINTERNET hConnect = NULL;
-    HINTERNET hRequest = NULL;
-    char *result = NULL;
-    DWORD dwSize = 0;
-    DWORD dwDownloaded = 0;
-    DWORD totalSize = 0;
-    char *buffer = NULL;
-    
-    // Initialize WinHTTP
-    hSession = WinHttpOpen(L"ucxclient/1.0",
-                          WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                          WINHTTP_NO_PROXY_NAME,
-                          WINHTTP_NO_PROXY_BYPASS, 0);
-    
-    if (!hSession) goto cleanup;
-    
-    // Connect to server
-    hConnect = WinHttpConnect(hSession, server, INTERNET_DEFAULT_HTTPS_PORT, 0);
-    if (!hConnect) goto cleanup;
-    
-    // Create request
-    hRequest = WinHttpOpenRequest(hConnect, L"GET", path,
-                                 NULL, WINHTTP_NO_REFERER,
-                                 WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                 WINHTTP_FLAG_SECURE);
-    
-    if (!hRequest) goto cleanup;
-    
-    // Send request
-    if (!WinHttpSendRequest(hRequest,
-                           WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-                           WINHTTP_NO_REQUEST_DATA, 0,
-                           0, 0)) goto cleanup;
-    
-    // Receive response
-    if (!WinHttpReceiveResponse(hRequest, NULL)) goto cleanup;
-    
-    // Allocate initial buffer
-    buffer = (char*)malloc(4096);
-    if (!buffer) goto cleanup;
-    
-    // Read data
-    do {
-        dwSize = 0;
-        if (!WinHttpQueryDataAvailable(hRequest, &dwSize)) break;
-        
-        if (dwSize == 0) break;
-        
-        // Reallocate buffer if needed
-        char *newBuffer = (char*)realloc(buffer, totalSize + dwSize + 1);
-        if (!newBuffer) {
-            free(buffer);
-            goto cleanup;
-        }
-        buffer = newBuffer;
-        
-        if (!WinHttpReadData(hRequest, buffer + totalSize, dwSize, &dwDownloaded)) break;
-        
-        totalSize += dwDownloaded;
-    } while (dwSize > 0);
-    
-    if (totalSize > 0) {
-        buffer[totalSize] = '\0';
-        result = buffer;
-        buffer = NULL;  // Don't free it in cleanup
-    }
-    
-cleanup:
-    if (buffer) free(buffer);
-    if (hRequest) WinHttpCloseHandle(hRequest);
-    if (hConnect) WinHttpCloseHandle(hConnect);
-    if (hSession) WinHttpCloseHandle(hSession);
-    
-    return result;
-}
-
-static char* winHttpGetBinaryRequest(const wchar_t *server, const wchar_t *path, size_t *outSize)
-{
-    HINTERNET hSession = NULL;
-    HINTERNET hConnect = NULL;
-    HINTERNET hRequest = NULL;
-    char *result = NULL;
-    DWORD dwSize = 0;
-    DWORD dwDownloaded = 0;
-    size_t totalSize = 0;
-    char *buffer = NULL;
-    
-    if (outSize) *outSize = 0;
-    
-    // Initialize WinHTTP
-    hSession = WinHttpOpen(L"ucxclient/1.0",
-                          WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                          WINHTTP_NO_PROXY_NAME,
-                          WINHTTP_NO_PROXY_BYPASS, 0);
-    
-    if (!hSession) goto cleanup;
-    
-    // Connect to server
-    hConnect = WinHttpConnect(hSession, server, INTERNET_DEFAULT_HTTPS_PORT, 0);
-    if (!hConnect) goto cleanup;
-    
-    // Create request
-    hRequest = WinHttpOpenRequest(hConnect, L"GET", path,
-                                 NULL, WINHTTP_NO_REFERER,
-                                 WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                 WINHTTP_FLAG_SECURE);
-    
-    if (!hRequest) goto cleanup;
-    
-    // Enable automatic redirect handling for GitHub CDN redirects
-    DWORD dwRedirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
-    WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &dwRedirectPolicy, sizeof(dwRedirectPolicy));
-    
-    // Send request
-    if (!WinHttpSendRequest(hRequest,
-                           WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-                           WINHTTP_NO_REQUEST_DATA, 0,
-                           0, 0)) goto cleanup;
-    
-    // Receive response
-    if (!WinHttpReceiveResponse(hRequest, NULL)) goto cleanup;
-    
-    // Allocate initial buffer
-    buffer = (char*)malloc(4096);
-    if (!buffer) goto cleanup;
-    
-    // Read data (binary-safe)
-    do {
-        dwSize = 0;
-        if (!WinHttpQueryDataAvailable(hRequest, &dwSize)) break;
-        
-        if (dwSize == 0) break;
-        
-        // Reallocate buffer if needed (no +1 for null terminator for binary data)
-        char *newBuffer = (char*)realloc(buffer, totalSize + dwSize);
-        if (!newBuffer) {
-            free(buffer);
-            goto cleanup;
-        }
-        buffer = newBuffer;
-        
-        if (!WinHttpReadData(hRequest, buffer + totalSize, dwSize, &dwDownloaded)) break;
-        
-        totalSize += dwDownloaded;
-        
-        // Show progress
-        if (totalSize % 10240 == 0 || dwSize == 0) {
-            printf("\rDownloaded: %zu KB", totalSize / 1024);
-            fflush(stdout);
-        }
-    } while (dwSize > 0);
-    
-    if (totalSize > 0) {
-        result = buffer;
-        buffer = NULL;  // Don't free it in cleanup
-        if (outSize) *outSize = totalSize;
-        printf("\rDownloaded: %zu KB - Complete!\n", totalSize / 1024);
-    }
-    
-cleanup:
-    if (buffer) free(buffer);
-    if (hRequest) WinHttpCloseHandle(hRequest);
-    if (hConnect) WinHttpCloseHandle(hConnect);
-    if (hSession) WinHttpCloseHandle(hSession);
-    
-    return result;
-}
-
 static bool saveBinaryFile(const char *filepath, const char *data, size_t size)
 {
     FILE *fp = fopen(filepath, "wb");
@@ -1902,10 +1683,10 @@ static bool downloadFirmwareFromGitHub(const char *product, char *downloadedPath
     printf("\nFetching latest firmware release from GitHub...\n");
     
     // Get latest release info from GitHub API
-    wchar_t apiPath[512];
-    swprintf(apiPath, 512, L"/repos/u-blox/u-connectXpress/releases/latest");
+    char apiPath[512];
+    snprintf(apiPath, sizeof(apiPath), "/repos/u-blox/u-connectXpress/releases/latest");
     
-    char *releaseInfo = winHttpGetRequest(L"api.github.com", apiPath);
+    char *releaseInfo = ucxapp_platform_https_get_text("api.github.com", apiPath);
     if (!releaseInfo) {
         printf("ERROR: Failed to fetch release information from GitHub\n");
         return false;
@@ -1974,13 +1755,10 @@ static bool downloadFirmwareFromGitHub(const char *product, char *downloadedPath
         return false;
     }
     
-    // Convert path to wide string
-    wchar_t wPath[512];
-    mbstowcs(wPath, pathStart, 512);
     
     // Download the firmware binary
     size_t firmwareSize = 0;
-    char *firmwareData = winHttpGetBinaryRequest(L"github.com", wPath, &firmwareSize);
+    char *firmwareData = ucxapp_platform_https_get_binary("github.com", pathStart, &firmwareSize);
     if (!firmwareData || firmwareSize == 0) {
         printf("ERROR: Failed to download firmware file\n");
         if (firmwareData) free(firmwareData);
@@ -2033,10 +1811,10 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
     // Fetch available products from GitHub repository
     printf("Fetching available products from GitHub...\n");
     
-    wchar_t productApiPath[512];
-    swprintf(productApiPath, 512, L"/repos/u-blox/u-connectXpress/contents");
+    char productApiPath[512];
+    snprintf(productApiPath, sizeof(productApiPath), "/repos/u-blox/u-connectXpress/contents");
     
-    char *repoContents = winHttpGetRequest(L"api.github.com", productApiPath);
+    char *repoContents = ucxapp_platform_https_get_text("api.github.com", productApiPath);
     if (!repoContents) {
         printf("ERROR: Failed to fetch repository contents from GitHub\n");
         printf("Please check your internet connection and try again.\n");
@@ -2121,10 +1899,10 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
     printf("\nFetching available releases for %s from GitHub...\n", productName);
     
     // Fetch release list from GitHub API
-    wchar_t apiPath[512];
-    swprintf(apiPath, 512, L"/repos/u-blox/u-connectXpress/releases");
+    char apiPath[512];
+    snprintf(apiPath, sizeof(apiPath), "/repos/u-blox/u-connectXpress/releases");
     
-    char *releaseList = winHttpGetRequest(L"api.github.com", apiPath);
+    char *releaseList = ucxapp_platform_https_get_text("api.github.com", apiPath);
     if (!releaseList) {
         printf("ERROR: Failed to fetch release list from GitHub\n");
         printf("Please check your internet connection and try again.\n");
@@ -2221,10 +1999,10 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
     // Fetch the specific release to get asset URLs
     printf("\nFetching release assets...\n");
     
-    wchar_t releaseApiPath[512];
-    swprintf(releaseApiPath, 512, L"/repos/u-blox/u-connectXpress/releases/tags/%S", selectedTag);
+    char releaseApiPath[512];
+    snprintf(releaseApiPath, sizeof(releaseApiPath), "/repos/u-blox/u-connectXpress/releases/tags/%s", selectedTag);
     
-    char *releaseData = winHttpGetRequest(L"api.github.com", releaseApiPath);
+    char *releaseData = ucxapp_platform_https_get_text("api.github.com", releaseApiPath);
     if (!releaseData) {
         printf("ERROR: Failed to fetch release information\n");
         return false;
@@ -2338,15 +2116,10 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
         printf("\nFile '%s' already exists - will overwrite.\n", zipPath);
     }
     
-    // Convert to wide strings
-    wchar_t wServer[256];
-    wchar_t wPath[512];
-    mbstowcs(wServer, server, 256);
-    mbstowcs(wPath, pathStart, 512);
     
     // Download ZIP file
     size_t zipSize = 0;
-    char *zipData = winHttpGetBinaryRequest(wServer, wPath, &zipSize);
+    char *zipData = ucxapp_platform_https_get_binary(server, pathStart, &zipSize);
     if (!zipData || zipSize == 0) {
         printf("ERROR: Failed to download firmware ZIP file\n");
         printf("The file may not exist for this product/version combination.\n");
@@ -19562,7 +19335,7 @@ static void ntpTimeExample(void)
             DWORD clockStart = GetTickCount();
             time_t displayTime = unixTime;
             
-            while (!_kbhit() && (GetTickCount() - clockStart) < 120000) {
+            while (!ucxapp_platform_key_pressed() && (GetTickCount() - clockStart) < 120000) {
                 // Calculate elapsed seconds
                 DWORD elapsed = (GetTickCount() - clockStart) / 1000;
                 time_t currentDisplayTime = displayTime + elapsed;
@@ -19578,8 +19351,8 @@ static void ntpTimeExample(void)
             }
             
             // Clear any pressed key
-            if (_kbhit()) {
-                _getch();
+            if (ucxapp_platform_key_pressed()) {
+                ucxapp_platform_get_key();
             }
             
             printf("\n\n");
@@ -21093,17 +20866,6 @@ static bool parseHttpDateHeader(const char *headers, time_t *outTime)
     return (*outTime != -1);
 }
 
-// Helper function to get executable directory
-static void getExecutableDirectory(char *buffer, size_t bufferSize)
-{
-    GetModuleFileNameA(NULL, buffer, (DWORD)bufferSize);
-    // Remove the executable filename, keep only the directory
-    char *lastSlash = strrchr(buffer, '\\');
-    if (lastSlash) {
-        *(lastSlash + 1) = '\0';  // Keep the trailing backslash
-    }
-}
-
 // ============================================================================
 // MAIN APPLICATION ENTRY POINT
 // ============================================================================
@@ -21117,7 +20879,7 @@ int main(int argc, char *argv[])
     }
     
     // Set console to UTF-8 to properly display Unicode box drawing characters
-    SetConsoleOutputCP(CP_UTF8);
+    ucxapp_platform_init();
     
     // Optional "--ini <path>" (anywhere in argv) selects a settings file; removed from argv
     const char *iniOverride = NULL;
@@ -21169,7 +20931,7 @@ int main(int argc, char *argv[])
     // Initialize settings file path with smart location strategy:
     // 1. Check project root first (../../u-connectClientApp.ini from bin/ or release/)
     // 2. If not found in root, use/create in exe directory
-    getExecutableDirectory(gSettingsFilePath, sizeof(gSettingsFilePath));
+    ucxapp_platform_exe_dir(gSettingsFilePath, sizeof(gSettingsFilePath));
     
     // First, try project root location (for launcher usage and consistency)
     char rootSettingsPath[MAX_PATH];
@@ -21530,8 +21292,8 @@ int main(int argc, char *argv[])
             bool gotInput = false;
             
             while (difftime(time(NULL), startTime) < 30 && idx < 6) {
-                if (_kbhit()) {
-                    int ch = _getch();
+                if (ucxapp_platform_key_pressed()) {
+                    int ch = ucxapp_platform_get_key();
                     if (ch >= '0' && ch <= '9') {
                         passkeyStr[idx++] = (char)ch;
                         printf("*"); // Show asterisk for security
@@ -21682,7 +21444,7 @@ int main(int argc, char *argv[])
         }
         
         // Check for keyboard input (non-blocking)
-        if (_kbhit()) {
+        if (ucxapp_platform_key_pressed()) {
             handleUserInput();
             menuNeedsRedraw = true;
         }
@@ -25775,718 +25537,58 @@ static void saveSettings(void)
     }
 }
 
-// Initialize FTD2XX library (dynamic loading)
-// Resource ID for embedded FTDI DLL (must match u-connectClientApp.rc)
-#define IDR_FTD2XX_DLL 101
-
-static bool initFtd2xxLibrary(void)
-{
-    if (gFtd2xxModule != NULL) {
-        return true;  // Already loaded
-    }
-    
-    char dllPath[MAX_PATH];
-    bool dllExtracted = false;
-    
-    // Step 1: Try to extract embedded DLL from resources
-    HRSRC hResource = FindResource(NULL, MAKEINTRESOURCE(IDR_FTD2XX_DLL), RT_RCDATA);
-    if (hResource) {
-        HGLOBAL hLoadedResource = LoadResource(NULL, hResource);
-        if (hLoadedResource) {
-            LPVOID pResourceData = LockResource(hLoadedResource);
-            DWORD dwResourceSize = SizeofResource(NULL, hResource);
-            
-            if (pResourceData && dwResourceSize > 0) {
-                // Extract to temp directory
-                GetTempPath(MAX_PATH, dllPath);
-                strcat(dllPath, "ftd2xx64_embedded.dll");
-                
-                // Check if already extracted and correct size
-                WIN32_FILE_ATTRIBUTE_DATA fileAttr;
-                bool needsExtract = true;
-                if (GetFileAttributesEx(dllPath, GetFileExInfoStandard, &fileAttr)) {
-                    if (fileAttr.nFileSizeLow == dwResourceSize && fileAttr.nFileSizeHigh == 0) {
-                        needsExtract = false;
-                        dllExtracted = true;
-                    }
-                }
-                
-                if (needsExtract) {
-                    // Write DLL to temp file
-                    HANDLE hFile = CreateFile(dllPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-                    if (hFile != INVALID_HANDLE_VALUE) {
-                        DWORD dwBytesWritten;
-                        if (WriteFile(hFile, pResourceData, dwResourceSize, &dwBytesWritten, NULL)) {
-                            if (dwBytesWritten == dwResourceSize) {
-                                dllExtracted = true;
-                                U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Extracted embedded FTDI DLL (%lu bytes) to: %s",
-                                             dwResourceSize, dllPath);
-                            } else {
-                                U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "FTDI DLL extraction incomplete: wrote %lu of %lu bytes",
-                                             dwBytesWritten, dwResourceSize);
-                            }
-                        } else {
-                            U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "FTDI DLL WriteFile failed, error: %lu", GetLastError());
-                        }
-                        CloseHandle(hFile);
-                    } else {
-                        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to create FTDI DLL temp file: %s, error: %lu",
-                                     dllPath, GetLastError());
-                    }
-                }
-            } else {
-                U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "FTDI DLL resource found but data invalid (size=%lu)",
-                             SizeofResource(NULL, hResource));
-            }
-        } else {
-            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "LoadResource failed for embedded FTDI DLL");
-        }
-    } else {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No embedded FTDI DLL resource found in executable");
-    }
-    
-    // Step 2: Try to load the extracted DLL
-    if (dllExtracted) {
-        gFtd2xxModule = LoadLibrary(dllPath);
-        if (gFtd2xxModule != NULL) {
-            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Loaded FTDI DLL from: %s", dllPath);
-        } else {
-            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "LoadLibrary failed for %s, error: %lu", dllPath, GetLastError());
-        }
-    }
-    
-    // Step 3: Fallback - try external DLL file
-    if (gFtd2xxModule == NULL) {
-        // Try to load ftd2xx64.dll from executable directory
-        GetModuleFileName(NULL, dllPath, sizeof(dllPath));
-        char *lastSlash = strrchr(dllPath, '\\');
-        if (lastSlash) {
-            *(lastSlash + 1) = '\0';
-            strcat(dllPath, "ftd2xx64.dll");
-        }
-        
-        gFtd2xxModule = LoadLibrary(dllPath);
-        if (gFtd2xxModule == NULL) {
-            // Try current directory
-            gFtd2xxModule = LoadLibrary("ftd2xx64.dll");
-        }
-        
-        if (gFtd2xxModule != NULL) {
-            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Loaded external FTDI DLL");
-        } else {
-            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Could not load FTDI D2XX library (not critical - using SetupAPI fallback)");
-        }
-    }
-    
-    if (gFtd2xxModule == NULL) {
-        return false;
-    }
-    
-    // Load function pointers
-    gpFT_ListDevices = (PFN_FT_ListDevices)GetProcAddress(gFtd2xxModule, "FT_ListDevices");
-    gpFT_Open = (PFN_FT_Open)GetProcAddress(gFtd2xxModule, "FT_Open");
-    gpFT_OpenEx = (PFN_FT_OpenEx)GetProcAddress(gFtd2xxModule, "FT_OpenEx");
-    gpFT_GetComPortNumber = (PFN_FT_GetComPortNumber)GetProcAddress(gFtd2xxModule, "FT_GetComPortNumber");
-    gpFT_Close = (PFN_FT_Close)GetProcAddress(gFtd2xxModule, "FT_Close");
-    
-    if (!gpFT_ListDevices || !gpFT_Open || !gpFT_GetComPortNumber || !gpFT_Close) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "FTDI DLL loaded but missing required functions");
-        FreeLibrary(gFtd2xxModule);
-        gFtd2xxModule = NULL;
-        return false;
-    }
-    
-    return true;
-}
-
-// Helper function to get FTDI device info using FTD2XX library
-static bool getFtdiDeviceInfo(const char *portName, char *deviceDesc, size_t deviceDescSize, char *portLabel, size_t portLabelSize)
-{
-    DWORD numDevs = 0;
-    FT_STATUS status;
-    
-    // Initialize outputs
-    deviceDesc[0] = '\0';
-    portLabel[0] = '\0';
-    
-    // Initialize library if not already done
-    if (!initFtd2xxLibrary()) {
-        return false;
-    }
-    
-    // Get number of devices
-    status = gpFT_ListDevices(&numDevs, NULL, FT_LIST_NUMBER_ONLY);
-    if (status != FT_OK || numDevs == 0) {
-        return false;
-    }
-    
-    // Enumerate devices and find the one with matching COM port
-    for (DWORD i = 0; i < numDevs; i++) {
-        char description[256];
-        
-        // Get device description by index
-        status = gpFT_ListDevices((PVOID)(DWORD_PTR)i, description, FT_LIST_BY_INDEX | FT_OPEN_BY_DESCRIPTION);
-        if (status != FT_OK) {
-            continue;
-        }
-        
-        // Try to open the device to get its COM port number
-        FT_HANDLE ftHandle;
-        status = gpFT_Open(i, &ftHandle);
-        if (status == FT_OK) {
-            LONG comPortNumber = -1;
-            status = gpFT_GetComPortNumber(ftHandle, &comPortNumber);
-            
-            gpFT_Close(ftHandle);
-            
-            if (status == FT_OK && comPortNumber > 0) {
-                char comPortStr[16];
-                snprintf(comPortStr, sizeof(comPortStr), "COM%ld", comPortNumber);
-                
-                if (strcmp(comPortStr, portName) == 0) {
-                    // Found it!
-                    strncpy(deviceDesc, description, deviceDescSize - 1);
-                    deviceDesc[deviceDescSize - 1] = '\0';
-                    
-                    // Extract label from description
-                    // Common formats: 
-                    // "EVK-NORA-W36 A" -> A = AT command port
-                    // "EVK-NORA-W36 B" -> B = (not used)
-                    // "EVK-NORA-W36 C" -> C = LOG port
-                    // "EVK-NORA-W36 D" -> D = (not used)
-                    
-                    // Check for single letter suffix (A, B, C, D)
-                    size_t len = strlen(description);
-                    if (len >= 2 && description[len-2] == ' ') {
-                        char suffix = description[len-1];
-                        if (suffix == 'A') {
-                            strncpy(portLabel, "AT", portLabelSize - 1);
-                            portLabel[portLabelSize - 1] = '\0';
-                        } else if (suffix == 'C') {
-                            strncpy(portLabel, "LOG", portLabelSize - 1);
-                            portLabel[portLabelSize - 1] = '\0';
-                        }
-                    } else {
-                        // Try to extract from " - XXX" format
-                        char *dashPos = strrchr(description, '-');
-                        if (dashPos) {
-                            dashPos++;
-                            while (*dashPos == ' ') dashPos++;
-                            
-                            if (strncmp(dashPos, "AT", 2) == 0 || strncmp(dashPos, "LOG", 3) == 0) {
-                                strncpy(portLabel, dashPos, portLabelSize - 1);
-                                portLabel[portLabelSize - 1] = '\0';
-                                
-                                // Remove any trailing spaces
-                                char *end = portLabel + strlen(portLabel) - 1;
-                                while (end > portLabel && *end == ' ') {
-                                    *end = '\0';
-                                    end--;
-                                }
-                            }
-                        }
-                    }
-                    
-                    return true;
-                }
-            }
-        }
-    }
-    
-    return false;
-}
-
-// Helper function to get device info using Windows SetupAPI
-// This works without admin rights and for all COM port devices
-static bool getDeviceInfoFromSetupAPI(const char *portName, char *deviceDesc, size_t deviceDescSize, char *portLabel, size_t portLabelSize)
-{
-    HDEVINFO deviceInfoSet;
-    SP_DEVINFO_DATA deviceInfoData;
-    DWORD i;
-    bool found = false;
-    
-    // Initialize outputs
-    deviceDesc[0] = '\0';
-    portLabel[0] = '\0';
-    
-    // Get the device information set for all COM ports
-    deviceInfoSet = SetupDiGetClassDevs(&GUID_DEVCLASS_PORTS, NULL, NULL, DIGCF_PRESENT);
-    if (deviceInfoSet == INVALID_HANDLE_VALUE) {
-        return false;
-    }
-    
-    // Enumerate through all devices
-    deviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
-    for (i = 0; SetupDiEnumDeviceInfo(deviceInfoSet, i, &deviceInfoData); i++) {
-        HKEY hDeviceRegistryKey;
-        char portNameFromReg[256];
-        DWORD dataType;
-        DWORD dataSize;
-        
-        // Open the device registry key
-        hDeviceRegistryKey = SetupDiOpenDevRegKey(deviceInfoSet, &deviceInfoData,
-                                                   DICS_FLAG_GLOBAL, 0,
-                                                   DIREG_DEV, KEY_QUERY_VALUE);
-        
-        if (hDeviceRegistryKey == INVALID_HANDLE_VALUE) {
-            continue;
-        }
-        
-        // Get the port name from registry
-        dataSize = sizeof(portNameFromReg);
-        if (RegQueryValueEx(hDeviceRegistryKey, "PortName", NULL, &dataType,
-                           (LPBYTE)portNameFromReg, &dataSize) == ERROR_SUCCESS) {
-            
-            // Check if this is the port we're looking for
-            if (strcmp(portNameFromReg, portName) == 0) {
-                // Found it! Get the friendly name
-                char friendlyName[256];
-                if (SetupDiGetDeviceRegistryProperty(deviceInfoSet, &deviceInfoData,
-                                                     SPDRP_FRIENDLYNAME,
-                                                     &dataType,
-                                                     (PBYTE)friendlyName,
-                                                     sizeof(friendlyName),
-                                                     &dataSize)) {
-                    strncpy(deviceDesc, friendlyName, deviceDescSize - 1);
-                    deviceDesc[deviceDescSize - 1] = '\0';
-                    
-                    // Try to extract port label from friendly name
-                    // Format can be: "USB Serial Port (COM25) - AT" or "EVK NORA-W36 - AT (COM25)"
-                    char *dashPos = strrchr(friendlyName, '-');
-                    if (dashPos) {
-                        // Skip whitespace after dash
-                        dashPos++;
-                        while (*dashPos == ' ') dashPos++;
-                        
-                        // Extract label
-                        char *comPos = strstr(dashPos, " (COM");
-                        if (comPos) {
-                            size_t len = comPos - dashPos;
-                            if (len >= portLabelSize) len = portLabelSize - 1;
-                            strncpy(portLabel, dashPos, len);
-                            portLabel[len] = '\0';
-                        } else {
-                            // Check for space or end of string
-                            char *spacePos = strchr(dashPos, ' ');
-                            if (spacePos) {
-                                size_t len = spacePos - dashPos;
-                                if (len >= portLabelSize) len = portLabelSize - 1;
-                                strncpy(portLabel, dashPos, len);
-                                portLabel[len] = '\0';
-                            } else {
-                                strncpy(portLabel, dashPos, portLabelSize - 1);
-                                portLabel[portLabelSize - 1] = '\0';
-                            }
-                        }
-                        
-                    }
-                    
-                    // If the friendly name is generic (e.g. "USB Serial Port"),
-                    // walk up the USB device tree to find the real device name.
-                    // This is needed for FTDI-based EVK boards where the VCP driver
-                    // doesn't expose the EEPROM description in the FriendlyName.
-                    if (strstr(friendlyName, "USB Serial Port") && 
-                        !strstr(friendlyName, "NORA") && !strstr(friendlyName, "EVK")) {
-                        DEVINST parentInst, currentInst;
-                        currentInst = deviceInfoData.DevInst;
-                        
-                        // Walk up to 3 levels of parent devices
-                        for (int level = 0; level < 3; level++) {
-                            if (CM_Get_Parent(&parentInst, currentInst, 0) != CR_SUCCESS) {
-                                break;
-                            }
-                            
-                            // Try to get BusReportedDeviceDesc from parent
-                            WCHAR busDesc[256];
-                            ULONG busDescSize = sizeof(busDesc);
-                            DEVPROPTYPE propType;
-                            
-                            if (CM_Get_DevNode_PropertyW(parentInst,
-                                                         &MY_DEVPKEY_BusReportedDeviceDesc,
-                                                         &propType, (PBYTE)busDesc, &busDescSize,
-                                                         0) == CR_SUCCESS &&
-                                propType == DEVPROP_TYPE_STRING) {
-                                // Convert wide string to narrow
-                                char busDescA[256];
-                                WideCharToMultiByte(CP_UTF8, 0, busDesc, -1,
-                                                   busDescA, sizeof(busDescA), NULL, NULL);
-                                
-                                // Check if this contains a known device name
-                                if (strstr(busDescA, "NORA") || strstr(busDescA, "EVK")) {
-                                    // Use the bus-reported description as device name
-                                    snprintf(deviceDesc, deviceDescSize, "%s (%s)",
-                                            busDescA, portName);
-                                    
-                                    // Determine port function from device instance ID
-                                    // FTDI FT4232H channels: A=AT, B=unused, C=LOG, D=unused
-                                    char instanceId[256];
-                                    DWORD instanceIdSize = sizeof(instanceId);
-                                    if (SetupDiGetDeviceInstanceIdA(deviceInfoSet, &deviceInfoData,
-                                                                     instanceId, instanceIdSize,
-                                                                     &instanceIdSize)) {
-                                        // Instance ID format: FTDIBUS\VID_0403+PID_6011+UBX...A\0000
-                                        // The channel letter is the last char before \0000
-                                        char *backslash = strrchr(instanceId, '\\');
-                                        if (backslash && backslash > instanceId) {
-                                            char channel = *(backslash - 1);
-                                            if (channel == 'A') {
-                                                strncpy(portLabel, "AT", portLabelSize - 1);
-                                                portLabel[portLabelSize - 1] = '\0';
-                                            } else if (channel == 'C') {
-                                                strncpy(portLabel, "LOG", portLabelSize - 1);
-                                                portLabel[portLabelSize - 1] = '\0';
-                                            }
-                                        }
-                                    }
-                                    break;
-                                }
-                            }
-                            
-                            currentInst = parentInst;
-                        }
-                    }
-                    
-                    found = true;
-                }
-            }
-        }
-        
-        RegCloseKey(hDeviceRegistryKey);
-        
-        if (found) break;
-    }
-    
-    SetupDiDestroyDeviceInfoList(deviceInfoSet);
-    return found;
-}
-
-// List available COM ports
-// Helper function to get friendly name for a COM port
-static bool getComPortFriendlyName(const char *portName, char *friendlyName, size_t friendlyNameSize, char *portLabel, size_t portLabelSize)
-{
-    bool found = false;
-    
-    // Initialize output
-    friendlyName[0] = '\0';
-    portLabel[0] = '\0';
-    
-    // Search through multiple device paths
-    const char *devicePaths[] = {
-        "SYSTEM\\CurrentControlSet\\Enum\\FTDIBUS",
-        "SYSTEM\\CurrentControlSet\\Enum\\USB",
-        "SYSTEM\\CurrentControlSet\\Enum\\BTHENUM"
-    };
-    
-    for (int pathIdx = 0; pathIdx < 3 && !found; pathIdx++) {
-        HKEY hDeviceKey;
-        
-        LONG result = RegOpenKeyEx(HKEY_LOCAL_MACHINE, devicePaths[pathIdx], 0, KEY_READ, &hDeviceKey);
-        if (result != ERROR_SUCCESS) continue;
-        
-        // Enumerate device IDs
-        DWORD deviceIndex = 0;
-        char deviceId[256];
-        while (RegEnumKey(hDeviceKey, deviceIndex++, deviceId, sizeof(deviceId)) == ERROR_SUCCESS) {
-            // Enumerate instances under this device
-            char instancePath[512];
-            snprintf(instancePath, sizeof(instancePath), "%s\\%s", devicePaths[pathIdx], deviceId);
-            
-            HKEY hInstancesKey;
-            if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, instancePath, 0, KEY_READ, &hInstancesKey) == ERROR_SUCCESS) {
-                DWORD instanceIndex = 0;
-                char instanceId[256];
-                
-                while (RegEnumKey(hInstancesKey, instanceIndex++, instanceId, sizeof(instanceId)) == ERROR_SUCCESS) {
-                    char fullPath[512];
-                    snprintf(fullPath, sizeof(fullPath), "%s\\%s\\Device Parameters", instancePath, instanceId);
-                    
-                    HKEY hParamsKey;
-                    if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, fullPath, 0, KEY_READ, &hParamsKey) == ERROR_SUCCESS) {
-                        BYTE portData[256];
-                        DWORD portDataSize = sizeof(portData);
-                        DWORD portType;
-                        
-                        // Check if this device has our COM port
-                        if (RegQueryValueEx(hParamsKey, "PortName", NULL, &portType, portData, &portDataSize) == ERROR_SUCCESS) {
-                            if (strcmp((char*)portData, portName) == 0) {
-                                // Found our port! Get the friendly name and parent device info
-                                char parentPath[512];
-                                snprintf(parentPath, sizeof(parentPath), "%s\\%s", instancePath, instanceId);
-                                
-                                HKEY hDevKey;
-                                if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, parentPath, 0, KEY_READ, &hDevKey) == ERROR_SUCCESS) {
-                                    BYTE nameData[256];
-                                    DWORD nameDataSize = sizeof(nameData);
-                                    DWORD nameType;
-                                    
-                                    // Get friendly name
-                                    if (RegQueryValueEx(hDevKey, "FriendlyName", NULL, &nameType, nameData, &nameDataSize) == ERROR_SUCCESS) {
-                                        strncpy(friendlyName, (char*)nameData, friendlyNameSize - 1);
-                                        friendlyName[friendlyNameSize - 1] = '\0';
-                                        
-                                        // Try to extract port label from friendly name
-                                        // Format can be: "USB Serial Port (COM25) - AT" or "EVK NORA-W36 - AT (COM25)"
-                                        char *dashPos = strrchr(friendlyName, '-');
-                                        if (dashPos) {
-                                            // Skip whitespace after dash
-                                            dashPos++;
-                                            while (*dashPos == ' ') dashPos++;
-                                            
-                                            // Extract label (might have COM port after it)
-                                            char *comPos = strstr(dashPos, " (COM");
-                                            if (comPos) {
-                                                size_t len = comPos - dashPos;
-                                                if (len >= portLabelSize) len = portLabelSize - 1;
-                                                strncpy(portLabel, dashPos, len);
-                                                portLabel[len] = '\0';
-                                            } else {
-                                                strncpy(portLabel, dashPos, portLabelSize - 1);
-                                                portLabel[portLabelSize - 1] = '\0';
-                                            }
-                                        }
-                                        
-                                        found = true;
-                                    }
-                                    
-                                    // Also try to get device description (for parent device name)
-                                    if (!found || friendlyName[0] == '\0') {
-                                        nameDataSize = sizeof(nameData);
-                                        if (RegQueryValueEx(hDevKey, "DeviceDesc", NULL, &nameType, nameData, &nameDataSize) == ERROR_SUCCESS) {
-                                            strncpy(friendlyName, (char*)nameData, friendlyNameSize - 1);
-                                            friendlyName[friendlyNameSize - 1] = '\0';
-                                            found = true;
-                                        }
-                                    }
-                                    
-                                    RegCloseKey(hDevKey);
-                                }
-                                
-                                // Try to get parent device name (e.g., "EVK NORA-W36")
-                                if (found) {
-                                    // Go up one level to get parent device
-                                    char parentDevicePath[512];
-                                    snprintf(parentDevicePath, sizeof(parentDevicePath), "%s", instancePath);
-                                    
-                                    // For FTDI devices, the parent might have the EVK name
-                                    char *lastSlash = strrchr(parentDevicePath, '\\');
-                                    if (lastSlash) {
-                                        *lastSlash = '\0';  // Go up one level
-                                        
-                                        HKEY hParentKey;
-                                        if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, parentDevicePath, 0, KEY_READ, &hParentKey) == ERROR_SUCCESS) {
-                                            // Enumerate parent's instances
-                                            DWORD parentInstIndex = 0;
-                                            char parentInstId[256];
-                                            
-                                            while (RegEnumKey(hParentKey, parentInstIndex++, parentInstId, sizeof(parentInstId)) == ERROR_SUCCESS) {
-                                                char parentFullPath[512];
-                                                snprintf(parentFullPath, sizeof(parentFullPath), "%s\\%s", parentDevicePath, parentInstId);
-                                                
-                                                HKEY hPDevKey;
-                                                if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, parentFullPath, 0, KEY_READ, &hPDevKey) == ERROR_SUCCESS) {
-                                                    BYTE pNameData[256];
-                                                    DWORD pNameDataSize = sizeof(pNameData);
-                                                    
-                                                    if (RegQueryValueEx(hPDevKey, "FriendlyName", NULL, NULL, pNameData, &pNameDataSize) == ERROR_SUCCESS) {
-                                                        // Check if this looks like the EVK name (e.g., "EVK NORA-W36")
-                                                        char *parentName = (char*)pNameData;
-                                                        if (strstr(parentName, "EVK") || strstr(parentName, "NORA")) {
-                                                            // Prepend parent name to our friendly name
-                                                            char temp[256];
-                                                            strncpy(temp, friendlyName, sizeof(temp) - 1);
-                                                            snprintf(friendlyName, friendlyNameSize, "%s", parentName);
-                                                        }
-                                                    }
-                                                    
-                                                    RegCloseKey(hPDevKey);
-                                                    break;  // Found parent, no need to continue
-                                                }
-                                            }
-                                            
-                                            RegCloseKey(hParentKey);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        
-                        RegCloseKey(hParamsKey);
-                    }
-                    
-                    if (found) break;
-                }
-                
-                RegCloseKey(hInstancesKey);
-            }
-            
-            if (found) break;
-        }
-        
-        RegCloseKey(hDeviceKey);
-    }
-    
-    return found;
-}
-
 // List available COM ports
 static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortSize, 
                                    char *recommendedDevice, size_t recommendedDeviceSize)
 {
-    HKEY hKey;
-    LONG result;
-    
-    // Initialize recommended port and device
+    ucxapp_serial_port_t ports[64];
+
     if (recommendedPort && recommendedPortSize > 0) {
         recommendedPort[0] = '\0';
     }
     if (recommendedDevice && recommendedDeviceSize > 0) {
         recommendedDevice[0] = '\0';
     }
-    
-    // Open the registry key where COM ports are listed
-    result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
-                         "HARDWARE\\DEVICEMAP\\SERIALCOMM",
-                         0,
-                         KEY_READ,
-                         &hKey);
-    
-    if (result == ERROR_SUCCESS) {
-        DWORD index = 0;
-        char valueName[256];
-        DWORD valueNameSize;
-        BYTE data[256];
-        DWORD dataSize;
-        DWORD type;
-        int count = 0;
-        
-        printf("Available COM ports:\n");
-        printf("%-8s %-12s %-40s %s\n", "Port", "Status", "Device", "Function");
-        printf("%-8s %-12s %-40s %s\n", "--------", "------------", "----------------------------------------", "--------");
-        
-        // Enumerate all values in the registry key
-        while (1) {
-            valueNameSize = sizeof(valueName);
-            dataSize = sizeof(data);
-            
-            result = RegEnumValue(hKey, index, valueName, &valueNameSize,
-                                NULL, &type, data, &dataSize);
-            
-            if (result == ERROR_NO_MORE_ITEMS) {
-                break;
+
+    int count = ucxapp_platform_list_serial_ports(ports, (int)(sizeof(ports) / sizeof(ports[0])));
+    if (count <= 0) {
+        printf("\nNo COM ports found.\n");
+        return;
+    }
+
+    printf("Available COM ports:\n");
+    printf("%-8s %-12s %-40s %s\n", "Port", "Status", "Device", "Function");
+    printf("%-8s %-12s %-40s %s\n", "--------", "------------", "----------------------------------------", "--------");
+
+    for (int i = 0; i < count; i++) {
+        const ucxapp_serial_port_t *port = &ports[i];
+
+        // Device name is the description without the trailing " (COMx)"
+        char deviceName[256];
+        snprintf(deviceName, sizeof(deviceName), "%s", port->desc[0] ? port->desc : "-");
+        char *comPart = strstr(deviceName, " (COM");
+        if (comPart) {
+            *comPart = '\0';
+        }
+
+        // Recommend the first free NORA port, preferring the AT port
+        if (recommendedPort && recommendedPortSize > 0 && recommendedPort[0] == '\0' && port->available) {
+            const char *noraModel = NULL;
+            if (strstr(port->desc, "NORA-W36")) {
+                noraModel = "NORA-W36";
+            } else if (strstr(port->desc, "NORA-B26")) {
+                noraModel = "NORA-B26";
             }
-            
-            if (result == ERROR_SUCCESS && type == REG_SZ) {
-                count++;
-                char *portName = (char*)data;
-                
-                // Try to open to see if it's available (not in use)
-                char fullName[32];
-                snprintf(fullName, sizeof(fullName), "\\\\.\\%s", portName);
-                HANDLE hPort = CreateFile(fullName, GENERIC_READ | GENERIC_WRITE,
-                                        0, NULL, OPEN_EXISTING, 0, NULL);
-                
-                const char *status;
-                if (hPort != INVALID_HANDLE_VALUE) {
-                    CloseHandle(hPort);
-                    status = "Available";
-                } else {
-                    status = "In use";
-                }
-                
-                // Try to get device info from FTDI library first, then SetupAPI
-                char deviceDesc[256];
-                char portLabel[64];
-                bool gotInfo = false;
-                
-                // First try: FTDI library (for FTDI devices with detailed info)
-                if (getFtdiDeviceInfo(portName, deviceDesc, sizeof(deviceDesc), 
-                                     portLabel, sizeof(portLabel))) {
-                    gotInfo = true;
-                } else {
-                    // Second try: Windows SetupAPI (for all devices)
-                    gotInfo = getDeviceInfoFromSetupAPI(portName, deviceDesc, sizeof(deviceDesc), 
-                                                         portLabel, sizeof(portLabel));
-                }
-                
-                if (gotInfo) {
-                    // Extract device name (before the COM port part)
-                    char deviceName[256];
-                    char *comPart = strstr(deviceDesc, " (COM");
-                    if (comPart) {
-                        size_t len = comPart - deviceDesc;
-                        if (len >= sizeof(deviceName)) len = sizeof(deviceName) - 1;
-                        strncpy(deviceName, deviceDesc, len);
-                        deviceName[len] = '\0';
-                    } else {
-                        strncpy(deviceName, deviceDesc, sizeof(deviceName) - 1);
-                        deviceName[sizeof(deviceName) - 1] = '\0';
-                    }
-                    
-                    // Check if this is a NORA device and should be recommended
-                    if (recommendedPort && recommendedPortSize > 0 && recommendedPort[0] == '\0') {
-                        // Check if it's available and contains NORA-W36 or NORA-B26
-                        const char *noraModel = NULL;
-                        if (strstr(deviceDesc, "NORA-W36")) {
-                            noraModel = "NORA-W36";
-                        } else if (strstr(deviceDesc, "NORA-B26")) {
-                            noraModel = "NORA-B26";
-                        }
-                        
-                        if (hPort != INVALID_HANDLE_VALUE && noraModel) {
-                            // Prefer AT port if available, otherwise any NORA port
-                            if (portLabel[0] == '\0' || strcmp(portLabel, "AT") == 0) {
-                                strncpy(recommendedPort, portName, recommendedPortSize - 1);
-                                recommendedPort[recommendedPortSize - 1] = '\0';
-                                
-                                // Save recommended device model
-                                if (recommendedDevice && recommendedDeviceSize > 0) {
-                                    strncpy(recommendedDevice, noraModel, recommendedDeviceSize - 1);
-                                    recommendedDevice[recommendedDeviceSize - 1] = '\0';
-                                }
-                            }
-                        }
-                    }
-                    
-                    printf("%-8s %-12s %-40s %s\n", 
-                           portName, status, deviceName,
-                           portLabel[0] ? portLabel : "-");
-                } else {
-                    printf("%-8s %-12s %-40s %s\n", 
-                           portName, status, valueName, "-");
+            if (noraModel && (port->label[0] == '\0' || strcmp(port->label, "AT") == 0)) {
+                snprintf(recommendedPort, recommendedPortSize, "%s", port->name);
+                if (recommendedDevice && recommendedDeviceSize > 0) {
+                    snprintf(recommendedDevice, recommendedDeviceSize, "%s", noraModel);
                 }
             }
-            
-            index++;
         }
-        
-        RegCloseKey(hKey);
-        
-        if (count == 0) {
-            printf("\nNo COM ports found in registry.\n");
-        }
-    } else {
-        printf("ERROR: Could not access registry to enumerate COM ports.\n");
-        printf("Falling back to simple scan...\n\n");
-        
-        // Fallback: try common port numbers
-        int count = 0;
-        for (int i = 1; i <= 256; i++) {
-            char portName[32];
-            snprintf(portName, sizeof(portName), "\\\\.\\COM%d", i);
-            
-            // Try to open the port to see if it exists
-            HANDLE hPort = CreateFile(portName, GENERIC_READ | GENERIC_WRITE,
-                                    0, NULL, OPEN_EXISTING, 0, NULL);
-            if (hPort != INVALID_HANDLE_VALUE) {
-                CloseHandle(hPort);
-                printf("  COM%d\n", i);
-                count++;
-            }
-        }
-        
-        if (count == 0) {
-            printf("  No COM ports found.\n");
-        }
+
+        printf("%-8s %-12s %-40s %s\n", port->name, port->available ? "Available" : "In use",
+               deviceName, port->label[0] ? port->label : "-");
     }
 }
 
@@ -26791,7 +25893,7 @@ static void listAllApiCommands(void)
     // Try to find ucx_api/generated directory
     char apiPath[MAX_PATH];
     char exeDir[MAX_PATH];
-    getExecutableDirectory(exeDir, sizeof(exeDir));
+    ucxapp_platform_exe_dir(exeDir, sizeof(exeDir));
     
     // Try multiple possible locations:
     // 1. examples/u-connectClientApp/bin -> workspace root (3 levels up)

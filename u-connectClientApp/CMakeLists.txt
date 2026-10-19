@@ -53,6 +53,7 @@ add_executable(u-connectClientApp
   src/ucxapp_events.c
   src/ucxapp_io.c
   src/ucxapp_io_stdio.c
+  src/ucxapp_platform_win.c
   src/ucxapp_cmd.c
   src/ucxapp_cmds_device.c
   src/ucxapp_cmds_wifi.c
