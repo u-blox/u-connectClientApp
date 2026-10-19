@@ -18,7 +18,8 @@ def test_help_lists_command_packs(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "COM255", "help")
     assert out.returncode == 0
     for name in ("device.info", "wifi.scan", "wifi.connect", "sock.open", "device.connect",
-                 "net.ping", "net.dns", "http.get", "at"):
+                 "net.ping", "net.dns", "http.get", "mqtt.connect", "mqtt.publish",
+                 "bt.scan", "bt.connect", "at"):
         assert name in out.stdout
 
 

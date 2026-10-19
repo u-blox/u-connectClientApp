@@ -46,5 +46,7 @@ void ucxapp_register_wifi_cmds(void);
 void ucxapp_register_sock_cmds(void);
 void ucxapp_register_net_cmds(void);
 void ucxapp_register_sys_cmds(void);
+void ucxapp_register_mqtt_cmds(void);
+void ucxapp_register_bt_cmds(void);
 
 #endif /* UCXAPP_CMD_H */

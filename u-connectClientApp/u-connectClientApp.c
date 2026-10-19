@@ -21162,6 +21162,8 @@ int main(int argc, char *argv[])
     ucxapp_register_sock_cmds();
     ucxapp_register_net_cmds();
     ucxapp_register_sys_cmds();
+    ucxapp_register_mqtt_cmds();
+    ucxapp_register_bt_cmds();
     registerPlatformCmds();
     
     // Initialize settings file path with smart location strategy:

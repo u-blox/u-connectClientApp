@@ -43,6 +43,16 @@ In the normal menu, press `:` to open the same shell; `exit` returns to the menu
 | `net.ping` | `<host> [count]` | ICMP ping, count 1-10 (default 4); fails if no reply |
 | `net.dns` | `<host>` | Resolve a host name |
 | `http.get` | `<url> [show_bytes]` | GET over HTTP or HTTPS (scheme optional, default HTTP); prints the status line and up to `show_bytes` (default 512) of the body |
+| `mqtt.connect` | `[host] [port]` | Connect to an MQTT broker (default `broker.emqx.io:1883`, no TLS); waits up to 10 s |
+| `mqtt.disconnect` | | Disconnect from the broker |
+| `mqtt.subscribe` | `<topic> [qos]` | Subscribe (wildcards allowed, qos 0-2) |
+| `mqtt.unsubscribe` | `<topic>` | Unsubscribe |
+| `mqtt.publish` | `<topic> <text...>` | Publish a QoS 0, non-retained message (max 511 bytes) |
+| `mqtt.read` | `[wait_s]` | Wait (default 10 s) for messages and print them |
+| `bt.scan` |  | Scan for BLE devices (up to 30 s) |
+| `bt.connect` | `<addr[,random]>` | Connect to a BLE device, e.g. 11:22:33:44:55:66 |
+| `bt.disconnect` | `<handle>` | Close a BLE connection |
+| `bt.list` |  | List BLE connections |
 | `at` | `<command>` | Send a raw AT command; the `AT` prefix is optional (`at +GMI`) |
 
 Example: fetch a page over Wi-Fi.
@@ -85,6 +95,7 @@ In `--exec` mode the process exits with 1 on the first non-zero result, otherwis
 Rules for portable code: use `ucxapp_print()` / `ucxapp_readline()` for all I/O, and only
 u-connectClient APIs and its `U_CX_PORT_*` macros for OS services.
 
+Known firmware behaviour: on NORA-W36 an MQTT publish made while a subscription is active returned ERROR:15 in testing, and back-to-back MQTT operations get ERROR:15 while the previous one is in flight; the commands retry the latter automatically.
 ## Adding a command
 
 A command is a table entry. Register the table once at startup.
