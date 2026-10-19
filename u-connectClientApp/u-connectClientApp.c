@@ -15,7 +15,7 @@
  */
 
 /** @file
- * @brief ucx-windows-app - Windows Console Application for u-connectXpress
+ * @brief u-connectClientApp - Windows Console Application for u-connectXpress
  * 
  * A comprehensive Windows application with text-based menu for:
  * - Bluetooth operations (scan, connect, GATT client/server, SPS)
@@ -148,9 +148,9 @@ static PFN_FT_Close gpFT_Close = NULL;
 
 // Settings file name
 // Location strategy:
-//   1. Launcher usage: Uses/creates ucx-windows-app.ini in project root
+//   1. Launcher usage: Uses/creates u-connectClientApp.ini in project root
 //   2. Direct exe usage: Checks root (../../ from bin/release), creates there if found, else creates next to exe
-#define SETTINGS_FILENAME "ucx-windows-app.ini"
+#define SETTINGS_FILENAME "u-connectClientApp.ini"
 
 // Buffer size constants
 #define MAX_DATA_BUFFER 1000
@@ -3329,6 +3329,9 @@ static void pingCompleteUrc(struct uCxHandle *puCxHandle, int32_t transmitted_pa
     gPingSuccess = received_packets;
     gPingFailed = transmitted_packets - received_packets;
     gPingAvgTime = avg_response_time;
+    gUcxappPingSent = transmitted_packets;
+    gUcxappPingReceived = received_packets;
+    gUcxappPingAvgMs = avg_response_time;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
                    "Ping complete: %d/%d packets, avg %d ms", 
                    received_packets, transmitted_packets, avg_response_time);
@@ -18077,7 +18080,7 @@ static void wifiPositioningExample(void)
     // Note: Using HTTP instead of HTTPS to avoid certificate requirements
     const char *host = "apiv2.combain.com";
     char path[256];
-    snprintf(path, sizeof(path), "/?key=%s&id=ucx-windows-app", gCombainApiKey);
+    snprintf(path, sizeof(path), "/?key=%s&id=u-connectClientApp", gCombainApiKey);
     
     printf("Configuring HTTP connection to Combain...\n");
     printf("Note: Using HTTP (not HTTPS) - Combain supports both\n");
@@ -21157,10 +21160,12 @@ int main(int argc, char *argv[])
     ucxapp_register_device_cmds();
     ucxapp_register_wifi_cmds();
     ucxapp_register_sock_cmds();
+    ucxapp_register_net_cmds();
+    ucxapp_register_sys_cmds();
     registerPlatformCmds();
     
     // Initialize settings file path with smart location strategy:
-    // 1. Check project root first (../../ucx-windows-app.ini from bin/ or release/)
+    // 1. Check project root first (../../u-connectClientApp.ini from bin/ or release/)
     // 2. If not found in root, use/create in exe directory
     getExecutableDirectory(gSettingsFilePath, sizeof(gSettingsFilePath));
     
@@ -21182,14 +21187,14 @@ int main(int argc, char *argv[])
         rootSettingsPath[pathLen - 1] = '\0';
     }
     
-    // Navigate up 2 levels: bin/release → ucx-windows-app → root
+    // Navigate up 2 levels: bin/release → u-connectClientApp → root
     // Level 1: Remove "bin" or "release"
     char *lastSlash = strrchr(rootSettingsPath, '\\');
     bool foundRootPath = false;
     if (lastSlash && lastSlash > rootSettingsPath) {
-        *lastSlash = '\0';  // Now at ucx-windows-app
+        *lastSlash = '\0';  // Now at u-connectClientApp
         
-        // Level 2: Remove "ucx-windows-app"
+        // Level 2: Remove "u-connectClientApp"
         lastSlash = strrchr(rootSettingsPath, '\\');
         if (lastSlash && lastSlash > rootSettingsPath) {
             *(lastSlash + 1) = '\0';  // Keep trailing slash, now at root
@@ -25769,7 +25774,7 @@ static void saveSettings(void)
 }
 
 // Initialize FTD2XX library (dynamic loading)
-// Resource ID for embedded FTDI DLL (must match ucx-windows-app.rc)
+// Resource ID for embedded FTDI DLL (must match u-connectClientApp.rc)
 #define IDR_FTD2XX_DLL 101
 
 static bool initFtd2xxLibrary(void)
@@ -26787,7 +26792,7 @@ static void listAllApiCommands(void)
     getExecutableDirectory(exeDir, sizeof(exeDir));
     
     // Try multiple possible locations:
-    // 1. examples/ucx-windows-app/bin -> workspace root (3 levels up)
+    // 1. examples/u-connectClientApp/bin -> workspace root (3 levels up)
     snprintf(apiPath, sizeof(apiPath), "%s\\..\\..\\..\\ucx_api\\generated", exeDir);
     DWORD attribs = GetFileAttributesA(apiPath);
     

@@ -61,6 +61,11 @@ int ucxapp_readline(const char *prompt, char *buf, size_t size);
 /* Event flags set by URC handlers. Direct access to the flags requires the lock. */
 extern volatile uint32_t gUcxappEventFlags;
 
+/* Totals from the last +UDIAGPINGCOMPLETE URC. */
+extern volatile int32_t gUcxappPingSent;
+extern volatile int32_t gUcxappPingReceived;
+extern volatile int32_t gUcxappPingAvgMs;
+
 void ucxapp_events_init(void);
 void ucxapp_events_deinit(void);
 void ucxapp_events_lock(void);

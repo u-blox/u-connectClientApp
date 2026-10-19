@@ -57,6 +57,8 @@ add_executable(u-connectClientApp
   src/ucxapp_cmds_device.c
   src/ucxapp_cmds_wifi.c
   src/ucxapp_cmds_sock.c
+  src/ucxapp_cmds_net.c
+  src/ucxapp_cmds_sys.c
   ${PORT_OS_SRC}
   ${PORT_UART_SRC}
   u-connectClientApp.rc

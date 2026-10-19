@@ -360,7 +360,7 @@ if not exist "!SIGNED_EXE!" (
 echo Launching u-connectClientApp-signed.exe...
 echo.
 
-cd ucx-windows-app\release
+cd u-connectClientApp\release
 
 REM Pass arguments (skip first argument which is --signed)
 u-connectClientApp-signed.exe %2 %3 %4 %5 %6 %7 %8 %9
@@ -389,7 +389,7 @@ set UNSIGNED_EXE=u-connectClientApp\bin\u-connectClientApp.exe
 if exist "!UNSIGNED_EXE!" (
     echo Launching development version with HID mode...
     echo.
-    cd ucx-windows-app\bin
+    cd u-connectClientApp\bin
     u-connectClientApp.exe hid %2 %3 %4 %5 %6 %7 %8 %9
 ) else (
     echo [ERROR] No executable found!

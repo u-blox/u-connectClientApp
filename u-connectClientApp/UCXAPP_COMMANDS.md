@@ -1,17 +1,17 @@
 # Command Layer
 
 A small, portable layer for driving a u-connectXpress module with text commands instead of the
-menu. It lives in `ucx-windows-app/src/ucxapp_*` and has no Windows dependencies, so the same
+menu. It lives in `u-connectClientApp/src/ucxapp_*` and has no Windows dependencies, so the same
 commands can run in a PC console, a Linux terminal or a UART shell on an embedded target.
 
 ## Using it
 
 ```powershell
 # One-shot: run commands in order, stop at the first failure (exit code 1)
-ucx-windows-app.exe COM13 --exec "device.info" --exec "wifi.scan"
+u-connectClientApp.exe COM13 --exec "device.info" --exec "wifi.scan"
 
 # Interactive shell
-ucx-windows-app.exe COM13 --shell
+u-connectClientApp.exe COM13 --shell
 ```
 
 In the normal menu, press `:` to open the same shell; `exit` returns to the menu.
@@ -40,11 +40,15 @@ In the normal menu, press `:` to open the same shell; `exit` returns to the menu
 | `sock.read` | `<handle> [max] [wait_s]` | Wait for data (default 5 s) and print up to `max` bytes (default and maximum 512) |
 | `sock.close` | `<handle>` | Close the socket |
 | `sock.list` | | List open sockets |
+| `net.ping` | `<host> [count]` | ICMP ping, count 1-10 (default 4); fails if no reply |
+| `net.dns` | `<host>` | Resolve a host name |
+| `http.get` | `<url> [show_bytes]` | GET over HTTP or HTTPS (scheme optional, default HTTP); prints the status line and up to `show_bytes` (default 512) of the body |
+| `at` | `<command>` | Send a raw AT command; the `AT` prefix is optional (`at +GMI`) |
 
 Example: fetch a page over Wi-Fi.
 
 ```powershell
-ucx-windows-app.exe COM13 `
+u-connectClientApp.exe COM13 `
   --exec "wifi.connect MySsid MyPassword" `
   --exec "sock.open tcp" `
   --exec "sock.connect 0 example.com 80" `
@@ -116,5 +120,5 @@ so the handler can use `app->ucx` without checking. Returning `UCXAPP_ERR_USAGE`
 3. Call `ucxapp_events_init()` and register the URC handlers that call `ucxapp_events_signal()`.
 4. Register the command packs and call `ucxapp_shell_run(&app)` or `ucxapp_cmd_exec()`.
 
-Steps 2 and 3 are done by the Windows app today in `ucx-windows-app.c`; moving them into the
+Steps 2 and 3 are done by the Windows app today in `u-connectClientApp.c`; moving them into the
 portable layer is planned.

@@ -3,6 +3,9 @@
 
 static U_CX_MUTEX_HANDLE gMutex;
 volatile uint32_t gUcxappEventFlags = 0;
+volatile int32_t gUcxappPingSent = 0;
+volatile int32_t gUcxappPingReceived = 0;
+volatile int32_t gUcxappPingAvgMs = 0;
 
 void ucxapp_events_init(void)
 {
