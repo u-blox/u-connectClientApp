@@ -94,8 +94,11 @@ $deadline = (Get-Date).AddMinutes($WaitMinutes)
 $ready = $false
 while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 20
+    $ErrorActionPreference = 'Continue'   # gh writes "release not found" to stderr until CI creates the draft
     $json = gh release view $tag --json isDraft,assets 2>$null
-    if ($LASTEXITCODE -eq 0 -and $json) {
+    $ok = $LASTEXITCODE -eq 0
+    $ErrorActionPreference = 'Stop'
+    if ($ok -and $json) {
         $rel = $json | ConvertFrom-Json
         Write-Host ("  draft={0} assets={1}" -f $rel.isDraft, @($rel.assets).Count)
         if (@($rel.assets).Count -ge $expected) { $ready = $true; break }

@@ -45,10 +45,13 @@ jobs:
         include:
           - board: nucleo_h753zi
             repo: STM32CubeH7
+            ref: v1.12.1   # master no longer has FreeRTOS/Source/CMSIS_RTOS
           - board: nucleo_f767zi
             repo: STM32CubeF7
+            ref: master
           - board: nucleo_f439zi
             repo: STM32CubeF4
+            ref: master
     steps:
       - uses: actions/checkout@v4
       - name: Init u-connectClient (not its nested submodules)
@@ -58,7 +61,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi ninja-build
       - name: Fetch STM32Cube HAL
-        run: git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/STMicroelectronics/${{ matrix.repo }} "$RUNNER_TEMP/hal"
+        run: git clone --depth 1 --branch ${{ matrix.ref }} --recurse-submodules --shallow-submodules https://github.com/STMicroelectronics/${{ matrix.repo }} "$RUNNER_TEMP/hal"
       - name: Build
         run: |
           cmake -G Ninja -S app/stm32 -B build/stm32 \
