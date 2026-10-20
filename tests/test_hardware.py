@@ -192,6 +192,8 @@ def test_tcp_socket_round_trip_with_local_server(app_exe, port_a):
     finally:
         thread.join(timeout=30)
         server.close()
+    if "timeout waiting for socket connection" in out.stdout:
+        pytest.skip("module cannot reach this PC (firewall or Wi-Fi client isolation)")
     assert out.returncode == 0, out.stdout
     assert "socket 0: TCP, connected" in out.stdout, out.stdout
     assert "hello-from-pc" in out.stdout, out.stdout
@@ -255,8 +257,8 @@ def test_certificate_upload_info_and_remove(app_exe, port_a, tmp_path):
     fingerprint = cert.fingerprint(hashes.SHA256()).hex()
 
     _run(app_exe, port_a, "cert.remove ucxtest")  # leftover from an aborted run
-    out = _run(app_exe, port_a, f"cert.upload ca {pem} ucxtest", "cert.list", "cert.info ucxtest", "cert.remove ucxtest",
-               "cert.list")
+    out = _run(app_exe, port_a, f"cert.upload ca {pem} ucxtest", "cert.list", "cert.info ucxtest",
+               "cert.remove ucxtest", "cert.list")
     assert out.returncode == 0, out.stdout
     assert "uploaded ca ucxtest" in out.stdout, out.stdout
     assert "fingerprint verified" in out.stdout, out.stdout
