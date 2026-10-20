@@ -63,7 +63,7 @@ git push origin v3.2.0.251204
 ```
 
 ### 4. Create GitHub Release
-Automatic: `.\scripts\release.ps1 -Publish` does steps 2-4 below (`-DryRun` only builds and signs). The tag is `vX.Y.Z.YYMMDD`, with X.Y.Z from `app/CMakeLists.txt`.
+Automatic: `python scripts/release.py --publish` does steps 2-4 below (`--dry-run` only builds and signs). The tag is `vX.Y.Z.YYMMDD`, with X.Y.Z from `app/CMakeLists.txt`.
 
 Pushing the `v*` tag runs `.github/workflows/release.yml`, which builds Linux and the three STM32 images and creates a **draft** release using `.github/release-notes.md`. The Windows exe is signed locally (the EV certificate is not available to CI):
 

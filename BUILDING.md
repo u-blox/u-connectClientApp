@@ -103,4 +103,4 @@ u-connectClientApp/
 ```
 
 `app/release/u-connectClientApp-signed.exe` is self-contained (~2.5 MB) with the FTDI DLL embedded.
-See [app/UCX_WIN_APP_RELEASE.md](app/UCX_WIN_APP_RELEASE.md) and `scripts\release.ps1` for the full release flow.
+See [app/UCX_WIN_APP_RELEASE.md](app/UCX_WIN_APP_RELEASE.md) and `scripts/release.py` for the full release flow.
