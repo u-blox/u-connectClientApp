@@ -3,4 +3,3 @@ pytest-cov
 ruff
 cryptography
 pyserial; sys_platform == "win32"
-bleak; sys_platform == "win32"

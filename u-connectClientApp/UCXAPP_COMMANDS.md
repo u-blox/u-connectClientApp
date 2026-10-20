@@ -43,7 +43,7 @@ In the normal menu, press `:` to open the same shell; `exit` returns to the menu
 | `wifi.regdomain` | `[world\|etsi\|fcc\|ic\|nz\|mkk\|ncc\|acma\|kcc\|sa\|br]` | Show, or set and save, the regulatory domain used by `wifi.profile.auto` (default `etsi`) |
 | `sock.open` | `<tcp\|udp>` | Create a socket and print its handle |
 | `sock.connect` | `<handle> <host> <port>` | Connect; waits up to 10 s |
-| `sock.send` | `<handle> <text...>` | Send text (arguments are joined with single spaces, max 511 bytes) |
+| `sock.send` | `<handle> <text...>` | Send text (arguments are joined with single spaces, max 511 bytes; `\r`, `\n` and `\\` are converted) |
 | `sock.read` | `<handle> [max] [wait_s]` | Wait for data (default 5 s) and print up to `max` bytes (default and maximum 512) |
 | `sock.close` | `<handle>` | Close the socket |
 | `sock.list` | | List open sockets |

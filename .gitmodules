@@ -1,3 +1,4 @@
 [submodule "u-connectClient"]
 	path = u-connectClient
 	url = https://github.com/u-blox/u-connectClient.git
+	branch = cmag_matter_support

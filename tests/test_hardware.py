@@ -1,18 +1,14 @@
-"""Tests against real NORA-W36 modules and the PC's built-in Bluetooth LE radio.
+"""Tests against real NORA-W36 modules (a second module is the peer; the PC is never a counterpart).
 
 Run with e.g.:  set UCX_PORT_A=COM5 & set UCX_PORT_B=COM7 & pytest tests/test_hardware.py
 """
 
-import asyncio
 import os
 import queue
 import re
-import socket
 import subprocess
 import threading
 import time
-import urllib.error
-import urllib.request
 
 import pytest
 
@@ -154,51 +150,44 @@ def _wifi_credentials():
     return ssid, password
 
 
-def _pc_lan_address():
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
-
-
-@pytest.mark.hardware
-def test_tcp_socket_round_trip_with_local_server(app_exe, port_a):
+@pytest.mark.two_devices
+def test_tcp_socket_between_two_modules(app_exe, port_a, port_b):
+    """Module A hosts the web server (a TCP listener); module B opens a raw TCP socket to it."""
     ssid, password = _wifi_credentials()
-    received = []
-    server = socket.create_server(("", 0))
-    server.settimeout(60)
-
-    def serve():
-        try:
-            conn, _ = server.accept()
-        except OSError:
-            return
-        with conn:
-            conn.sendall(b"hello-from-pc")
-            conn.settimeout(20)
-            try:
-                received.append(conn.recv(100))
-            except OSError:
-                pass
-
-    thread = threading.Thread(target=serve, daemon=True)
-    thread.start()
+    for port in (port_a, port_b):
+        _run(app_exe, port, "device.reboot")
+    time.sleep(5)
+    args = _args(app_exe, port_a, f"wifi.connect {ssid} {password}", "web.start 80 abc123") + ["--shell"]
+    server = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                              errors="replace")
+    lines = queue.Queue()
+    threading.Thread(target=lambda: [lines.put(line) for line in server.stdout], daemon=True).start()
     try:
-        host, port = _pc_lan_address(), server.getsockname()[1]
-        _run(app_exe, port_a, "device.reboot")
-        time.sleep(5)
-        out = _run(app_exe, port_a, f"wifi.connect {ssid} {password}", "sock.open tcp", f"sock.connect 0 {host} {port}",
-                   "sock.list", "sock.read 0 64 10", "sock.send 0 ping-from-module", "sock.close 0", "sock.list",
-                   timeout=180)
+        host = None
+        deadline = time.time() + 60
+        while time.time() < deadline and host is None:
+            try:
+                match = re.search(r"http://([\d.]+):80/", lines.get(timeout=1))
+            except queue.Empty:
+                continue
+            host = match.group(1) if match else None
+        assert host, "module A did not print its web URL"
+        request = "sock.send 0 {} HTTP/1.0\\r\\n\\r\\n"
+        out = _run(app_exe, port_b, f"wifi.connect {ssid} {password}",
+                   "sock.open tcp", f"sock.connect 0 {host} 80", request.format("GET /?t=abc123"), "sock.read 0 120 10",
+                   "sock.close 0",
+                   "sock.open tcp", f"sock.connect 0 {host} 80", request.format("GET /?t=wrong"), "sock.read 0 120 10",
+                   "sock.close 0", timeout=240)
     finally:
-        thread.join(timeout=30)
-        server.close()
-    if "timeout waiting for socket connection" in out.stdout:
-        pytest.skip("module cannot reach this PC (firewall or Wi-Fi client isolation)")
+        server.stdin.write("web.stop\nexit\n")
+        server.stdin.flush()
+        try:
+            server.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            server.kill()
     assert out.returncode == 0, out.stdout
-    assert "socket 0: TCP, connected" in out.stdout, out.stdout
-    assert "hello-from-pc" in out.stdout, out.stdout
-    assert received == [b"ping-from-module"], (received, out.stdout)
-    assert "0 socket(s)" in out.stdout, out.stdout
+    assert "200" in out.stdout, out.stdout   # valid token
+    assert "403" in out.stdout, out.stdout   # wrong token
 
 
 @pytest.mark.hardware
@@ -266,54 +255,6 @@ def test_certificate_upload_info_and_remove(app_exe, port_a, tmp_path):
     assert "removed ca ucxtest" in out.stdout, out.stdout
 
 
-@pytest.mark.hardware
-def test_module_hosted_web_server(app_exe, port_a):
-    ssid, password = os.environ.get("UCX_WIFI_SSID"), os.environ.get("UCX_WIFI_PASS", "")
-    if not ssid:
-        pytest.skip("set UCX_WIFI_SSID (and UCX_WIFI_PASS) to run the web server test")
-    _run(app_exe, port_a, "device.reboot")  # a listener created after a Wi-Fi reconnect can reset connections
-    time.sleep(5)
-    args = _args(app_exe, port_a, f"wifi.connect {ssid} {password}", "web.start 80 abc123") + ["--shell"]
-    proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                            errors="replace")
-    lines = queue.Queue()
-    threading.Thread(target=lambda: [lines.put(line) for line in proc.stdout], daemon=True).start()
-    try:
-        url = None
-        deadline = time.time() + 60
-        while time.time() < deadline and url is None:
-            try:
-                match = re.search(r"http://[\d.]+:\d+/", lines.get(timeout=1))
-            except queue.Empty:
-                continue
-            url = match.group(0) if match else None
-        assert url, "web.start did not print a URL"
-
-        page = urllib.request.urlopen(f"{url}?t=abc123", timeout=20)
-        assert page.status == 200
-        assert b"u-connectClientApp" in page.read()
-
-        post = urllib.request.Request(f"{url}api/exec?t=abc123&cmd=device.info", method="POST")
-        assert urllib.request.urlopen(post, timeout=20).status == 200
-
-        for bad in (url, f"{url}?t=wrong"):
-            with pytest.raises(urllib.error.HTTPError) as err:
-                urllib.request.urlopen(bad, timeout=20)
-            assert err.value.code == 403
-
-        blocked = urllib.request.Request(f"{url}api/exec?t=abc123&cmd=web.stop", method="POST")
-        with pytest.raises(urllib.error.HTTPError) as err:
-            urllib.request.urlopen(blocked, timeout=20)
-        assert err.value.code == 400
-    finally:
-        proc.stdin.write("web.stop\nexit\n")
-        proc.stdin.flush()
-        try:
-            proc.wait(timeout=30)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-
-
 @pytest.mark.two_devices
 def test_ble_module_b_discovers_module_a(app_exe, port_a, port_b):
     server = _start_server(app_exe, port_a)
@@ -323,25 +264,3 @@ def test_ble_module_b_discovers_module_a(app_exe, port_a, port_b):
     finally:
         server.terminate()
         server.wait(timeout=30)
-
-
-@pytest.mark.pc_ble
-def test_pc_ble_sees_advertising_module(app_exe, port_a):
-    bleak = pytest.importorskip("bleak")
-    server = _start_server(app_exe, port_a)
-
-    async def scan():
-        await asyncio.sleep(5)
-        found = await bleak.BleakScanner.discover(timeout=10.0)
-        return {d.name for d in found if d.name}, len(found)
-
-    try:
-        seen, total = asyncio.run(scan())
-    except Exception as exc:  # no usable Bluetooth radio / adapter off
-        pytest.skip(f"PC Bluetooth LE scan unavailable: {exc}")
-    finally:
-        server.terminate()
-        server.wait(timeout=30)
-    if total == 0:
-        pytest.skip("PC Bluetooth LE radio saw no devices at all (adapter missing or off)")
-    assert DEVICE_NAME in seen, f"{DEVICE_NAME} not among {sorted(seen)}"

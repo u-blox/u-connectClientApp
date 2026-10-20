@@ -6,9 +6,7 @@ REM Order of execution: clean, build, erase, flash, log.
 
 set "ROOT=%~dp0"
 set "SRC=%ROOT%u-connectClientApp\stm32"
-set "BOARD=nucleo_h753zi"
-set "BUILD=%ROOT%build\stm32_h753"
-set "BIN=%ROOT%build\bin\ucxapp_nucleo_h753zi.bin"
+set "VARIANT=h753"
 set "DO_CLEAN=" & set "DO_BUILD=" & set "DO_ERASE=" & set "DO_FLASH=" & set "DO_LOG=" & set "DO_RECOVER="
 set "LOG_PORT="
 
@@ -23,9 +21,16 @@ if /i "%~1"=="--rebuild" set "DO_CLEAN=1" & set "DO_BUILD=1" & shift & goto pars
 if /i "%~1"=="--erase"   set "DO_ERASE=1" & shift & goto parse_loop
 if /i "%~1"=="--recover" set "DO_RECOVER=1" & shift & goto parse_loop
 if /i "%~1"=="--flash"   set "DO_FLASH=1" & shift & goto parse_loop
+if /i "%~1"=="--board"   goto handle_board
 if /i "%~1"=="--log"     goto handle_log
 echo Unknown argument: %~1
 goto show_help
+
+:handle_board
+set "VARIANT=%~2"
+shift
+shift
+goto parse_loop
 
 :handle_log
 set "DO_LOG=1"
@@ -38,13 +43,25 @@ shift
 goto parse_loop
 
 :parsed
+if /i "%VARIANT%"=="h753" (
+    set "BOARD=nucleo_h753zi" & set "FAMILY=H7" & set "HAL_DIR=STM32CubeH7" & set "HAL_ENV=%STM32CUBEH7_PATH%" & set "PORTDIR=stm32h7"
+) else if /i "%VARIANT%"=="f767" (
+    set "BOARD=nucleo_f767zi" & set "FAMILY=F7" & set "HAL_DIR=STM32CubeF7" & set "HAL_ENV=%STM32CUBEF7_PATH%" & set "PORTDIR=stm32f7"
+) else if /i "%VARIANT%"=="f439" (
+    set "BOARD=nucleo_f439zi" & set "FAMILY=F4" & set "HAL_DIR=STM32CubeF4" & set "HAL_ENV=%STM32CUBEF4_PATH%" & set "PORTDIR=stm32f4"
+) else (
+    echo ERROR: unknown board "%VARIANT%" - use h753, f767 or f439
+    exit /b 1
+)
+set "BUILD=%ROOT%build\stm32_%VARIANT%"
+set "BIN=%ROOT%build\bin\ucxapp_%BOARD%.bin"
 set "PROG=C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe"
 set "PATH=C:\Program Files\CMake\bin;C:\Program Files\Arm\GNU Toolchain mingw-w64-x86_64-arm-none-eabi\bin;%ROOT%..\u-connectMatter\tools;%PATH%"
 
 if defined DO_CLEAN (
     echo [clean] %BUILD%
     if exist "%BUILD%" rmdir /s /q "%BUILD%"
-    if exist "%ROOT%build\bin\ucxapp_nucleo_h753zi.elf" del /q "%ROOT%build\bin\ucxapp_nucleo_h753zi.*"
+    if exist "%BIN%" del /q "%ROOT%build\bin\ucxapp_%BOARD%.*"
 )
 
 if defined DO_BUILD call :build || exit /b 1
@@ -57,12 +74,11 @@ exit /b 0
 :build
 where ninja >nul 2>nul || (echo ERROR: ninja not found on PATH & exit /b 1)
 where arm-none-eabi-gcc >nul 2>nul || (echo ERROR: arm-none-eabi-gcc not found & exit /b 1)
-set "HAL="
-if defined STM32CUBEH7_PATH set "HAL=%STM32CUBEH7_PATH%"
-if not defined HAL if exist "%ROOT%u-connectClient\ports\extra\stm32h7\STM32CubeH7\Drivers" set "HAL=%ROOT%u-connectClient\ports\extra\stm32h7\STM32CubeH7"
-if not defined HAL if exist "%ROOT%..\u-connectMatter\u-connectClient\ports\extra\stm32h7\STM32CubeH7\Drivers" set "HAL=%ROOT%..\u-connectMatter\u-connectClient\ports\extra\stm32h7\STM32CubeH7"
+set "HAL=%HAL_ENV%"
+if not defined HAL if exist "%ROOT%u-connectClient\ports\extra\%PORTDIR%\%HAL_DIR%\Drivers" set "HAL=%ROOT%u-connectClient\ports\extra\%PORTDIR%\%HAL_DIR%"
+if not defined HAL if exist "%ROOT%..\u-connectMatter\u-connectClient\ports\extra\%PORTDIR%\%HAL_DIR%\Drivers" set "HAL=%ROOT%..\u-connectMatter\u-connectClient\ports\extra\%PORTDIR%\%HAL_DIR%"
 if not defined HAL (
-    echo ERROR: STM32CubeH7 not found. Set STM32CUBEH7_PATH or run: git -C u-connectClient submodule update --init ports/extra/stm32h7/STM32CubeH7
+    echo ERROR: %HAL_DIR% not found. Set STM32CUBE%FAMILY%_PATH or run: git -C u-connectClient submodule update --init ports/extra/%PORTDIR%/%HAL_DIR%
     exit /b 1
 )
 if not exist "%BUILD%\build.ninja" (
@@ -89,17 +105,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%SRC%\stm32tool.ps1" -Actio
 exit /b %errorlevel%
 
 :show_help
-echo Usage: u-connectClientAppSTM32.cmd [options]
+echo Usage: u-connectClientAppSTM32.cmd [--board h753^|f767^|f439] [options]
 echo.
-echo   --build          Build for NUCLEO-H753ZI
+echo   --board NAME     NUCLEO-H753ZI (h753, default), NUCLEO-F767ZI (f767) or NUCLEO-F439ZI (f439)
+echo   --build          Build for the selected board
 echo   --rebuild        Clean, then build
-echo   --clean          Remove the STM32 build directory
+echo   --clean          Remove the board's build directory
 echo   --erase          Erase the whole flash
 echo   --recover        Same as --erase (unlocks a stuck target)
 echo   --flash          Flash the built image over SWD (ST-Link)
 echo   --log [COMx]     Interactive console on the ST-Link VCP (auto-detected)
 echo.
 echo Options combine and run in the order clean, build, erase, flash, log.
-echo Example: u-connectClientAppSTM32.cmd --build --flash --log
-echo HAL: set STM32CUBEH7_PATH or init the u-connectClient submodule.
+echo Example: u-connectClientAppSTM32.cmd --board f767 --build --flash --log
+echo HAL: set STM32CUBEH7_PATH / STM32CUBEF7_PATH / STM32CUBEF4_PATH or init the u-connectClient submodules.
 exit /b 0

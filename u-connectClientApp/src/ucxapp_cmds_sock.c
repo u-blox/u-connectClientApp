@@ -85,6 +85,17 @@ static int cmdSockSend(ucxapp_t *app, int argc, char *argv[])
         memcpy(&text[len], argv[i], n);
         len += n;
     }
+    /* \r, \n and \\ in the text become the real characters. */
+    size_t out = 0;
+    for (size_t in = 0; in < len; in++) {
+        if (text[in] == '\\' && in + 1 < len && (text[in + 1] == 'r' || text[in + 1] == 'n' || text[in + 1] == '\\')) {
+            in++;
+            text[out++] = text[in] == 'r' ? '\r' : text[in] == 'n' ? '\n' : '\\';
+        } else {
+            text[out++] = text[in];
+        }
+    }
+    len = out;
     int32_t result = uCxSocketWrite(app->ucx, handle, (const uint8_t *)text, (int32_t)len);
     if (result < 0) {
         ucxapp_print("ERROR: send failed (%d)\n", (int)result);

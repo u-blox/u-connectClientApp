@@ -46,5 +46,10 @@ set(UCXAPP_STM32_NAME "ucxapp_${_board}")
 add_stm32_example(NAME ${UCXAPP_STM32_NAME} SOURCES ${UCXAPP_STM32_SOURCES})
 
 target_include_directories(${UCXAPP_STM32_NAME}.elf PRIVATE ${APP_SRC})
-# The command layer needs more heap than the examples (32 KB default).
-target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE configTOTAL_HEAP_SIZE=163840)
+# The command layer needs more heap than the examples (32 KB default); the F439ZI has only 192 KB of RAM.
+if(STM32_BOARD STREQUAL "nucleo_f439zi")
+    set(UCXAPP_HEAP_SIZE 49152)
+else()
+    set(UCXAPP_HEAP_SIZE 163840)
+endif()
+target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE configTOTAL_HEAP_SIZE=${UCXAPP_HEAP_SIZE})
