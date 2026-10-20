@@ -2,7 +2,23 @@
 
 ## Project Overview
 
-u-connectClientApp is a Windows console application for testing u-connectXpress devices (NORA-W36, NORA-B26). It uses the u-connectClient library as a git submodule.
+u-connectClientApp is a command shell for testing u-connectXpress devices (NORA-W36, NORA-W56, NORA-W57, NORA-B26). It runs on Windows, Linux and as FreeRTOS firmware on STM32 Nucleo boards (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI). It uses the u-connectClient library as a git submodule (branch `cmag_matter_support`).
+
+## Documentation
+
+Always use the `u-blox-docs` MCP server (`.vscode/mcp.json`) to look up u-connectXpress AT commands, module behaviour and firmware details before answering or changing module-related code.
+
+## Targets and Launchers
+
+| Target | Launcher | Notes |
+|---|---|---|
+| Windows | `.\u-connectClientAppWin.cmd` | Visual Studio 2022 + CMake |
+| Linux | `./u-connectClientAppLinux.sh` | CMake + gcc, binary `u-connectClientApp/bin/ucxapp` |
+| STM32 | `.\u-connectClientAppSTM32.cmd [--board h753\|f767\|f439] --build --flash --log` | H753 is the default; needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH`, `STM32CUBEF4_PATH`) |
+
+The command layer in `u-connectClientApp/src/ucxapp_*.c` is portable; platform code lives in `ucxapp_platform_*.c` and `u-connectClientApp/stm32/`.
+
+Customer-facing skills for each target are in `.github/skills/`. Releases are built by `.github/workflows/release.yml` on `v*` tags (Windows, Linux and the three STM32 images).
 
 ## Building
 
@@ -103,4 +119,5 @@ New code goes into `u-connectClientApp/src/` as separate command modules.
 - Windows 10/11 (64-bit)
 - Visual Studio 2022 Build Tools
 - CMake 3.15+
-- FTDI USB device (NORA-W36 or NORA-B26)
+- FTDI USB device or UART connection to a NORA module
+- STM32 builds: Arm GNU toolchain, Ninja, STM32CubeProgrammer
