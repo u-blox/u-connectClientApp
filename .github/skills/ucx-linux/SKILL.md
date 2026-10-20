@@ -1,6 +1,6 @@
 ---
 name: ucx-linux
-description: Build and run u-connectClientApp on Linux to test and configure a u-connectXpress module (NORA-W36, NORA-W56, NORA-W57, NORA-B26) over a serial port. Use for Linux setup, serial permissions and scripted runs.
+description: Build and run u-connectClientApp on Linux to test and configure a u-connectXpress module (NORA-W36, NORA-B26) over a serial port. Use for Linux setup, serial permissions and scripted runs.
 ---
 
 # u-connectClientApp on Linux

@@ -48,6 +48,22 @@ def test_new_device_commands_need_a_device(app_exe, tmp_path, command):
     assert "not connected" in out.stdout
 
 
+@pytest.mark.parametrize("command", [
+    "mqtt.connect", "mqtt.disconnect", "mqtt.subscribe t", "mqtt.unsubscribe t",
+    "mqtt.publish t hello", "mqtt.read 0",
+])
+def test_mqtt_commands_need_a_device(app_exe, tmp_path, command):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 1
+    assert "not connected" in out.stdout
+
+
+@pytest.mark.parametrize("command", ["http.get", "http.download http://x", "http.get " + "a" * 300])
+def test_http_commands_reject_bad_arguments(app_exe, tmp_path, command):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 1
+
+
 def test_web_stop_and_status_work_without_device(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "COM255", "web.status", "web.stop")
     assert out.returncode == 0, out.stdout

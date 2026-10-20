@@ -883,32 +883,32 @@ typedef struct {
 } srvProfile_t;
 
 static const srvChar_t kHrsChars[] = {
-    { "hrs.measurement", 0x2A37, NULL, PROP_NOTIFY, 2, { 0x00, 60 }, 20, 0, false },
+    { "hrs.measurement", 0x2A37, NULL, PROP_NOTIFY, 2, { 0x00, 60 }, 20, 0, false, NULL },
 };
 static const srvChar_t kBasChars[] = {
-    { "bas.level", 0x2A19, NULL, PROP_READ | PROP_NOTIFY, 1, { 100 }, 1, 0, false },
+    { "bas.level", 0x2A19, NULL, PROP_READ | PROP_NOTIFY, 1, { 100 }, 1, 0, false, NULL },
 };
 static const srvChar_t kEssChars[] = {
-    { "ess.temperature", 0x2A6E, NULL, PROP_READ | PROP_NOTIFY, 2, { 0x29, 0x09 }, 2, 0, false },
-    { "ess.humidity",    0x2A6F, NULL, PROP_READ | PROP_NOTIFY, 2, { 0x94, 0x11 }, 2, 0, false },
+    { "ess.temperature", 0x2A6E, NULL, PROP_READ | PROP_NOTIFY, 2, { 0x29, 0x09 }, 2, 0, false, NULL },
+    { "ess.humidity",    0x2A6F, NULL, PROP_READ | PROP_NOTIFY, 2, { 0x94, 0x11 }, 2, 0, false, NULL },
 };
 static const srvChar_t kAioChars[] = {
-    { "aio.digital", 0x2A56, NULL, PROP_READ | PROP_WRITE | PROP_NOTIFY, 1, { 0x00 }, 1, 0, false },
-    { "aio.analog",  0x2A58, NULL, PROP_READ | PROP_NOTIFY, 2, { 0xF4, 0x01 }, 2, 0, false },
+    { "aio.digital", 0x2A56, NULL, PROP_READ | PROP_WRITE | PROP_NOTIFY, 1, { 0x00 }, 1, 0, false, NULL },
+    { "aio.analog",  0x2A58, NULL, PROP_READ | PROP_NOTIFY, 2, { 0xF4, 0x01 }, 2, 0, false, NULL },
 };
 static const srvChar_t kLnsChars[] = {
-    { "lns.location", 0x2A67, NULL, PROP_READ | PROP_NOTIFY, 10, { 0 }, 10, 2, false },
+    { "lns.location", 0x2A67, NULL, PROP_READ | PROP_NOTIFY, 10, { 0 }, 10, 2, false, NULL },
 };
 static const srvChar_t kCtsChars[] = {
-    { "cts.time", 0x2A2B, NULL, PROP_READ | PROP_NOTIFY, 10, { 0 }, 10, 1, false },
+    { "cts.time", 0x2A2B, NULL, PROP_READ | PROP_NOTIFY, 10, { 0 }, 10, 1, false, NULL },
 };
 static const srvChar_t kNusChars[] = {
-    { "nus.tx", 0, kNusTx, PROP_NOTIFY,   1, { 0x00 }, 244, 0, false },
-    { "nus.rx", 0, kNusRx, PROP_WRITE_NR, 1, { 0x00 }, 244, 0, true },
+    { "nus.tx", 0, kNusTx, PROP_NOTIFY,   1, { 0x00 }, 244, 0, false, NULL },
+    { "nus.rx", 0, kNusRx, PROP_WRITE_NR, 1, { 0x00 }, 244, 0, true, NULL },
 };
 static const srvChar_t kSpsChars[] = {
-    { "sps.fifo",    0, kSpsFifo, PROP_INDICATE | PROP_NOTIFY | PROP_WRITE | PROP_WRITE_NR, 1, { 0x00 }, 244, 0, true },
-    { "sps.credits", 0, kSpsCred, PROP_INDICATE | PROP_NOTIFY | PROP_WRITE | PROP_WRITE_NR, 1, { 0x00 }, 4,   0, true },
+    { "sps.fifo",    0, kSpsFifo, PROP_INDICATE | PROP_NOTIFY | PROP_WRITE | PROP_WRITE_NR, 1, { 0x00 }, 244, 0, true, NULL },
+    { "sps.credits", 0, kSpsCred, PROP_INDICATE | PROP_NOTIFY | PROP_WRITE | PROP_WRITE_NR, 1, { 0x00 }, 4,   0, true, NULL },
 };
 
 static const srvChar_t kWpsChars[] = {

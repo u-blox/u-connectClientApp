@@ -35,6 +35,8 @@ In the normal menu, press `:` to open the same shell; `exit` returns to the menu
 | `wifi.connect` | `<ssid> [password]` | Connect to a network; waits up to 20 s for an IP. Omit the password for open networks |
 | `wifi.status` | | Connection state, SSID, RSSI, IP |
 | `wifi.disconnect` | | Leave the network |
+| `wifi.ip` | `[dhcp \| <ip> <mask> <gw> [dns1 [dns2]]]` | Show, or set, DHCP or static IP; applies on the next `wifi.connect` |
+| `wifi.rssi` | `[count] [interval_s]` | Read the signal strength, repeatedly if requested |
 | `wifi.profile.add` | `<name> <ssid> [password]` | Save or update a Wi-Fi profile in `u-connectClientApp.wifi` (current directory; passwords are obfuscated, not encrypted; max 16) |
 | `wifi.profile.list` |  | List saved profiles (no passwords shown) |
 | `wifi.profile.remove` | `<name>` | Delete a saved profile |
@@ -45,6 +47,11 @@ In the normal menu, press `:` to open the same shell; `exit` returns to the menu
 | `sock.connect` | `<handle> <host> <port>` | Connect; waits up to 10 s |
 | `sock.send` | `<handle> <text...>` | Send text (arguments are joined with single spaces, max 511 bytes; `\r`, `\n` and `\\` are converted) |
 | `sock.read` | `<handle> [max] [wait_s]` | Wait for data (default 5 s) and print up to `max` bytes (default and maximum 512) |
+| `sock.bind` | `<handle> <port>` | Bind a socket to a local port (UDP receive) |
+| `sock.listen` | `<handle> [port]` | Listen for TCP connections |
+| `sock.accept` | `[wait_s]` | Wait for an incoming TCP connection (default 30 s) and print its handle |
+| `sock.sendto` | `<handle> <host> <port> <text...>` | Send a UDP datagram |
+| `sock.recvfrom` | `<handle> [max] [wait_s]` | Receive a UDP datagram and print the sender |
 | `sock.close` | `<handle>` | Close the socket |
 | `sock.list` | | List open sockets |
 | `net.ping` | `<host> [count]` | ICMP ping, count 1-10 (default 4); fails if no reply |

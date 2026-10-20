@@ -252,7 +252,7 @@ static int cmdCertUpload(ucxapp_t *app, int argc, char *argv[])
 
 static int cmdCertRemove(ucxapp_t *app, int argc, char *argv[])
 {
-    uSecCertType_t type;
+    uSecCertType_t type = (uSecCertType_t)0;
 
     if (argc != 2) {
         return UCXAPP_ERR_USAGE;

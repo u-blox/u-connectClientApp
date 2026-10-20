@@ -1,19 +1,17 @@
 # u-connectClientApp - Command Shell for u-connectXpress (Windows, Linux, STM32)
 
-A native C command-line application for testing and configuring u-connectXpress devices (NORA-W36, NORA-W56, NORA-W57, NORA-B26). It runs on Windows and Linux hosts and as FreeRTOS firmware on STM32 Nucleo boards (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI).
+A native C command-line application for testing and configuring u-connectXpress devices (NORA-W36, NORA-B26). It runs on Windows and Linux hosts and as FreeRTOS firmware on STM32 Nucleo boards (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI).
 
 This repo contains https://github.com/u-blox/u-connectClient a small footprint AT command client for talking to the following u-blox u-connectXpress short-range modules:
 
 * NORA-W36
-* NORA-W56
-* NORA-W57
 * NORA-B26
 
 ## Prerequisites
 
 ### System Requirements
 - **Windows 10 or Windows 11** (64-bit) for the Windows build; Linux for the Linux build; an STM32 Nucleo board for the firmware build
-- **FTDI USB device** or a UART connection to a NORA module (NORA-W36, NORA-W56, NORA-W57 or NORA-B26)
+- **FTDI USB device** or a UART connection to a NORA module (NORA-W36 or NORA-B26)
 
 ### Required Software
 1. **Visual Studio 2022 Build Tools** (or full Visual Studio 2022)

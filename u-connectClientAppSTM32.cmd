@@ -5,6 +5,7 @@ REM Build, flash and monitor u-connectClientApp on an STM32 Nucleo board.
 REM Order of execution: clean, build, erase, flash, log.
 
 set "ROOT=%~dp0"
+set "SELF=%~f0"
 set "SRC=%ROOT%u-connectClientApp\stm32"
 set "VARIANT=h753"
 set "DO_CLEAN=" & set "DO_BUILD=" & set "DO_ERASE=" & set "DO_FLASH=" & set "DO_LOG=" & set "DO_RECOVER="
@@ -22,6 +23,7 @@ if /i "%~1"=="--erase"   set "DO_ERASE=1" & shift & goto parse_loop
 if /i "%~1"=="--recover" set "DO_RECOVER=1" & shift & goto parse_loop
 if /i "%~1"=="--flash"   set "DO_FLASH=1" & shift & goto parse_loop
 if /i "%~1"=="--board"   goto handle_board
+if /i "%~1"=="--all-worker" goto all_worker
 if /i "%~1"=="--log"     goto handle_log
 echo Unknown argument: %~1
 goto show_help
@@ -43,12 +45,13 @@ shift
 goto parse_loop
 
 :parsed
+if /i "%VARIANT%"=="all" goto build_all
 if /i "%VARIANT%"=="h753" (
-    set "BOARD=nucleo_h753zi" & set "FAMILY=H7" & set "HAL_DIR=STM32CubeH7" & set "HAL_ENV=%STM32CUBEH7_PATH%" & set "PORTDIR=stm32h7"
+    set "BOARD=nucleo_h753zi" & set "BOARD_NAME=NUCLEO-H753ZI" & set "FAMILY=H7" & set "HAL_DIR=STM32CubeH7" & set "HAL_ENV=%STM32CUBEH7_PATH%" & set "PORTDIR=stm32h7"
 ) else if /i "%VARIANT%"=="f767" (
-    set "BOARD=nucleo_f767zi" & set "FAMILY=F7" & set "HAL_DIR=STM32CubeF7" & set "HAL_ENV=%STM32CUBEF7_PATH%" & set "PORTDIR=stm32f7"
+    set "BOARD=nucleo_f767zi" & set "BOARD_NAME=NUCLEO-F767ZI" & set "FAMILY=F7" & set "HAL_DIR=STM32CubeF7" & set "HAL_ENV=%STM32CUBEF7_PATH%" & set "PORTDIR=stm32f7"
 ) else if /i "%VARIANT%"=="f439" (
-    set "BOARD=nucleo_f439zi" & set "FAMILY=F4" & set "HAL_DIR=STM32CubeF4" & set "HAL_ENV=%STM32CUBEF4_PATH%" & set "PORTDIR=stm32f4"
+    set "BOARD=nucleo_f439zi" & set "BOARD_NAME=NUCLEO-F439ZI" & set "FAMILY=F4" & set "HAL_DIR=STM32CubeF4" & set "HAL_ENV=%STM32CUBEF4_PATH%" & set "PORTDIR=stm32f4"
 ) else (
     echo ERROR: unknown board "%VARIANT%" - use h753, f767 or f439
     exit /b 1
@@ -69,6 +72,43 @@ if defined DO_RECOVER call :programmer -c port=SWD mode=UR reset=HWrst -e all ||
 if defined DO_ERASE call :programmer -c port=SWD mode=UR reset=HWrst -e all || exit /b 1
 if defined DO_FLASH call :flash || exit /b 1
 if defined DO_LOG call :log || exit /b 1
+exit /b 0
+
+:all_worker
+call "%SELF%" --board %~2 %ALL_ARGS% > "%ROOT%build\all_%~2.log" 2>&1
+>"%ROOT%build\all_%~2.rc" echo %errorlevel%
+exit /b 0
+
+:build_all
+REM Runs --clean/--build for h753, f767 and f439 in parallel, one log per board in build\.
+if defined DO_ERASE echo ERROR: --board all supports only --clean, --build, --rebuild and --flash & exit /b 1
+if defined DO_RECOVER echo ERROR: --board all supports only --clean, --build, --rebuild and --flash & exit /b 1
+if defined DO_LOG echo ERROR: --board all supports only --clean, --build, --rebuild and --flash & exit /b 1
+if not defined DO_CLEAN if not defined DO_BUILD if not defined DO_FLASH (echo ERROR: --board all needs --build, --clean, --rebuild or --flash & exit /b 1)
+set "ALL_ARGS="
+if defined DO_CLEAN set "ALL_ARGS=--clean"
+if defined DO_BUILD set "ALL_ARGS=%ALL_ARGS% --build"
+if defined DO_FLASH set "ALL_ARGS=%ALL_ARGS% --flash"
+if not exist "%ROOT%build" mkdir "%ROOT%build"
+for %%B in (h753 f767 f439) do (
+    del /q "%ROOT%build\all_%%B.rc" 2>nul
+    start "" /b cmd /c call "%SELF%" --all-worker %%B
+)
+:wait_all
+set "PENDING="
+for %%B in (h753 f767 f439) do if not exist "%ROOT%build\all_%%B.rc" set "PENDING=1"
+if defined PENDING (
+    ping -n 2 127.0.0.1 >nul
+    goto wait_all
+)
+set "ALL_FAILED="
+for %%B in (h753 f767 f439) do (
+    set "RC="
+    set /p RC=<"%ROOT%build\all_%%B.rc"
+    set "RC=!RC: =!"
+    if "!RC!"=="0" (echo [%%B] ok) else (echo [%%B] FAILED, see build\all_%%B.log & set "ALL_FAILED=1")
+)
+if defined ALL_FAILED exit /b 1
 exit /b 0
 
 :build
@@ -95,14 +135,30 @@ exit /b %errorlevel%
 
 :flash
 if not exist "%BIN%" (echo ERROR: %BIN% missing, use --build & exit /b 1)
-call :programmer -c port=SWD mode=UR reset=HWrst -d "%BIN%" 0x08000000 -v -rst
+call :find_stlink
+if not defined STLINK_SN (echo ERROR: no ST-Link found for %BOARD_NAME% & exit /b 1)
+echo [flash] %BOARD_NAME% via ST-Link %STLINK_SN%
+call :programmer -c port=SWD sn=%STLINK_SN% mode=UR reset=HWrst -d "%BIN%" 0x08000000 -v -rst
 exit /b %errorlevel%
+
+:find_stlink
+REM The programmer lists each ST-Link as an SN line followed by a Board Name line.
+set "STLINK_SN=" & set "LAST_SN="
+for /f "tokens=1,* delims=:" %%a in ('cmd /c ""%PROG%" -l st"') do (
+    set "K=%%a"
+    set "V=%%b"
+    set "V=!V: =!"
+    if not "!K:ST-LINK SN=!"=="!K!" set "LAST_SN=!V!"
+    if not "!K:Board Name=!"=="!K!" if "!V!"=="%BOARD_NAME%" if not defined STLINK_SN set "STLINK_SN=!LAST_SN!"
+)
+exit /b 0
 
 :log
 set "PORT_ARG="
 if defined LOG_PORT set "PORT_ARG=-Port %LOG_PORT%"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SRC%\stm32tool.ps1" -Action log %PORT_ARG%
-exit /b %errorlevel%
+exit /b %errorlevel%, NUCLEO-F439ZI (f439) or all
+echo                    (all: --build/--clean/--rebuild/--flash only, the three boards in parallel, logs in build\all_*.log
 
 :show_help
 echo Usage: u-connectClientAppSTM32.cmd [--board h753^|f767^|f439] [options]

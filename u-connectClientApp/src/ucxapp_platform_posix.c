@@ -79,9 +79,13 @@ int ucxapp_platform_list_serial_ports(ucxapp_serial_port_t *ports, int maxPorts)
         if (strncmp(entry->d_name, "ttyUSB", 6) != 0 && strncmp(entry->d_name, "ttyACM", 6) != 0) {
             continue;
         }
-        ucxapp_serial_port_t *port = &ports[count++];
+        ucxapp_serial_port_t *port = &ports[count];
         memset(port, 0, sizeof(*port));
-        snprintf(port->name, sizeof(port->name), "/dev/%s", entry->d_name);
+        int n = snprintf(port->name, sizeof(port->name), "/dev/%s", entry->d_name);
+        if (n < 0 || (size_t)n >= sizeof(port->name)) {
+            continue;
+        }
+        count++;
         readSysfsText(entry->d_name, "product", port->desc, sizeof(port->desc));
         port->available = access(port->name, R_OK | W_OK) == 0;
     }

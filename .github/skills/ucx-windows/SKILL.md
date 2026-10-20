@@ -1,6 +1,6 @@
 ---
 name: ucx-windows
-description: Build and run u-connectClientApp on Windows to test and configure a u-connectXpress module (NORA-W36, NORA-W56, NORA-W57, NORA-B26). Use for Windows setup, COM port connection, scripted --exec runs and firmware updates.
+description: Build and run u-connectClientApp on Windows to test and configure a u-connectXpress module (NORA-W36, NORA-B26). Use for Windows setup, COM port connection, scripted --exec runs and firmware updates.
 ---
 
 # u-connectClientApp on Windows

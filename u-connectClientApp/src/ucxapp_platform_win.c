@@ -224,7 +224,11 @@ static bool initFtd2xxLibrary(void)
             
             if (pResourceData && dwResourceSize > 0) {
                 // Extract to temp directory
-                GetTempPath(MAX_PATH, dllPath);
+                DWORD tmpLen = GetTempPath(MAX_PATH, dllPath);
+                if (tmpLen == 0 || tmpLen + sizeof("ftd2xx64_embedded.dll") > MAX_PATH) {
+                    dllPath[0] = '\0';
+                    goto loadExternal;
+                }
                 strcat(dllPath, "ftd2xx64_embedded.dll");
                 
                 // Check if already extracted and correct size
@@ -281,12 +285,13 @@ static bool initFtd2xxLibrary(void)
         }
     }
     
+loadExternal:
     // Step 3: Fallback - try external DLL file
     if (gFtd2xxModule == NULL) {
         // Try to load ftd2xx64.dll from executable directory
-        GetModuleFileName(NULL, dllPath, sizeof(dllPath));
-        char *lastSlash = strrchr(dllPath, '\\');
-        if (lastSlash) {
+        DWORD modLen = GetModuleFileName(NULL, dllPath, sizeof(dllPath));
+        char *lastSlash = (modLen > 0 && modLen < sizeof(dllPath)) ? strrchr(dllPath, '\\') : NULL;
+        if (lastSlash && (size_t)(lastSlash + 1 - dllPath) + sizeof("ftd2xx64.dll") <= sizeof(dllPath)) {
             *(lastSlash + 1) = '\0';
             strcat(dllPath, "ftd2xx64.dll");
         }

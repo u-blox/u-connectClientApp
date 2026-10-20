@@ -231,9 +231,9 @@ if !NEED_BUILD! EQU 1 (
     echo.
     
     REM Configure if needed
-    if not exist "build\CMakeCache.txt" (
+    if not exist "build\windows\CMakeCache.txt" (
         echo Configuring CMake...
-        cmake -S u-connectClientApp -B build
+        cmake -S u-connectClientApp -B build\windows
         if errorlevel 1 (
             echo ERROR: CMake configuration failed!
             exit /b 1
@@ -242,7 +242,7 @@ if !NEED_BUILD! EQU 1 (
     
     REM Build
     echo Building !EXE_NAME! in !CONFIG! configuration...
-    cmake --build build --config !CONFIG! --target u-connectClientApp
+    cmake --build build\windows --config !CONFIG! --target u-connectClientApp
     if errorlevel 1 (
         echo ERROR: Build failed!
         exit /b 1
@@ -427,21 +427,21 @@ if "%CLEAN_CONFIG%"=="" (
     echo.
     
     REM CMake clean for Debug
-    if exist "build\Debug" (
+    if exist "build\windows\Debug" (
         echo [1/4] CMake clean Debug...
-        cmake --build build --config Debug --target clean 2>nul
+        cmake --build build\windows --config Debug --target clean 2>nul
     )
     
     REM CMake clean for Release
-    if exist "build\Release" (
+    if exist "build\windows\Release" (
         echo [2/4] CMake clean Release...
-        cmake --build build --config Release --target clean 2>nul
+        cmake --build build\windows --config Release --target clean 2>nul
     )
     
     REM Deep clean - remove all object files
     echo [3/4] Removing all .obj files...
-    if exist "build\*.dir" (
-        for /d %%d in (build\*.dir) do (
+    if exist "build\windows\*.dir" (
+        for /d %%d in (build\windows\*.dir) do (
             if exist "%%d\Debug" rd /s /q "%%d\Debug" 2>nul
             if exist "%%d\Release" rd /s /q "%%d\Release" 2>nul
         )
@@ -449,9 +449,9 @@ if "%CLEAN_CONFIG%"=="" (
     
     REM Remove intermediate files
     echo [4/4] Removing .pdb and .ilk files...
-    del /s /q build\*.ilk 2>nul
-    if exist "build\Debug" del /q build\Debug\*.pdb 2>nul
-    if exist "build\Release" del /q build\Release\*.pdb 2>nul
+    del /s /q build\windows\*.ilk 2>nul
+    if exist "build\windows\Debug" del /q build\windows\Debug\*.pdb 2>nul
+    if exist "build\windows\Release" del /q build\windows\Release\*.pdb 2>nul
     
 ) else (
     if /i "%CLEAN_CONFIG%"=="debug" set CLEAN_CONFIG=Debug
@@ -461,20 +461,20 @@ if "%CLEAN_CONFIG%"=="" (
     
     REM CMake clean
     echo [1/3] CMake clean %CLEAN_CONFIG%...
-    cmake --build build --config %CLEAN_CONFIG% --target clean 2>nul
+    cmake --build build\windows --config %CLEAN_CONFIG% --target clean 2>nul
     
     REM Deep clean - remove object files for this config
     echo [2/3] Removing all .obj files for %CLEAN_CONFIG%...
-    if exist "build\*.dir" (
-        for /d %%d in (build\*.dir) do (
+    if exist "build\windows\*.dir" (
+        for /d %%d in (build\windows\*.dir) do (
             if exist "%%d\%CLEAN_CONFIG%" rd /s /q "%%d\%CLEAN_CONFIG%" 2>nul
         )
     )
     
     REM Remove intermediate files
     echo [3/3] Removing .pdb and .ilk files for %CLEAN_CONFIG%...
-    del /s /q build\*.ilk 2>nul
-    if exist "build\%CLEAN_CONFIG%" del /q build\%CLEAN_CONFIG%\*.pdb 2>nul
+    del /s /q build\windows\*.ilk 2>nul
+    if exist "build\windows\%CLEAN_CONFIG%" del /q build\windows\%CLEAN_CONFIG%\*.pdb 2>nul
 )
 
 echo.
@@ -505,12 +505,12 @@ echo.
 
 REM Clean first
 echo Step 1: Cleaning...
-cmake --build build --config %REBUILD_CONFIG% --target clean 2>nul
+cmake --build build\windows --config %REBUILD_CONFIG% --target clean 2>nul
 
 REM Force CMake reconfigure to pick up latest Git commit count
 echo Step 2: Reconfiguring CMake...
-del /Q build\CMakeCache.txt 2>nul
-cmake -S u-connectClientApp -B build
+del /Q build\windows\CMakeCache.txt 2>nul
+cmake -S u-connectClientApp -B build\windows
 if errorlevel 1 (
     echo ERROR: CMake configuration failed!
     pause
@@ -519,7 +519,7 @@ if errorlevel 1 (
 
 REM Build
 echo Step 3: Building...
-cmake --build build --config %REBUILD_CONFIG% --target u-connectClientApp
+cmake --build build\windows --config %REBUILD_CONFIG% --target u-connectClientApp
 if errorlevel 1 (
     echo ERROR: Build failed!
     exit /b 1
@@ -545,9 +545,9 @@ echo This will build both Debug and Release configurations.
 echo.
 
 REM Configure if needed
-if not exist "build\u-connectClientApp.vcxproj" (
+if not exist "build\windows\u-connectClientApp.vcxproj" (
     echo Configuring CMake...
-    cmake -S u-connectClientApp -B build
+    cmake -S u-connectClientApp -B build\windows
     if errorlevel 1 (
         echo ERROR: CMake configuration failed!
         exit /b 1
@@ -560,7 +560,7 @@ echo ===================================
 echo [1/2] Building Debug Configuration
 echo ===================================
 echo.
-cmake --build build --config Debug --target u-connectClientApp
+cmake --build build\windows --config Debug --target u-connectClientApp
 if errorlevel 1 (
     echo ERROR: Debug build failed!
     exit /b 1
@@ -574,7 +574,7 @@ echo ===================================
 echo [2/2] Building Release Configuration
 echo ===================================
 echo.
-cmake --build build --config Release --target u-connectClientApp
+cmake --build build\windows --config Release --target u-connectClientApp
 if errorlevel 1 (
     echo ERROR: Release build failed!
     exit /b 1
@@ -1215,15 +1215,15 @@ if exist "u-connectClient\ucx_api\generated\" (
 REM Check build directory and CMake configuration
 echo.
 echo Checking build configuration...
-if exist "build\CMakeCache.txt" (
-    echo [OK] CMake is configured ^(build\CMakeCache.txt exists^)
+if exist "build\windows\CMakeCache.txt" (
+    echo [OK] CMake is configured ^(build\windows\CMakeCache.txt exists^)
 ) else (
-    echo [WARNING] CMake not configured yet ^(build\CMakeCache.txt missing^)
+    echo [WARNING] CMake not configured yet ^(build\windows\CMakeCache.txt missing^)
     echo          Run the launcher without arguments to auto-configure
     set /a SELFTEST_WARNINGS+=1
 )
 
-if exist "build\u-connectClientApp.sln" (
+if exist "build\windows\u-connectClientApp.sln" (
     echo [OK] Visual Studio solution generated
 ) else (
     echo [WARNING] u-connectClientApp.sln not found

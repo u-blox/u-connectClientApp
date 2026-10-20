@@ -19,9 +19,11 @@
 #endif
 
 #define HTTP_SESSION      0
-#define HTTP_CHUNK        512
+#define HTTP_CHUNK        2048          /* AT+UHTCGBB, binary body read (3.5.0) */
+#define HTTP_HDR_CHUNK    1000          /* AT+UHTCGH is a string read, max 1000 */
 #define HTTP_MAX_BODY     (64 * 1024)   /* bytes read from the module before giving up */
 #define HTTP_DEFAULT_SHOW 512
+#define HTTP_MAX_URL      2048          /* u-connectXpress 3.5.0 and later */
 
 static int cmdNetPing(ucxapp_t *app, int argc, char *argv[])
 {
@@ -99,7 +101,7 @@ static void printPrintable(const uint8_t *data, int32_t len)
 
 static int32_t configureSession(ucxapp_t *app, bool https, const char *host, const char *path)
 {
-    char hostUrl[300];
+    static char hostUrl[HTTP_MAX_URL + 16];   /* static: keeps the STM32 stack small */
     int32_t err;
 
     if (https) {
@@ -123,12 +125,12 @@ static int cmdHttpGet(ucxapp_t *app, int argc, char *argv[])
     bool https;
     const char *host;
     const char *path;
-    char url[256];
+    static char url[HTTP_MAX_URL + 2];
     int32_t show = HTTP_DEFAULT_SHOW;
     int32_t err;
     int rc = UCXAPP_ERR_FAILED;
 
-    if (argc < 2 || argc > 3 || strlen(argv[1]) >= sizeof(url) / 2 ||
+    if (argc < 2 || argc > 3 || strlen(argv[1]) > HTTP_MAX_URL ||
         (argc > 2 && (!ucxapp_parse_int(argv[2], &show) || show < 0))) {
         return UCXAPP_ERR_USAGE;
     }
@@ -160,7 +162,7 @@ static int cmdHttpGet(ucxapp_t *app, int argc, char *argv[])
     bool more = true;
     while (more) {
         memset(&header, 0, sizeof(header));
-        if (!uCxHttpGetHeader2Begin(app->ucx, HTTP_SESSION, HTTP_CHUNK, &header)) {
+        if (!uCxHttpGetHeader2Begin(app->ucx, HTTP_SESSION, HTTP_HDR_CHUNK, &header)) {
             ucxapp_print("ERROR: cannot read HTTP headers\n");
             goto done;
         }
@@ -280,7 +282,7 @@ static int downloadHop(ucxapp_t *app, char *url, ucxapp_store_writer_t *w, char 
     while (more) {
         uCxHttpGetHeader_t header;
         memset(&header, 0, sizeof(header));
-        if (!uCxHttpGetHeader2Begin(app->ucx, HTTP_SESSION, HTTP_CHUNK, &header)) {
+        if (!uCxHttpGetHeader2Begin(app->ucx, HTTP_SESSION, HTTP_HDR_CHUNK, &header)) {
             ucxapp_print("ERROR: cannot read HTTP headers\n");
             goto done;
         }
@@ -376,10 +378,11 @@ static int cmdHttpDownload(ucxapp_t *app, int argc, char *argv[])
         if (r < 0) {
             break;
         }
-        if (location[0] == '/') {
-            snprintf(url, URL_SIZE, "%s://%s%s", scheme, host, location);
-        } else {
-            snprintf(url, URL_SIZE, "%s", location);
+        int n = location[0] == '/' ? snprintf(url, URL_SIZE, "%s://%s%s", scheme, host, location)
+                                   : snprintf(url, URL_SIZE, "%s", location);
+        if (n < 0 || n >= URL_SIZE) {
+            ucxapp_print("ERROR: redirect URL too long\n");
+            break;
         }
         if (hop == MAX_REDIRECTS) {
             ucxapp_print("ERROR: too many redirects\n");

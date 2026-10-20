@@ -34,6 +34,7 @@ static bool parseQos(const char *s, uMqttQos_t *qos)
 #define MQTT_BUSY_ERROR    (-15)
 #define MQTT_BUSY_RETRIES  10
 #define MQTT_BUSY_DELAY_MS 100
+#define MQTT_SUBSCRIBE_WAIT_S 5
 
 static int cmdMqttConnect(ucxapp_t *app, int argc, char *argv[])
 {
@@ -90,6 +91,7 @@ static int cmdMqttSubscribe(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     int32_t result = MQTT_BUSY_ERROR;
+    ucxapp_events_clear(URC_FLAG_MQTT_SUBSCRIBED);
     for (int i = 0; result == MQTT_BUSY_ERROR && i < MQTT_BUSY_RETRIES; i++) {
         if (i > 0) {
             U_CX_PORT_SLEEP_MS(MQTT_BUSY_DELAY_MS);
@@ -100,7 +102,10 @@ static int cmdMqttSubscribe(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: subscribe failed (%d)\n", (int)result);
         return UCXAPP_ERR_FAILED;
     }
-    U_CX_PORT_SLEEP_MS(MQTT_BUSY_DELAY_MS);   /* the broker's subscribe ack arrives after OK; publishing earlier gets ERROR:15 */
+    /* Publishing before the broker's subscribe ack gets ERROR:15. */
+    if (!ucxapp_events_wait(URC_FLAG_MQTT_SUBSCRIBED, MQTT_SUBSCRIBE_WAIT_S)) {
+        ucxapp_print("WARNING: no subscribe confirmation from the broker\n");
+    }
     ucxapp_print("subscribed to %s\n", argv[1]);
     return UCXAPP_OK;
 }

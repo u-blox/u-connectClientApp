@@ -63,6 +63,10 @@ void ucxapp_web_on_incoming(int32_t sock, int32_t listenSock);
 void ucxapp_web_on_data(int32_t sock, int32_t bytes);
 void ucxapp_web_on_closed(int32_t sock);
 
+/* Incoming TCP connections for sock.accept (ucxapp_cmds_sock.c). */
+void ucxapp_sock_on_incoming(int32_t sock, int32_t listenSock);
+void ucxapp_sock_clear_incoming(void);
+
 /* Wi-Fi station state for other packs; false when not connected (ssid and ip are then empty). */
 bool ucxapp_wifi_get_status(uCxHandle_t *ucx, char *ssid, size_t ssidSize, char *ip, size_t ipSize);
 

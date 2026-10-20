@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_EXE = ROOT / "u-connectClientApp" / "bin" / "u-connectClientApp.exe"
+DEFAULT_EXE = ROOT / "u-connectClientApp" / "bin" / ("u-connectClientApp.exe" if sys.platform == "win32" else "ucxapp")
 
 
 @functools.lru_cache(maxsize=1)
@@ -48,7 +48,7 @@ def pytest_collection_modifyitems(config, items):
     port_a, port_b = _ports()
     for item in items:
         needs_app = any(item.get_closest_marker(m) for m in ("app", "hardware", "two_devices"))
-        if needs_app and sys.platform != "win32":
+        if needs_app and sys.platform != "win32" and not (item.get_closest_marker("app") and exe.is_file()):
             item.add_marker(pytest.mark.skip(reason="needs Windows"))
         elif needs_app and not exe.is_file():
             item.add_marker(pytest.mark.skip(reason=f"app not built: {exe}"))

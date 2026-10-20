@@ -581,7 +581,101 @@ static int cmdWifiApStatus(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+static bool parseIp(const char *s, uSockIpAddress_t *ip)
+{
+    if (uCxStringToIpAddress(s, ip) != 0) {
+        ucxapp_print("ERROR: invalid IP address '%s'\n", s);
+        return false;
+    }
+    return true;
+}
+
+static void printIpField(const char *label, uSockIpAddress_t *ip)
+{
+    char str[40];
+
+    if (uCxIpAddressToString(ip, str, sizeof(str)) > 0) {
+        ucxapp_print("%s=%s\n", label, str);
+    }
+}
+
+static int cmdWifiIp(ucxapp_t *app, int argc, char *argv[])
+{
+    uCxHandle_t *ucx = app->ucx;
+    uSockIpAddress_t ip, mask, gw, dns1, dns2;
+    int32_t result;
+
+    if (argc == 1) {
+        uCxWifiStationGetIpConfig_t cfg;
+        if (uCxWifiStationGetIpConfig(ucx, 0, &cfg) != 0) {
+            return UCXAPP_ERR_FAILED;
+        }
+        if (cfg.type == U_CX_WIFI_STATION_GET_IP_CONFIG_RSP_TYPE_IP_MODE) {
+            ucxapp_print("mode=dhcp\n");
+        } else {
+            ucxapp_print("mode=%s\n", cfg.rsp.IpModeIpIpIpIpIp.ip_mode == U_WIFI_IP_MODE_STATIC ? "static" : "dhcp");
+            printIpField("ip", &cfg.rsp.IpModeIpIpIpIpIp.ip_addr);
+            printIpField("mask", &cfg.rsp.IpModeIpIpIpIpIp.subnet_mask);
+            printIpField("gateway", &cfg.rsp.IpModeIpIpIpIpIp.gateway);
+            printIpField("dns1", &cfg.rsp.IpModeIpIpIpIpIp.prim_dns);
+            printIpField("dns2", &cfg.rsp.IpModeIpIpIpIpIp.sec_dns);
+        }
+        return UCXAPP_OK;
+    }
+    if (argc == 2 && strcmp(argv[1], "dhcp") == 0) {
+        result = uCxWifiStationSetIpConfigDhcp(ucx, 0);
+    } else if (argc >= 4 && argc <= 6) {
+        if (!parseIp(argv[1], &ip) || !parseIp(argv[2], &mask) || !parseIp(argv[3], &gw) ||
+            (argc > 4 && !parseIp(argv[4], &dns1)) || (argc > 5 && !parseIp(argv[5], &dns2))) {
+            return UCXAPP_ERR_FAILED;
+        }
+        if (argc == 4) {
+            result = uCxWifiStationSetIpConfigStatic4(ucx, 0, &ip, &mask, &gw);
+        } else if (argc == 5) {
+            result = uCxWifiStationSetIpConfigStatic5(ucx, 0, &ip, &mask, &gw, &dns1);
+        } else {
+            result = uCxWifiStationSetIpConfigStatic6(ucx, 0, &ip, &mask, &gw, &dns1, &dns2);
+        }
+    } else {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (result != 0) {
+        ucxapp_print("ERROR: could not set IP configuration (disconnect first?)\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("IP configuration set; it applies on the next wifi.connect\n");
+    return UCXAPP_OK;
+}
+
+static int cmdWifiRssi(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t count = 1;
+    int32_t intervalS = 1;
+    uCxWifiStationStatus_t status;
+
+    if (argc > 3 || (argc > 1 && (!ucxapp_parse_int(argv[1], &count) || count < 1)) ||
+        (argc > 2 && (!ucxapp_parse_int(argv[2], &intervalS) || intervalS < 1))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    for (int32_t i = 0; i < count; i++) {
+        if (i > 0) {
+            U_CX_PORT_SLEEP_MS(intervalS * 1000);
+        }
+        if (uCxWifiStationStatusBegin(app->ucx, U_WIFI_STATUS_ID_RSSI, &status)) {
+            ucxapp_print("rssi=%d dBm\n", (int)status.rsp.StatusIdInt.int_val);
+            uCxEnd(app->ucx);
+        } else {
+            uCxEnd(app->ucx);
+            ucxapp_print("ERROR: not connected\n");
+            return UCXAPP_ERR_FAILED;
+        }
+    }
+    return UCXAPP_OK;
+}
+
 static const ucxapp_cmd_t gWifiCmds[] = {
+    { "wifi.ip",         "[dhcp | <ip> <mask> <gw> [dns1 [dns2]]]", "Show or set DHCP / static IP (applies on next connect)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiIp },
+    { "wifi.rssi",       "[count] [interval_s]", "Read the signal strength (repeatedly)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRssi },
     { "wifi.scan",       "",                    "Scan for Wi-Fi networks",          UCXAPP_CMD_NEEDS_DEVICE, cmdWifiScan },
     { "wifi.connect",    "<ssid> [password]",   "Connect to a Wi-Fi network",       UCXAPP_CMD_NEEDS_DEVICE, cmdWifiConnect },
     { "wifi.status",     "",                    "Show connection, SSID, RSSI, IP",  UCXAPP_CMD_NEEDS_DEVICE, cmdWifiStatus },

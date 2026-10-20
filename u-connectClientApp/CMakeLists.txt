@@ -93,6 +93,12 @@ if(NOT WIN32)
 
   target_compile_options(ucxapp PRIVATE -Wall -Wextra)
 
+  option(UCXAPP_COVERAGE "Instrument ucxapp with gcov" OFF)
+  if(UCXAPP_COVERAGE)
+    target_compile_options(ucxapp PRIVATE --coverage -O0 -g)
+    target_link_options(ucxapp PRIVATE --coverage)
+  endif()
+
   target_compile_definitions(ucxapp PRIVATE U_PORT_POSIX
     APP_VERSION_MAJOR=${APP_VERSION_MAJOR}
     APP_VERSION_MINOR=${APP_VERSION_MINOR}

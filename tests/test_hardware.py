@@ -212,6 +212,9 @@ def test_mqtt_publish_is_received_back(app_exe, port_a):
         pytest.skip("public MQTT broker unreachable")
     assert out.returncode == 0, out.stdout
     assert f"{topic}: hello-mqtt" in out.stdout, out.stdout
+    assert "no subscribe confirmation" not in out.stdout, out.stdout
+    assert "read failed" not in out.stdout, out.stdout
+    assert "publish failed" not in out.stdout, out.stdout
 
 
 @pytest.mark.hardware

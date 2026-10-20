@@ -131,9 +131,13 @@ static bool parse_request(const char *raw, uHttpRequest_t *request)
     char *query_start = strchr(url, '?');
     if (query_start) {
         *query_start = '\0';
-        strncpy(request->query, query_start + 1, sizeof(request->query) - 1);
+        size_t qlen = strnlen(query_start + 1, sizeof(request->query) - 1);
+        memcpy(request->query, query_start + 1, qlen);
+        request->query[qlen] = '\0';
     }
-    strncpy(request->path, url, sizeof(request->path) - 1);
+    size_t plen = strnlen(url, sizeof(request->path) - 1);
+    memcpy(request->path, url, plen);
+    request->path[plen] = '\0';
     
     // Find body (after "\r\n\r\n")
     const char *body_start = strstr(raw, "\r\n\r\n");
@@ -404,6 +408,7 @@ static void handle_client_request(uWebServer_t *server, uWebServerClient_t *clie
 /**
  * Callback: New client connection accepted
  */
+#if 0  /* Superseded by uWebServerHandle*(); the app feeds events through ucxapp_cmds_web.c. */
 static void on_incoming_connection(struct uCxHandle *puCxHandle, int32_t client_socket, 
                                    uSockIpAddress_t *remote_ip, int32_t listening_socket)
 {
@@ -543,6 +548,7 @@ static void on_socket_closed(struct uCxHandle *puCxHandle, int32_t socket)
         client_release_tx_buffer(client);
     }
 }
+#endif
 
 /* ========================================
  * API Implementation

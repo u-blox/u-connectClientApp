@@ -62,6 +62,8 @@ int ucxapp_readline(const char *prompt, char *buf, size_t size);
 #define URC_FLAG_BT_PASSKEY_REQUEST (1 << 17)
 #define URC_FLAG_SOCK_CLOSED        (1 << 18)
 #define URC_FLAG_MQTT_DISCONNECTED  (1 << 19)
+#define URC_FLAG_SOCK_INCOMING      (1 << 20)
+#define URC_FLAG_MQTT_SUBSCRIBED    (1 << 21)  /* +UEMQSC: subscribe or unsubscribe completed */
 
 /* Registers minimal URC handlers (ucxapp_urc.c) that raise the flags below; for hosts without their own. */
 void ucxapp_urc_register(uCxHandle_t *ucx);

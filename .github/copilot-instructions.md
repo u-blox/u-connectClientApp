@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-u-connectClientApp is a command shell for testing u-connectXpress devices (NORA-W36, NORA-W56, NORA-W57, NORA-B26). It runs on Windows, Linux and as FreeRTOS firmware on STM32 Nucleo boards (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI). It uses the u-connectClient library as a git submodule (branch `cmag_matter_support`).
+u-connectClientApp is a command shell for testing u-connectXpress devices (NORA-W36, NORA-B26). It runs on Windows, Linux and as FreeRTOS firmware on STM32 Nucleo boards (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI). It uses the u-connectClient library as a git submodule (branch `cmag_matter_support`).
 
 ## Documentation
 
@@ -45,8 +45,8 @@ This auto-builds if needed and launches the application.
 
 ### Manual CMake Build
 ```powershell
-cmake -S u-connectClientApp -B build -A x64
-cmake --build build --config Release
+cmake -S u-connectClientApp -B build/windows -A x64
+cmake --build build/windows --config Release
 ```
 
 **DO NOT USE:**
@@ -62,7 +62,7 @@ cmake --build build --config Release
   - `release/` - Signed releases
   - `third-party/` - FTDI DLL, QR code generator
 - `u-connectClient/` - AT command client library (git submodule)
-- `build/` - CMake artifacts (gitignored)
+- `build/windows`, `build/linux`, `build/stm32_<board>` - CMake artifacts per target (gitignored)
 
 ## Submodule Management
 
