@@ -68,18 +68,22 @@ git submodule update --init u-connectClient
 
 Launchers per target: `u-connectClientAppWin.cmd` (Windows), `u-connectClientAppLinux.sh` (Linux), `u-connectClientAppSTM32.cmd` (STM32 firmware, see below).
 
-## STM32 (NUCLEO-H753ZI)
+## STM32 (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI)
 
 ```powershell
-# Build, flash over the ST-Link and open the console on its virtual COM port
+# Build, flash over the ST-Link and open the console on its virtual COM port (default board: H753)
 .\u-connectClientAppSTM32.cmd --build --flash --log
+
+# Select another board: h753 (default), f767 or f439
+.\u-connectClientAppSTM32.cmd --board f767 --build --flash --log
 
 # Other options: --rebuild, --clean, --erase, --recover, --log COMx, --help
 ```
 
-The module is wired to USART1; the shell runs on the ST-Link VCP. `bridge [baud]` turns the board into a
+The module is wired to USART1 (H753) or USART6 (F767, F439); the shell runs on the ST-Link VCP. `bridge [baud]` turns the board into a
 transparent console-to-module bridge (e.g. for AT debugging or XMODEM firmware update); press Ctrl-] with
-1 s of silence around it to return to the shell. Needs STM32CubeH7 (`STM32CUBEH7_PATH` or the u-connectClient submodule).
+1 s of silence around it to return to the shell. Needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH` or
+`STM32CUBEF4_PATH`, or the u-connectClient submodule). Release builds of all three boards are published with each tag.
 
 ## Key Features
 
