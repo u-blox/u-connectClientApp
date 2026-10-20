@@ -55,3 +55,7 @@ CMakeFiles/
 .venv/
 tests/logs/
 .tmp_*
+.coverage
+.venv-test/
+build-command-output.log
+j_wps_cli_clean.txt

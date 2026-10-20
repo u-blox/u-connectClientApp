@@ -18,10 +18,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
-          python -m pip install --upgrade pip pytest ruff
+          python -m pip install --upgrade pip pytest pytest-cov ruff
       - name: Run pytest (ruff + shellcheck + repo checks)
         shell: bash
-        run: python -m pytest -q
+        run: python -m pytest -q --cov --cov-report=term-missing --cov-report=xml
 
   build-windows:
     runs-on: windows-latest

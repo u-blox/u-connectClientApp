@@ -7,6 +7,29 @@
 
 static const ucxapp_io_t *gIo = NULL;
 
+#define UCXAPP_MAX_SINKS 4
+static ucxapp_sink_fn_t gSinks[UCXAPP_MAX_SINKS];
+
+bool ucxapp_io_add_sink(ucxapp_sink_fn_t sink)
+{
+    for (int i = 0; i < UCXAPP_MAX_SINKS; i++) {
+        if (gSinks[i] == NULL) {
+            gSinks[i] = sink;
+            return true;
+        }
+    }
+    return false;
+}
+
+void ucxapp_io_remove_sink(ucxapp_sink_fn_t sink)
+{
+    for (int i = 0; i < UCXAPP_MAX_SINKS; i++) {
+        if (gSinks[i] == sink) {
+            gSinks[i] = NULL;
+        }
+    }
+}
+
 void ucxapp_io_set(const ucxapp_io_t *io)
 {
     gIo = io;
@@ -30,6 +53,11 @@ void ucxapp_print(const char *fmt, ...)
         n = (int)sizeof(buf) - 1;   /* truncated */
     }
     gIo->write(buf, (size_t)n);
+    for (int i = 0; i < UCXAPP_MAX_SINKS; i++) {
+        if (gSinks[i] != NULL) {
+            gSinks[i](buf, (size_t)n);
+        }
+    }
 }
 
 int ucxapp_readline(const char *prompt, char *buf, size_t size)

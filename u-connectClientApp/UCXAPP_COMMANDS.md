@@ -28,12 +28,19 @@ In the normal menu, press `:` to open the same shell; `exit` returns to the menu
 |---|---|---|
 | `help` | `[prefix]` | List commands, optionally filtered (`help wifi`) |
 | `device.info` | | Manufacturer, model, firmware version |
+| `device.reboot` | | Reboot the module (clears GATT services and connections); use as the last command |
 | `device.connect` | `[port]` | Connect to the module (default: saved port). Windows only |
 | `device.disconnect` | | Disconnect. Windows only |
 | `wifi.scan` | | List networks with BSSID, channel, RSSI, security |
 | `wifi.connect` | `<ssid> [password]` | Connect to a network; waits up to 20 s for an IP. Omit the password for open networks |
 | `wifi.status` | | Connection state, SSID, RSSI, IP |
 | `wifi.disconnect` | | Leave the network |
+| `wifi.profile.add` | `<name> <ssid> [password]` | Save or update a Wi-Fi profile in `u-connectClientApp.wifi` (current directory; passwords are obfuscated, not encrypted; max 16) |
+| `wifi.profile.list` |  | List saved profiles (no passwords shown) |
+| `wifi.profile.remove` | `<name>` | Delete a saved profile |
+| `wifi.profile.connect` | `<name>` | Connect with a saved profile; it becomes the "last used" profile |
+| `wifi.profile.auto` | | Try the last used profile (10 s); if that fails, scan with the saved regulatory domain and connect to the strongest known profile, which becomes the last used |
+| `wifi.regdomain` | `[world\|etsi\|fcc\|ic\|nz\|mkk\|ncc\|acma\|kcc\|sa\|br]` | Show, or set and save, the regulatory domain used by `wifi.profile.auto` (default `etsi`) |
 | `sock.open` | `<tcp\|udp>` | Create a socket and print its handle |
 | `sock.connect` | `<handle> <host> <port>` | Connect; waits up to 10 s |
 | `sock.send` | `<handle> <text...>` | Send text (arguments are joined with single spaces, max 511 bytes) |
@@ -43,6 +50,7 @@ In the normal menu, press `:` to open the same shell; `exit` returns to the menu
 | `net.ping` | `<host> [count]` | ICMP ping, count 1-10 (default 4); fails if no reply |
 | `net.dns` | `<host>` | Resolve a host name |
 | `http.get` | `<url> [show_bytes]` | GET over HTTP or HTTPS (scheme optional, default HTTP); prints the status line and up to `show_bytes` (default 512) of the body |
+| `http.download` | `<url> <file>` | Download to a file, following up to 5 redirects in the app (the module firmware does not); needs a 2xx response, checks `Content-Length` when present, deletes the file on failure |
 | `mqtt.connect` | `[host] [port]` | Connect to an MQTT broker (default `broker.emqx.io:1883`, no TLS); waits up to 10 s |
 | `mqtt.disconnect` | | Disconnect from the broker |
 | `mqtt.subscribe` | `<topic> [qos]` | Subscribe (wildcards allowed, qos 0-2) |
@@ -51,8 +59,64 @@ In the normal menu, press `:` to open the same shell; `exit` returns to the menu
 | `mqtt.read` | `[wait_s]` | Wait (default 10 s) for messages and print them |
 | `bt.scan` |  | Scan for BLE devices (up to 30 s) |
 | `bt.connect` | `<addr[,random]>` | Connect to a BLE device, e.g. 11:22:33:44:55:66 |
+| `bt.profile.add` | `<name> <addr[,random]>` | Save a BLE device as a named profile in `u-connectClientApp.ble` (current directory; max 16) |
+| `bt.profile.list` |  | List saved BLE profiles |
+| `bt.profile.remove` | `<name>` | Delete a BLE profile |
+| `bt.profile.connect` | `<name>` | Connect to a saved BLE profile; it becomes the "last used" profile |
+| `bt.profile.auto` |  | Connect to the last used profile, else scan and take the strongest known device |
 | `bt.disconnect` | `<handle>` | Close a BLE connection |
 | `bt.list` |  | List BLE connections |
+| `bt.pairing` | `<on|off>` | Enable or disable pairing mode |
+| `bt.iocap` | `<none|display|yesno|keyboard|keydisplay>` | Set the I/O capabilities (none = Just Works) |
+| `bt.security` | `<none|unauth|auth|sc|sconly>` | Set the required security level |
+| `bt.defaults` | `[secure]` | No security, no I/O, pairing on (default, applied automatically before any GATT server setup), or `secure`: LE Secure Connections with fallback to legacy pairing, numeric comparison (auto-confirmed) |
+| `bt.autoconfirm` | `<on|off>` | Accept numeric-comparison pairing automatically (default on) |
+| `bt.confirm` | `<yes|no>` | Answer a waiting pairing request (autoconfirm off) |
+| `bt.passkey` | `<digits|deny>` | Answer a waiting passkey request |
+| `bt.bonds` |  | List bonded devices |
+| `bt.unbond` | `<addr|all>` | Remove one or all bonds |
+| `gatt.services` | `<conn>` | Discover and list the remote services and characteristics |
+| `gatt.chars` | `<conn> [service-index]` | List the remote characteristics |
+| `gatt.read` | `<conn> <handle>` | Read a characteristic; known types are decoded |
+| `gatt.write` | `<conn> <handle> <hex\|text:abc> [norsp]` | Write a characteristic |
+| `gatt.subscribe` | `<conn> <handle> [notify\|indicate\|off]` | Set the CCCD (assumed at value handle + 1) |
+| `gatt.client.example.<svc>` | `<conn>` (`sps`: `[flow]`) | Discover a predefined service, read, decode and subscribe; `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `dis`, `nus` or `sps` |
+| `gatt.send` | `<conn> <nus\|sps> <text>` | Send text to the remote NUS or SPS service |
+| `gatt.credits` | `<conn> <1-127>` | Send SPS credits |
+| `gatt.listen` | `[seconds]` | Wait and print incoming notifications (default 10 s) |
+| `gatt.server.example.<svc>` | `[seconds]` | Define a predefined local service (once per module restart); with seconds, simulate values for a connected client. `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `nus` or `sps` |
+| `gatt.server.list` |  | List the local characteristics defined by the server examples |
+| `gatt.server.set` | `<name\|handle> <hex\|text:abc>` | Set a local characteristic value |
+| `gatt.server.notify` | `<conn> <name\|handle> <data>` | Send a notification |
+| `gatt.server.indicate` | `<conn> <name\|handle> <data>` | Send an indication |
+| `gatt.server.demo` | `<conn> <hrs\|bas\|ess\|aio\|lns\|cts> [seconds]` | Send simulated values once per second |
+| `gatt.server.example.nus` / `.sps` / `.wps` | `[seconds]` | Nordic UART, u-blox Serial Port and Wi-Fi Provisioning servers; with seconds, serve a client for that long (client writes are printed, WPS commands are executed) |
+| `gatt.wps` | `<conn> <status\|scan\|connect\|forget\|config <ssid> <pw> [OPEN\|WPA2\|WPA3]\|raw <text>>` | Send a Wi-Fi provisioning command to a remote device and wait for the response |
+| `gatt.writelong` | `<conn> <handle> <hex\|text:abc> [offset] [reliable] [more]` | Long write (prepare/execute) |
+| `gatt.server.servicechanged` | `<conn> <start> <end>` | Send a Service Changed indication |
+| `gatt.server.error` | `<conn> <read\|write> <att-code>` | Answer a pending read or write with an ATT error |
+| `gatt.server.hostchar` | `<svc-uuid> <char-uuid> <props-hex> [rsec] [wsec]` | Define a host-managed characteristic |
+| `gatt.server.readresp` / `gatt.server.writeresp` | `<conn> <data>` / `<conn>` | Answer a pending host-characteristic read or write |
+| `hid.setup` |  | Define the HID keyboard service (plus battery) and enable Just Works pairing |
+| `hid.status` |  | Show HID handles, notification state and protocol mode |
+| `hid.key` | `<key> [ctrl\|shift\|alt\|gui ...]` | Send one key to the connected host (a character, or `enter`, `esc`, `tab`, `backspace`, `space`) |
+| `hid.text` | `<text...>` | Type text on the connected host |
+| `qr.text` | `<text...>` | Print a QR code for any text |
+| `qr.wifi` | `<ssid> [password] [WPA\|WEP\|nopass] [hidden]` | Print a Wi-Fi join QR code |
+| `qr.geo` | `<lat> <lon>` | Print a location QR code |
+| `wifi.ap.enable` | `[ssid] [password] [channel]` | Start a WPA2 access point and show its join QR code |
+| `wifi.ap.disable` |  | Stop the access point |
+| `wifi.ap.status` |  | Show AP parameters, addresses and stations |
+| `file.hash` | `<md5\|sha256> <file>` | Print the hash of a file (no device needed) |
+| `web.start` | `[port] [token]` | Serve a web UI from the module's TCP listener (needs Wi-Fi; default port 80); prints `http://<ip>:<port>/?t=<token>` |
+| `web.stop` |  | Stop the web server |
+| `web.status` |  | Show whether the web server is running, its port and SSE client count |
+| `cert.list` | | List installed certificates and keys with their type (`ca`, `client`, `key`) |
+| `cert.info` | `<name>` | Size and SHA-256 fingerprint |
+| `cert.upload` | `<ca\|client\|key> <file> [name] [pw]` | Upload a PEM file (max 8192 bytes); the name defaults to the file name, `pw` is for encrypted keys. For `ca` and `client` the fingerprint is checked against the module afterwards |
+| `cert.remove` | `<name>` | Remove a certificate or key (type is looked up automatically) |
+| `fw.download` | `<url> <file> [sha256]` | Download via the module (follows redirects), print SHA-256, delete the file on mismatch |
+| `fw.flash` | `<file.bin\|file.zip> [baud]` | XMODEM firmware update (default 921600 baud); a zip is only extracted (needs `tar` on Windows, `unzip` elsewhere), and only the `.bin` inside is flashed |
 | `at` | `<command>` | Send a raw AT command; the `AT` prefix is optional (`at +GMI`) |
 
 Example: fetch a page over Wi-Fi.
@@ -90,8 +154,10 @@ In `--exec` mode the process exits with 1 on the first non-zero result, otherwis
 | `ucxapp_cmd.h/.c` | Command registry, tokenizer, `help`, shell loop |
 | `ucxapp_io.c`, `ucxapp_io_stdio.c` | `ucxapp_print` / `ucxapp_readline` and the stdio backend |
 | `ucxapp_events.c` | URC event flags with a mutex; `ucxapp_events_wait()` blocks until a flag is set |
-| `ucxapp_cmds_device.c`, `_wifi.c`, `_sock.c`, `_net.c`, `_sys.c`, `_mqtt.c`, `_bt.c` | Command packs |
-| `ucxapp_platform.h` | Host OS services: console init, tick, key press, executable directory, serial-port listing, HTTPS GET |
+| `ucxapp_cmds_device.c`, `_wifi.c`, `_sock.c`, `_net.c`, `_sys.c`, `_mqtt.c`, `_bt.c` | Command packs |
+
+| `ucxapp_platform.h` | Host OS services: console init, tick, key press, executable directory, serial-port listing, HTTPS GET |
+
 | `ucxapp_platform_win.c` | Windows backend (registry, SetupAPI, FTDI D2XX, WinHTTP, `conio`) |
 
 Rules for portable code: use `ucxapp_print()` / `ucxapp_readline()` for all I/O, and only
@@ -135,5 +201,4 @@ so the handler can use `app->ucx` without checking. Returning `UCXAPP_ERR_USAGE`
 3. Call `ucxapp_events_init()` and register the URC handlers that call `ucxapp_events_signal()`.
 4. Register the command packs and call `ucxapp_shell_run(&app)` or `ucxapp_cmd_exec()`.
 
-Steps 2 and 3 are done by the Windows app today in `u-connectClientApp.c`; moving them into the
-portable layer is planned.
+Steps 2 and 3 are done by `src/ucxapp_main.c` (and `src/ucxapp_urc.c`), which is the entry point on both Windows and POSIX.

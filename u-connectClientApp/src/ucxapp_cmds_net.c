@@ -1,5 +1,9 @@
 #include "ucxapp_cmd.h"
+#include "ucxapp_store.h"
 
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef _MSC_VER
@@ -93,25 +97,10 @@ static void printPrintable(const uint8_t *data, int32_t len)
     }
 }
 
-static int cmdHttpGet(ucxapp_t *app, int argc, char *argv[])
+static int32_t configureSession(ucxapp_t *app, bool https, const char *host, const char *path)
 {
-    bool https;
-    const char *host;
-    const char *path;
-    char url[256];
-    char hostUrl[200];
-    int32_t show = HTTP_DEFAULT_SHOW;
+    char hostUrl[300];
     int32_t err;
-    int rc = UCXAPP_ERR_FAILED;
-
-    if (argc < 2 || argc > 3 || strlen(argv[1]) >= sizeof(url) / 2 ||
-        (argc > 2 && (!ucxapp_parse_int(argv[2], &show) || show < 0))) {
-        return UCXAPP_ERR_USAGE;
-    }
-    strcpy(url, argv[1]);
-    if (!splitUrl(url, &https, &host, &path)) {
-        return UCXAPP_ERR_USAGE;
-    }
 
     if (https) {
         snprintf(hostUrl, sizeof(hostUrl), "https://%s", host);
@@ -126,6 +115,29 @@ static int cmdHttpGet(ucxapp_t *app, int argc, char *argv[])
     if (err >= 0) {
         err = uCxHttpSetRequestPath(app->ucx, HTTP_SESSION, path);
     }
+    return err;
+}
+
+static int cmdHttpGet(ucxapp_t *app, int argc, char *argv[])
+{
+    bool https;
+    const char *host;
+    const char *path;
+    char url[256];
+    int32_t show = HTTP_DEFAULT_SHOW;
+    int32_t err;
+    int rc = UCXAPP_ERR_FAILED;
+
+    if (argc < 2 || argc > 3 || strlen(argv[1]) >= sizeof(url) / 2 ||
+        (argc > 2 && (!ucxapp_parse_int(argv[2], &show) || show < 0))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    strcpy(url, argv[1]);
+    if (!splitUrl(url, &https, &host, &path)) {
+        return UCXAPP_ERR_USAGE;
+    }
+
+    err = configureSession(app, https, host, path);
     if (err < 0) {
         ucxapp_print("ERROR: cannot configure HTTP session (%d)\n", (int)err);
         return UCXAPP_ERR_FAILED;
@@ -190,10 +202,203 @@ done:
     return rc;
 }
 
+/* Copies the value of a header line (name includes the colon) into out. */
+static bool headerValue(const char *headers, const char *name, char *out, size_t outSize)
+{
+    size_t nameLen = strlen(name);
+    for (const char *p = headers; *p;) {
+        size_t i = 0;
+        while (i < nameLen && p[i] != '\0' && tolower((unsigned char)p[i]) == tolower((unsigned char)name[i])) {
+            i++;
+        }
+        if (i == nameLen) {
+            p += nameLen;
+            while (*p == ' ' || *p == '\t') {
+                p++;
+            }
+            size_t n = 0;
+            while (p[n] != '\0' && p[n] != '\r' && p[n] != '\n') {
+                n++;
+            }
+            if (n == 0 || n >= outSize) {
+                return false;
+            }
+            memcpy(out, p, n);
+            out[n] = '\0';
+            return true;
+        }
+        while (*p != '\0' && *p != '\n') {
+            p++;
+        }
+        if (*p != '\0') {
+            p++;
+        }
+    }
+    return false;
+}
+
+/* One GET hop. Returns 0 on a 2xx response with the body appended to w, 1 for a redirect
+   (location filled in), -1 on failure. */
+static int downloadHop(ucxapp_t *app, char *url, ucxapp_store_writer_t *w, char *location, size_t locationSize,
+                       char *scheme, char *hostOut, size_t hostOutSize)
+{
+    static char headers[4096];
+    bool https;
+    const char *host;
+    const char *path;
+    int rc = -1;
+
+    if (!splitUrl(url, &https, &host, &path)) {
+        ucxapp_print("ERROR: invalid URL\n");
+        return -1;
+    }
+    snprintf(scheme, 8, "%s", https ? "https" : "http");
+    snprintf(hostOut, hostOutSize, "%s", host);
+
+    int32_t err = configureSession(app, https, host, path);
+    if (err >= 0) {
+        err = uCxHttpAddHeaderField(app->ucx, HTTP_SESSION, "User-Agent", "ucxclient/1.0");
+    }
+    if (err < 0) {
+        ucxapp_print("ERROR: cannot configure HTTP session (%d)\n", (int)err);
+        return -1;
+    }
+
+    ucxapp_events_clear(URC_FLAG_HTTP_RESPONSE_READY);
+    err = uCxHttpGetRequest(app->ucx, HTTP_SESSION);
+    if (err < 0) {
+        ucxapp_print("ERROR: GET request failed (%d)\n", (int)err);
+        return -1;
+    }
+    if (!ucxapp_events_wait(URC_FLAG_HTTP_RESPONSE_READY, 20)) {
+        ucxapp_print("ERROR: timeout waiting for the HTTP response\n");
+        goto done;
+    }
+
+    size_t hlen = 0;
+    bool more = true;
+    while (more) {
+        uCxHttpGetHeader_t header;
+        memset(&header, 0, sizeof(header));
+        if (!uCxHttpGetHeader2Begin(app->ucx, HTTP_SESSION, HTTP_CHUNK, &header)) {
+            ucxapp_print("ERROR: cannot read HTTP headers\n");
+            goto done;
+        }
+        more = header.more_to_read != 0;
+        if (header.byte_array_data.pData != NULL &&
+            hlen + header.byte_array_data.length < sizeof(headers)) {
+            memcpy(headers + hlen, header.byte_array_data.pData, header.byte_array_data.length);
+            hlen += header.byte_array_data.length;
+        }
+        uCxEnd(app->ucx);
+    }
+    headers[hlen] = '\0';
+
+    int status = 0;
+    if (strncmp(headers, "HTTP/", 5) == 0) {
+        const char *sp = strchr(headers, ' ');
+        status = sp != NULL ? atoi(sp + 1) : 0;
+    }
+
+    if (headerValue(headers, "Location:", location, locationSize) &&
+        (status == 0 || (status >= 300 && status < 400))) {
+        ucxapp_print("redirect (HTTP %d)\n", status);
+        rc = 1;
+        goto done;
+    }
+    if (status != 0 && (status < 200 || status >= 300)) {
+        ucxapp_print("ERROR: HTTP status %d\n", status);
+        goto done;
+    }
+
+    char lenText[24];
+    int32_t expected = -1;
+    if (headerValue(headers, "Content-Length:", lenText, sizeof(lenText))) {
+        expected = atoi(lenText);
+    }
+
+    uint8_t buf[HTTP_CHUNK];
+    int32_t total = 0;
+    int32_t moreToRead = 1;
+    while (moreToRead) {
+        int32_t n = uCxHttpGetBody(app->ucx, HTTP_SESSION, HTTP_CHUNK, buf, &moreToRead);
+        if (n < 0) {
+            ucxapp_print("\nERROR: reading body failed (%d)\n", (int)n);
+            goto done;
+        }
+        if (!ucxapp_store_append(w, buf, (size_t)n)) {
+            ucxapp_print("\nERROR: cannot write file\n");
+            goto done;
+        }
+        total += n;
+        if (expected > 0) {
+            ucxapp_print("\r%d/%d bytes (%d%%)", (int)total, (int)expected, (int)((int64_t)total * 100 / expected));
+        }
+    }
+    ucxapp_print("\n");
+    if (expected >= 0 && total != expected) {
+        ucxapp_print("ERROR: incomplete download (%d of %d bytes)\n", (int)total, (int)expected);
+        goto done;
+    }
+    ucxapp_print("%d bytes saved\n", (int)total);
+    rc = 0;
+
+done:
+    uCxHttpDisconnect(app->ucx, HTTP_SESSION);
+    return rc;
+}
+
+static int cmdHttpDownload(ucxapp_t *app, int argc, char *argv[])
+{
+    enum { URL_SIZE = 2048, MAX_REDIRECTS = 5 };
+    static char url[URL_SIZE];
+    static char location[URL_SIZE];
+    char scheme[8];
+    char host[256];
+
+    if (argc != 3 || strlen(argv[1]) >= URL_SIZE / 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    ucxapp_store_writer_t *w = ucxapp_store_begin(argv[2]);
+    if (w == NULL) {
+        ucxapp_print("ERROR: cannot create %s\n", argv[2]);
+        return UCXAPP_ERR_FAILED;
+    }
+    strcpy(url, argv[1]);
+
+    int rc = UCXAPP_ERR_FAILED;
+    for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        int r = downloadHop(app, url, w, location, sizeof(location), scheme, host, sizeof(host));
+        if (r == 0) {
+            rc = UCXAPP_OK;
+            break;
+        }
+        if (r < 0) {
+            break;
+        }
+        if (location[0] == '/') {
+            snprintf(url, URL_SIZE, "%s://%s%s", scheme, host, location);
+        } else {
+            snprintf(url, URL_SIZE, "%s", location);
+        }
+        if (hop == MAX_REDIRECTS) {
+            ucxapp_print("ERROR: too many redirects\n");
+        }
+    }
+    if (!ucxapp_store_end(w, rc == UCXAPP_OK)) {
+        if (rc == UCXAPP_OK) {
+            ucxapp_print("ERROR: cannot save %s\n", argv[2]);
+        }
+        rc = UCXAPP_ERR_FAILED;
+    }
+    return rc;
+}
+
 static const ucxapp_cmd_t gNetCmds[] = {
     { "net.ping", "<host> [count]",    "ICMP ping (count 1-10, default 4)",     UCXAPP_CMD_NEEDS_DEVICE, cmdNetPing },
     { "net.dns",  "<host>",            "Resolve a host name to an IP address",  UCXAPP_CMD_NEEDS_DEVICE, cmdNetDns },
     { "http.get", "<url> [show_bytes]", "HTTP/HTTPS GET, prints status and body", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpGet },
+    { "http.download", "<url> <file>", "Download to a file, following redirects", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpDownload },
 };
 
 void ucxapp_register_net_cmds(void)

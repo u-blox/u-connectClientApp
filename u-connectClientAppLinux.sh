@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build and launch u-connectClientApp (Linux/macOS counterpart of u-connectClientApp.cmd).
-# Usage: ./u-connectClientApp.sh [build|debug|clean|rebuild|update|help] [-- app args]
+# Build and launch u-connectClientApp (Linux/macOS counterpart of u-connectClientAppWin.cmd).
+# Usage: ./u-connectClientAppLinux.sh [build|debug|clean|rebuild|update|help] [-- app args]
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -14,15 +14,15 @@ usage() {
     cat <<EOF
 u-connectClientApp launcher
 
-  ./u-connectClientApp.sh               Build if needed and run
-  ./u-connectClientApp.sh debug         Debug build and run
-  ./u-connectClientApp.sh build         Build only
-  ./u-connectClientApp.sh clean         Remove build artifacts
-  ./u-connectClientApp.sh rebuild       Clean, then build
-  ./u-connectClientApp.sh update        Update the u-connectClient submodule
+  ./u-connectClientAppLinux.sh               Build if needed and run
+  ./u-connectClientAppLinux.sh debug         Debug build and run
+  ./u-connectClientAppLinux.sh build         Build only
+  ./u-connectClientAppLinux.sh clean         Remove build artifacts
+  ./u-connectClientAppLinux.sh rebuild       Clean, then build
+  ./u-connectClientAppLinux.sh update        Update the u-connectClient submodule
 
 Arguments after the action are passed to the app, e.g.
-  ./u-connectClientApp.sh /dev/ttyUSB0 --exec "device.info"
+  ./u-connectClientAppLinux.sh /dev/ttyUSB0 --exec "device.info"
 
 Note: the app is still Windows-only (FTDI, Win32 serial). The Linux port of the
 portable command layer (src/ucxapp_*) is in progress; until then CMake stops

@@ -173,7 +173,7 @@ if /i "!CONFIG!"=="Debug" (
 REM Check if executable exists and if source files are newer
 set NEED_BUILD=0
 set EXE_PATH=!BUILD_DIR!\!EXE_NAME!
-set SOURCE_FILE=u-connectClientApp\u-connectClientApp.c
+set SOURCE_FILE=u-connectClientApp\src\ucxapp_main.c
 set SIGNED_EXE=u-connectClientApp\release\u-connectClientApp-signed.exe
 set USE_SIGNED=0
 
@@ -213,7 +213,7 @@ if not exist "!EXE_PATH!" (
     
     REM Simple comparison: if source is newer, rebuild
     if "!SOURCE_FILE!" NEQ "" (
-        forfiles /P "u-connectClientApp" /M "u-connectClientApp.c" /D +0 /C "cmd /c if @fdate GTR !EXE_TIME! set NEED_BUILD=1" 2>nul
+        forfiles /P "u-connectClientApp\src" /M "ucxapp_main.c" /D +0 /C "cmd /c if @fdate GTR !EXE_TIME! set NEED_BUILD=1" 2>nul
         if exist "!SOURCE_FILE!" (
             powershell -Command "if ((Get-Item '!SOURCE_FILE!').LastWriteTime -gt (Get-Item '!EXE_PATH!').LastWriteTime) { exit 1 }" >nul 2>&1
             if errorlevel 1 (
@@ -275,7 +275,7 @@ if /i "%CONFIG%"=="Debug" (
     echo.
     echo To debug in VS Code:
     echo   1. Open workspace in VS Code
-    echo   2. Set breakpoints in u-connectClientApp.c
+    echo   2. Set breakpoints in u-connectClientApp\src\ucxapp_main.c
     echo   3. Press F5 to start debugging (or Run and Debug ^> C/C++: u-connectClientApp^)
     echo.
     echo Or run directly: !EXE_PATH!
@@ -352,7 +352,7 @@ if not exist "!SIGNED_EXE!" (
     echo [ERROR] Signed executable not found: !SIGNED_EXE!
     echo.
     echo Please sign the executable first:
-    echo   u-connectClientApp.cmd sign [thumbprint]
+    echo   u-connectClientAppWin.cmd sign [thumbprint]
     echo.
     exit /b 1
 )
@@ -390,12 +390,12 @@ if exist "!UNSIGNED_EXE!" (
     echo Launching development version with HID mode...
     echo.
     cd u-connectClientApp\bin
-    u-connectClientApp.exe hid %2 %3 %4 %5 %6 %7 %8 %9
+    u-connectClientApp.exe %2 %3 %4 %5 %6 %7 %8 %9 --exec "hid.setup" --shell
 ) else (
     echo [ERROR] No executable found!
     echo.
     echo Please build the application first:
-    echo   u-connectClientApp.cmd
+    echo   u-connectClientAppWin.cmd
     echo.
     exit /b 1
 )
@@ -620,7 +620,7 @@ if not exist "!SIGN_EXE!" (
     echo [ERROR] Executable not found: !SIGN_EXE!
     echo.
     echo Build the Release version first:
-    echo   u-connectClientApp.cmd rebuild
+    echo   u-connectClientAppWin.cmd rebuild
     echo.
     exit /b 1
 )
@@ -630,10 +630,10 @@ if not defined CERT_THUMBPRINT (
     echo [ERROR] Certificate thumbprint required!
     echo.
     echo USAGE:
-    echo   u-connectClientApp.cmd sign [thumbprint]
+    echo   u-connectClientAppWin.cmd sign [thumbprint]
     echo.
     echo EXAMPLE:
-    echo   u-connectClientApp.cmd sign 1234567890ABCDEF...
+    echo   u-connectClientAppWin.cmd sign 1234567890ABCDEF...
     echo.
     echo To find your certificate thumbprint:
     echo   1. Open Certificate Manager: certmgr.msc
@@ -875,7 +875,7 @@ echo [Step 5/5] Create GitHub Release
 echo.
 echo Next steps:
 echo.
-echo 1. Go to: https://github.com/u-blox/ucx-windows-app/releases/new
+echo 1. Go to: https://github.com/u-blox/u-connectClientApp/releases/new
 echo.
 echo 2. Fill in the release form:
 echo    Tag:   v%RELEASE_VERSION%
@@ -915,7 +915,7 @@ REM ===================================
 :help
 echo.
 echo USAGE:
-echo   u-connectClientApp.cmd [options] [arguments]
+echo   u-connectClientAppWin.cmd [options] [arguments]
 echo.
 echo BASIC USAGE:
 echo   (no args)             Run Release build (auto-selects signed if newer)
@@ -964,49 +964,49 @@ echo.
 echo   help / --help / -h    Show this help message
 echo.
 echo EXAMPLES:
-echo   u-connectClientApp.cmd
+echo   u-connectClientAppWin.cmd
 echo       Launch Release build (auto-selects signed if newer)
 echo.
-echo   u-connectClientApp.cmd signed
+echo   u-connectClientAppWin.cmd signed
 echo       Force launch signed version from release folder
 echo.
-echo   u-connectClientApp.cmd debug
+echo   u-connectClientAppWin.cmd debug
 echo       Launch Debug build (auto-builds if needed)
 echo.
-echo   u-connectClientApp.cmd COM4
+echo   u-connectClientAppWin.cmd COM4
 echo       Launch Release build and pass COM4 to the app
 echo.
-echo   u-connectClientApp.cmd signed COM4
+echo   u-connectClientAppWin.cmd signed COM4
 echo       Launch signed version and pass COM4 to the app
 echo.
-echo   u-connectClientApp.cmd debug COM4
+echo   u-connectClientAppWin.cmd debug COM4
 echo       Launch Debug build and pass COM4 to the app
 echo.
-echo   u-connectClientApp.cmd hid
+echo   u-connectClientAppWin.cmd hid
 echo       Start directly in HID Keyboard mode (auto-setup HID service)
 echo.
-echo   u-connectClientApp.cmd clean
+echo   u-connectClientAppWin.cmd clean
 echo       Clean all configurations (Debug and Release)
 echo.
-echo   u-connectClientApp.cmd clean debug
+echo   u-connectClientAppWin.cmd clean debug
 echo       Clean only Debug configuration
 echo.
-echo   u-connectClientApp.cmd rebuild
+echo   u-connectClientAppWin.cmd rebuild
 echo       Clean and rebuild Release configuration
 echo.
-echo   u-connectClientApp.cmd rebuild debug
+echo   u-connectClientAppWin.cmd rebuild debug
 echo       Clean and rebuild Debug configuration
 echo.
-echo   u-connectClientApp.cmd all
+echo   u-connectClientAppWin.cmd all
 echo       Build both Debug and Release configurations
 echo.
-echo   u-connectClientApp.cmd sign 1234567890ABCDEF...
+echo   u-connectClientAppWin.cmd sign 1234567890ABCDEF...
 echo       Sign Release build and save to u-connectClientApp-signed.exe
 echo.
-echo   u-connectClientApp.cmd selftest
+echo   u-connectClientAppWin.cmd selftest
 echo       Run comprehensive workspace tests and validation
 echo.
-echo   u-connectClientApp.cmd update
+echo   u-connectClientAppWin.cmd update
 echo       Update u-connectClient submodule to latest master branch
 echo.
 echo NOTES:
@@ -1044,7 +1044,7 @@ if not exist ".git" (
     echo [ERROR] Not a git repository!
     echo.
     echo This command requires the u-connectClientApp repository to be cloned from GitHub.
-    echo Clone with: git clone --recurse-submodules https://github.com/u-blox/ucx-windows-app.git
+    echo Clone with: git clone --recurse-submodules https://github.com/u-blox/u-connectClientApp.git
     echo.
     exit /b 1
 )
@@ -1091,7 +1091,7 @@ if errorlevel 1 (
 
 REM Show current and latest commits
 for /f "delims=" %%a in ('git rev-parse --short HEAD') do set CURRENT_COMMIT=%%a
-for /f "delims=" %%a in ('git rev-parse --short origin/master') do set LATEST_COMMIT=%%a
+for /f "delims=" %%a in ('git rev-parse --short origin/cmag_matter_support') do set LATEST_COMMIT=%%a
 
 echo Current commit: %CURRENT_COMMIT%
 echo Latest commit:  %LATEST_COMMIT%
@@ -1103,13 +1103,13 @@ if "%CURRENT_COMMIT%"=="%LATEST_COMMIT%" (
     goto :update_complete
 )
 
-echo Updating to latest master branch...
-git checkout master
+echo Updating to latest cmag_matter_support branch...
+git checkout cmag_matter_support
 if errorlevel 1 (
-    echo [WARNING] Could not checkout master branch
+    echo [WARNING] Could not checkout cmag_matter_support branch
 )
 
-git pull origin master
+git pull origin cmag_matter_support
 if errorlevel 1 (
     echo [ERROR] Failed to update submodule!
     cd ..
@@ -1161,10 +1161,10 @@ set "SELFTEST_ERRORS=0"
 set "SELFTEST_WARNINGS=0"
 
 REM Check current directory is project root
-if not exist "u-connectClientApp\u-connectClientApp.c" (
+if not exist "u-connectClientApp\src\ucxapp_main.c" (
     echo [ERROR] Not in u-connectClientApp project root!
     echo Current directory: %CD%
-    echo Expected to find: u-connectClientApp\u-connectClientApp.c
+    echo Expected to find: u-connectClientApp\src\ucxapp_main.c
     exit /b 1
 )
 echo [OK] Working directory is u-connectClientApp project root
@@ -1185,7 +1185,7 @@ for %%d in (%REQUIRED_DIRS%) do (
 REM Check critical source files
 echo.
 echo Checking critical source files...
-set "REQUIRED_FILES=u-connectClient\src\u_cx_at_client.c u-connectClient\inc\u_cx_at_client.h u-connectClientApp\u-connectClientApp.c u-connectClientApp\CMakeLists.txt README.md"
+set "REQUIRED_FILES=u-connectClient\src\u_cx_at_client.c u-connectClient\inc\u_cx_at_client.h u-connectClientApp\src\ucxapp_main.c u-connectClientApp\CMakeLists.txt README.md"
 for %%f in (%REQUIRED_FILES%) do (
     if exist "%%f" (
         echo [OK] %%f
@@ -1263,7 +1263,7 @@ if exist "!DEBUG_EXE!" (
         set /a SELFTEST_WARNINGS+=1
     )
 ) else (
-    echo [INFO] Debug executable not built yet ^(use: u-connectClientApp.cmd debug^)
+    echo [INFO] Debug executable not built yet ^(use: u-connectClientAppWin.cmd debug^)
 )
 
 if exist "!SIGNED_EXE!" (
@@ -1277,13 +1277,13 @@ if exist "!SIGNED_EXE!" (
         set /a SELFTEST_WARNINGS+=1
     )
 ) else (
-    echo [INFO] Signed executable not created yet ^(use: u-connectClientApp.cmd sign^)
+    echo [INFO] Signed executable not created yet ^(use: u-connectClientAppWin.cmd sign^)
 )
 
 REM Check launcher script itself
 echo.
 echo Checking launcher script...
-if exist "u-connectClientApp.cmd" (
+if exist "u-connectClientAppWin.cmd" (
     echo [OK] Launcher script exists
 ) else (
     echo [ERROR] Launcher script not found!

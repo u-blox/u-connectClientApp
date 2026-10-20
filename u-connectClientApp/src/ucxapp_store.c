@@ -1,0 +1,191 @@
+#include "ucxapp_store.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define NAME_MAX_LEN 256
+#define TMP_SUFFIX   ".part"
+
+static char gDir[NAME_MAX_LEN];
+
+static bool fullPath(const char *name, char *out, size_t outSize)
+{
+    int n = snprintf(out, outSize, "%s%s", gDir, name);
+    return n > 0 && (size_t)n < outSize;
+}
+
+static void *stdioOpen(const char *name, bool forWrite)
+{
+    char path[NAME_MAX_LEN * 2];
+    if (!fullPath(name, path, sizeof(path))) {
+        return NULL;
+    }
+    return fopen(path, forWrite ? "wb" : "rb");
+}
+
+static int32_t stdioRead(void *h, uint8_t *buf, size_t len)
+{
+    size_t n = fread(buf, 1, len, (FILE *)h);
+    return (n == 0 && ferror((FILE *)h)) ? -1 : (int32_t)n;
+}
+
+static int32_t stdioWrite(void *h, const uint8_t *data, size_t len)
+{
+    return fwrite(data, 1, len, (FILE *)h) == len ? (int32_t)len : -1;
+}
+
+static void stdioClose(void *h)
+{
+    fclose((FILE *)h);
+}
+
+static bool stdioRemove(const char *name)
+{
+    char path[NAME_MAX_LEN * 2];
+    return fullPath(name, path, sizeof(path)) && remove(path) == 0;
+}
+
+static bool stdioRename(const char *from, const char *to)
+{
+    char a[NAME_MAX_LEN * 2];
+    char b[NAME_MAX_LEN * 2];
+    if (!fullPath(from, a, sizeof(a)) || !fullPath(to, b, sizeof(b))) {
+        return false;
+    }
+    remove(b);   /* rename() does not replace an existing file on Windows */
+    return rename(a, b) == 0;
+}
+
+static const ucxapp_store_ops_t gStdioOps = {
+    stdioOpen, stdioRead, stdioWrite, stdioClose, stdioRemove, stdioRename
+};
+static const ucxapp_store_ops_t *gOps = &gStdioOps;
+
+struct ucxapp_store_writer {
+    void *handle;
+    char name[NAME_MAX_LEN];
+    char tmp[NAME_MAX_LEN + sizeof(TMP_SUFFIX)];
+    bool failed;
+};
+
+void ucxapp_store_set_backend(const ucxapp_store_ops_t *ops)
+{
+    gOps = ops != NULL ? ops : &gStdioOps;
+}
+
+void ucxapp_store_set_dir(const char *dir)
+{
+    snprintf(gDir, sizeof(gDir), "%s", dir != NULL ? dir : "");
+}
+
+ucxapp_store_writer_t *ucxapp_store_begin(const char *name)
+{
+    if (name == NULL || strlen(name) >= NAME_MAX_LEN) {
+        return NULL;
+    }
+    ucxapp_store_writer_t *w = (ucxapp_store_writer_t *)calloc(1, sizeof(*w));
+    if (w == NULL) {
+        return NULL;
+    }
+    strcpy(w->name, name);
+    snprintf(w->tmp, sizeof(w->tmp), "%s%s", name, TMP_SUFFIX);
+    w->handle = gOps->open(w->tmp, true);
+    if (w->handle == NULL) {
+        free(w);
+        return NULL;
+    }
+    return w;
+}
+
+bool ucxapp_store_append(ucxapp_store_writer_t *w, const void *data, size_t len)
+{
+    if (w == NULL || w->failed) {
+        return false;
+    }
+    if (len > 0 && gOps->write(w->handle, (const uint8_t *)data, len) < 0) {
+        w->failed = true;
+        return false;
+    }
+    return true;
+}
+
+bool ucxapp_store_end(ucxapp_store_writer_t *w, bool commit)
+{
+    if (w == NULL) {
+        return false;
+    }
+    gOps->close(w->handle);
+    bool ok = commit && !w->failed && gOps->rename(w->tmp, w->name);
+    if (!ok) {
+        gOps->remove(w->tmp);
+    }
+    free(w);
+    return ok;
+}
+
+bool ucxapp_store_save(const char *name, const void *data, size_t len)
+{
+    ucxapp_store_writer_t *w = ucxapp_store_begin(name);
+    if (w == NULL) {
+        return false;
+    }
+    bool ok = ucxapp_store_append(w, data, len);
+    return ucxapp_store_end(w, ok);
+}
+
+uint8_t *ucxapp_store_load(const char *name, size_t *outLen)
+{
+    void *h = gOps->open(name, false);
+    if (h == NULL) {
+        return NULL;
+    }
+    size_t cap = 4096;
+    size_t len = 0;
+    uint8_t *buf = (uint8_t *)malloc(cap + 1);
+    while (buf != NULL) {
+        if (len == cap) {
+            uint8_t *bigger = (uint8_t *)realloc(buf, cap * 2 + 1);
+            if (bigger == NULL) {
+                free(buf);
+                buf = NULL;
+                break;
+            }
+            buf = bigger;
+            cap *= 2;
+        }
+        int32_t n = gOps->read(h, buf + len, cap - len);
+        if (n < 0) {
+            free(buf);
+            buf = NULL;
+            break;
+        }
+        if (n == 0) {
+            break;
+        }
+        len += (size_t)n;
+    }
+    gOps->close(h);
+    if (buf != NULL) {
+        buf[len] = '\0';
+        if (outLen != NULL) {
+            *outLen = len;
+        }
+    }
+    return buf;
+}
+
+bool ucxapp_store_exists(const char *name)
+{
+    void *h = gOps->open(name, false);
+    if (h == NULL) {
+        return false;
+    }
+    gOps->close(h);
+    return true;
+}
+
+bool ucxapp_store_remove(const char *name)
+{
+    return gOps->remove(name);
+}

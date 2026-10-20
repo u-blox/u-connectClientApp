@@ -29,72 +29,97 @@ This repo contains https://github.com/u-blox/u-connectClient a small footprint A
 
 ```powershell
 # Clone main repository only
-git clone https://github.com/u-blox/ucx-windows-app.git
-cd ucx-windows-app
+git clone https://github.com/u-blox/u-connectClientApp.git
+cd u-connectClientApp
 
 # Initialize only the u-connectClient submodule (without recursing into its submodules)
 git submodule update --init u-connectClient
 
 # Launch (auto-builds on first run)
-.\u-connectClientApp.cmd
+.\u-connectClientAppWin.cmd
 ```
 
 ## Launch Script Commands
 
 ```powershell
-# Run application (default: auto-build if needed)
-.\u-connectClientApp.cmd
-
-# Firmware update mode (goes directly to firmware menu)
-.\u-connectClientApp.cmd flash
+# Run the command shell (auto-detects a NORA EVK)
+.\u-connectClientAppWin.cmd
 
 # Debug build
-.\u-connectClientApp.cmd debug
+.\u-connectClientAppWin.cmd debug
 
 # Update u-connectClient submodule
-.\u-connectClientApp.cmd update
+.\u-connectClientAppWin.cmd update
 
 # Clean build artifacts
-.\u-connectClientApp.cmd clean
+.\u-connectClientAppWin.cmd clean
 
 # Rebuild from scratch
-.\u-connectClientApp.cmd rebuild
+.\u-connectClientAppWin.cmd rebuild
 
 # Code sign for distribution
-.\u-connectClientApp.cmd sign YOUR_CERT_THUMBPRINT
+.\u-connectClientAppWin.cmd sign YOUR_CERT_THUMBPRINT
 
 # Workspace validation
-.\u-connectClientApp.cmd selftest
+.\u-connectClientAppWin.cmd selftest
 ```
+
+Launchers per target: `u-connectClientAppWin.cmd` (Windows), `u-connectClientAppLinux.sh` (Linux), `u-connectClientAppSTM32.cmd` (STM32 firmware, see below).
+
+## STM32 (NUCLEO-H753ZI)
+
+```powershell
+# Build, flash over the ST-Link and open the console on its virtual COM port
+.\u-connectClientAppSTM32.cmd --build --flash --log
+
+# Other options: --rebuild, --clean, --erase, --recover, --log COMx, --help
+```
+
+The module is wired to USART1; the shell runs on the ST-Link VCP. `bridge [baud]` turns the board into a
+transparent console-to-module bridge (e.g. for AT debugging or XMODEM firmware update); press Ctrl-] with
+1 s of silence around it to return to the shell. Needs STM32CubeH7 (`STM32CUBEH7_PATH` or the u-connectClient submodule).
 
 ## Key Features
 
 - **Bluetooth**: Scan, connect, bond, SPS, GATT Client/Server
 - **Wi-Fi** (NORA-W36): Station/AP modes, network scanning, auto-reconnect
 - **Network Services**: Socket, HTTP, MQTT, TLS/Security
-- **Firmware Updates**: XMODEM protocol with SHA256 verification
-- **Profile Management**: Save Wi-Fi and Bluetooth device profiles
-- **Dual Menu Modes**: Detailed and compact views
+- **Firmware Updates**: XMODEM protocol with SHA256 verification (`fw.download`, `fw.flash`)
 - **Smart Auto-Detection**: FTDI device and COM port discovery
 
 ## Command Layer (scriptable, portable)
 
-Besides the menu, the app has a small command layer (`u-connectClientApp/src/ucxapp_*.c`)
-with no Windows dependencies, intended to be reused on Linux and embedded targets.
+The app is a command layer (`u-connectClientApp/src/ucxapp_*.c`)
+with no Windows dependencies, shared by the Windows and Linux builds.
 
 ```powershell
 # Run commands non-interactively and exit (exit code 1 on first failure)
 u-connectClientApp.exe COM13 --exec "device.info" --exec "wifi.scan"
 u-connectClientApp.exe COM13 --exec "wifi.connect MySsid MyPassword" --exec "sock.open tcp"
 
-# Interactive command shell (or press [:] in the menu); type 'help'
+# Interactive command shell; type 'help'
 u-connectClientApp.exe COM13 --shell
 ```
 
+### Web UI (hosted on the module)
+
+```powershell
+# The NORA-W36 serves the page over Wi-Fi (TCP listener); anyone on the network can open it
+u-connectClientApp.exe COM13 --exec "wifi.connect MySsid MyPassword" --exec "web.start" --shell
+```
+
+`web.start [port] [token]` prints `http://<module-ip>:<port>/?t=<token>` (default port 80). The token is
+required for every request; a random one is generated unless you pass it. The page has a command box and
+live output; the app must keep running (shell or `--shell`) because commands run on the PC.
+Routes: `GET /`, `GET /events` (SSE: `out`, `done`), `POST /api/exec?cmd=...`. `web.stop`, `web.status`.
+The HTTP engine is `src/u_webserver.c` from u-connectMatter; routes are in `src/ucxapp_cmds_web.c`.
+
 Commands: `device.info`, `wifi.scan|connect|status|disconnect`,
-`sock.open|connect|send|read|close|list`, `net.ping|dns`, `http.get`, `mqtt.*`, `bt.*`, `at`, plus Windows-only `device.connect|disconnect`.
-A command is a table entry (`name`, `usage`, `help`, `run()`); see `src/ucxapp_cmds_wifi.c`.
-Host-OS services (COM-port discovery, HTTPS download, key input) sit behind `src/ucxapp_platform.h`,
+`sock.open|connect|send|read|close|list`, `net.ping|dns`, `http.get`, `mqtt.*`, `bt.*` (incl. `bt.profile.*`), `wifi.profile.*`, `at`, plus Windows-only `device.connect|disconnect`.
+A command is a table entry (`name`, `usage`, `help`, `run()`); see `src/ucxapp_cmds_wifi.c`.
+
+Host-OS services (COM-port discovery, HTTPS download, key input) sit behind `src/ucxapp_platform.h`,
+
 with the Windows backend in `src/ucxapp_platform_win.c`.
 Full reference: [u-connectClientApp/UCXAPP_COMMANDS.md](u-connectClientApp/UCXAPP_COMMANDS.md).
 
@@ -102,11 +127,13 @@ Full reference: [u-connectClientApp/UCXAPP_COMMANDS.md](u-connectClientApp/UCXAP
 
 ```
 u-connectClientApp/
-├── u-connectClientApp.cmd      # Launch script
-├── u-connectClientApp.ini             # Settings (auto-created)
+├── u-connectClientAppWin.cmd      # Windows launch script
+├── u-connectClientAppLinux.sh     # Linux launch script
+├── u-connectClientAppSTM32.cmd    # STM32 build/flash/log script
 ├── README.md
 ├── u-connectClientApp/
-│   ├── u-connectClientApp.c           # Main application
+│   ├── src/                           # Command layer and entry point (ucxapp_main.c)
+│   ├── stm32/                      # STM32 firmware (NUCLEO-H753ZI) entry, platform and CMake
 │   ├── CMakeLists.txt
 │   ├── bin/                        # Build outputs (gitignored)
 │   ├── release/                    # Signed releases
@@ -134,10 +161,10 @@ cmake --build build --config Release
 
 ```powershell
 # Build release version
-.\u-connectClientApp.cmd
+.\u-connectClientAppWin.cmd
 
 # Code sign (creates u-connectClientApp-signed.exe in release/)
-.\u-connectClientApp.cmd sign YOUR_CERT_THUMBPRINT
+.\u-connectClientAppWin.cmd sign YOUR_CERT_THUMBPRINT
 ```
 
 **Distribution**: `u-connectClientApp/release/u-connectClientApp-signed.exe` is self-contained (~2.5 MB) with FTDI DLL embedded.

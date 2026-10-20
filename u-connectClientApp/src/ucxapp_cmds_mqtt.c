@@ -100,6 +100,7 @@ static int cmdMqttSubscribe(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: subscribe failed (%d)\n", (int)result);
         return UCXAPP_ERR_FAILED;
     }
+    U_CX_PORT_SLEEP_MS(MQTT_BUSY_DELAY_MS);   /* the broker's subscribe ack arrives after OK; publishing earlier gets ERROR:15 */
     ucxapp_print("subscribed to %s\n", argv[1]);
     return UCXAPP_OK;
 }
@@ -175,6 +176,9 @@ static int cmdMqttRead(ucxapp_t *app, int argc, char *argv[])
     while (received < MQTT_MAX_MESSAGES) {
         const char *topic = NULL;
         int32_t n = uCxMqttReadBegin(app->ucx, MQTT_ID, buf, MQTT_MAX_PAYLOAD, &topic);
+        if (n < 0 && received > 0) {
+            break;   /* queue drained: the module answers ERROR:11 */
+        }
         if (n < 0) {
             ucxapp_print("ERROR: read failed (%d)\n", (int)n);
             return UCXAPP_ERR_FAILED;

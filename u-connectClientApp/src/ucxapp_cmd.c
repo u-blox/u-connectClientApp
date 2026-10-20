@@ -43,7 +43,7 @@ bool ucxapp_parse_int(const char *s, int32_t *out)
     if (s == NULL || *s == '\0') {
         return false;
     }
-    v = strtol(s, &end, 10);
+    v = strtol(s, &end, 0);
     if (*end != '\0') {
         return false;
     }

@@ -2,10 +2,11 @@
 
 Environment:
   UCX_APP_EXE   path to the exe (default: u-connectClientApp/bin/u-connectClientApp.exe)
-  UCX_PORT_A    COM port of the first NORA-W36 (enables hardware tests)
-  UCX_PORT_B    COM port of the second NORA-W36 (enables two-device tests)
+  UCX_PORT_A    COM port of the first NORA-W36 (default: first FTDI port found)
+  UCX_PORT_B    COM port of the second NORA-W36 (default: second FTDI port found)
 """
 
+import functools
 import os
 import sys
 from pathlib import Path
@@ -14,6 +15,23 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_EXE = ROOT / "u-connectClientApp" / "bin" / "u-connectClientApp.exe"
+
+
+@functools.lru_cache(maxsize=1)
+def _detected():
+    if sys.platform != "win32":
+        return []
+    sys.path.insert(0, str(ROOT / "tests"))
+    from harness.portenum import find_at_ports
+
+    return find_at_ports(os.environ.get("UCX_APP_EXE", DEFAULT_EXE))
+
+
+def _ports():
+    found = _detected()
+    a = os.environ.get("UCX_PORT_A") or (found[0] if found else None)
+    b = os.environ.get("UCX_PORT_B") or (found[1] if len(found) > 1 else None)
+    return a, b
 
 
 def pytest_configure(config):
@@ -28,7 +46,7 @@ def pytest_configure(config):
 
 def pytest_collection_modifyitems(config, items):
     exe = Path(os.environ.get("UCX_APP_EXE", DEFAULT_EXE))
-    port_a, port_b = os.environ.get("UCX_PORT_A"), os.environ.get("UCX_PORT_B")
+    port_a, port_b = _ports()
     for item in items:
         needs_app = any(item.get_closest_marker(m) for m in ("app", "hardware", "two_devices", "pc_ble"))
         if needs_app and sys.platform != "win32":
@@ -50,29 +68,10 @@ def app_exe():
 
 @pytest.fixture(scope="session")
 def port_a():
-    return os.environ.get("UCX_PORT_A")
+    return _ports()[0]
 
 
 @pytest.fixture(scope="session")
 def port_b():
-    return os.environ.get("UCX_PORT_B")
+    return _ports()[1]
 
-
-@pytest.fixture
-def make_app(app_exe, tmp_path, request):
-    """Factory for isolated app instances (own settings file, own transcript in tests/logs)."""
-    pytest.importorskip("winpty", reason="pip install -r tests/requirements.txt")
-    from harness.ucxapp import UcxApp
-
-    started = []
-    log_dir = ROOT / "tests" / "logs" / request.node.name.replace("/", "_")
-
-    def _make(name="app", port=None):
-        app = UcxApp(app_exe, port=port, ini=tmp_path / f"{name}.ini", name=name, log_dir=log_dir)
-        app.start()
-        started.append(app)
-        return app
-
-    yield _make
-    for app in started:
-        app.close()

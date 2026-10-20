@@ -1,7 +1,10 @@
 #include "ucxapp_cmd.h"
+#include "ucxapp_hash.h"
+#include "ucxapp_store.h"
 
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define AT_MAX_LEN 256
@@ -43,8 +46,33 @@ static int cmdAt(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+static int cmdFileHash(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    char hex[UCXAPP_SHA256_HEX_LEN];
+    size_t len;
+
+    if (argc != 3 || (strcmp(argv[1], "md5") != 0 && strcmp(argv[1], "sha256") != 0)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    uint8_t *data = ucxapp_store_load(argv[2], &len);
+    if (data == NULL) {
+        ucxapp_print("ERROR: cannot read %s\n", argv[2]);
+        return UCXAPP_ERR_FAILED;
+    }
+    if (argv[1][0] == 'm') {
+        ucxapp_md5_hex(data, len, hex);
+    } else {
+        ucxapp_sha256_hex(data, len, hex);
+    }
+    free(data);
+    ucxapp_print("%s  %s (%u bytes)\n", hex, argv[2], (unsigned)len);
+    return UCXAPP_OK;
+}
+
 static const ucxapp_cmd_t gSysCmds[] = {
     { "at", "<command>", "Send a raw AT command (AT prefix optional)", UCXAPP_CMD_NEEDS_DEVICE, cmdAt },
+    { "file.hash", "<md5|sha256> <file>", "Print the hash of a file", 0, cmdFileHash },
 };
 
 void ucxapp_register_sys_cmds(void)

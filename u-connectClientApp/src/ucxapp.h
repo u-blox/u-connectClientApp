@@ -32,6 +32,11 @@ typedef struct {
 extern const ucxapp_io_t ucxapp_io_stdio;      /* ucxapp_io_stdio.c (PC targets) */
 
 void ucxapp_io_set(const ucxapp_io_t *io);
+
+/* Extra consumers of everything ucxapp_print() writes (e.g. web servers). Called on any thread; must not block. */
+typedef void (*ucxapp_sink_fn_t)(const char *text, size_t len);
+bool ucxapp_io_add_sink(ucxapp_sink_fn_t sink);
+void ucxapp_io_remove_sink(ucxapp_sink_fn_t sink);
 void ucxapp_print(const char *fmt, ...);
 int ucxapp_readline(const char *prompt, char *buf, size_t size);
 
@@ -57,6 +62,9 @@ int ucxapp_readline(const char *prompt, char *buf, size_t size);
 #define URC_FLAG_BT_PASSKEY_REQUEST (1 << 17)
 #define URC_FLAG_SOCK_CLOSED        (1 << 18)
 #define URC_FLAG_MQTT_DISCONNECTED  (1 << 19)
+
+/* Registers minimal URC handlers (ucxapp_urc.c) that raise the flags below; for hosts without their own. */
+void ucxapp_urc_register(uCxHandle_t *ucx);
 
 /* Event flags set by URC handlers. Direct access to the flags requires the lock. */
 extern volatile uint32_t gUcxappEventFlags;

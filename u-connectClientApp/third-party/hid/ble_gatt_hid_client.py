@@ -10,7 +10,15 @@ Requirements:
     pip install bleak
 
 Usage:
-    python test_ble_gatt_hid_client.py [device_name_or_address]
+    python ble_gatt_hid_client.py [device_name_or_address] [--listen SECONDS]
+
+Keystroke reports are decoded into characters and the typed text is printed.
+Drive it from the module with hid.text / hid.key (u-connectClientApp).
+
+NOTE (unresolved): the module defines protocol mode, boot output, report output and
+control point with *authenticated* write security, which is carried over from the old
+app and may be wrong. Writing them unbonded returns -114; this may just be a pairing
+issue. Not investigated yet.
 """
 
 import asyncio
@@ -18,6 +26,11 @@ import sys
 
 from bleak import BleakClient, BleakScanner
 from bleak.backends.characteristic import BleakGATTCharacteristic
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+LISTEN_SECONDS = 20.0
 
 # Standard BLE HID Service UUIDs (Bluetooth SIG assigned)
 HID_SERVICE_UUID = "00001812-0000-1000-8000-00805f9b34fb"              # HID Service
@@ -134,6 +147,39 @@ class HIDValidationResult:
         print(f"{'='*60}")
 
 
+def hid_usage_to_char(usage: int, shift: bool) -> str:
+    """Translate a US-layout keyboard usage (HID usage page 0x07) to text; '' if not printable."""
+    if 0x04 <= usage <= 0x1D:
+        c = chr(ord("a") + usage - 0x04)
+        return c.upper() if shift else c
+    if 0x1E <= usage <= 0x27:
+        return ("!@#$%^&*()" if shift else "1234567890")[usage - 0x1E]
+    table = {
+        0x28: "\n", 0x2B: "\t", 0x2C: " ",
+        0x2D: "_" if shift else "-", 0x2E: "+" if shift else "=",
+        0x2F: "{" if shift else "[", 0x30: "}" if shift else "]",
+        0x31: "|" if shift else "\\", 0x33: ":" if shift else ";",
+        0x34: '"' if shift else "'", 0x35: "~" if shift else "`",
+        0x36: "<" if shift else ",", 0x37: ">" if shift else ".",
+        0x38: "?" if shift else "/",
+    }
+    return table.get(usage, "")
+
+
+received_text = []
+_pressed_keys = set()
+
+
+def decode_keyboard_report(data: bytes) -> str:
+    """Return the characters for keys newly pressed in this 8-byte report."""
+    global _pressed_keys
+    shift = bool(data[0] & 0x22)
+    keys = {k for k in data[2:8] if k > 3}
+    typed = "".join(hid_usage_to_char(k, shift) for k in sorted(keys - _pressed_keys))
+    _pressed_keys = keys
+    return typed
+
+
 def notification_handler(characteristic: BleakGATTCharacteristic, data: bytearray):
     """Handle notifications from HID characteristics."""
     char_name = get_char_name(characteristic.uuid)
@@ -143,6 +189,10 @@ def notification_handler(characteristic: BleakGATTCharacteristic, data: bytearra
 
     # Parse HID keyboard report if it's a keyboard input
     if len(data) == 8:
+        typed = decode_keyboard_report(bytes(data))
+        if typed:
+            received_text.append(typed)
+            print(f"  Typed: {typed!r}   (so far: {''.join(received_text)!r})")
         modifier = data[0]
         keys = data[2:8]
         print("  Parsed as keyboard report:")
@@ -336,7 +386,10 @@ async def test_hid_client(address: str):
         print("Waiting for GATT services to stabilize...")
         await asyncio.sleep(1.0)
 
-        print(f"MTU: {client.mtu_size}")
+        try:
+            print(f"MTU: {client.mtu_size}")
+        except Exception as e:
+            print(f"MTU unavailable: {e!r} (connected={client.is_connected})")
 
         # Discover services
         print(f"\n{'='*60}")
@@ -544,8 +597,10 @@ async def test_hid_client(address: str):
                     print(f"  Error: {e}")
 
         if subscribed_chars:
-            print("\n[WAITING] Press keys on the HID keyboard (5 seconds)...")
-            await asyncio.sleep(5)
+            print(f"\n[WAITING] Type on the module: hid.text / hid.key ({LISTEN_SECONDS:g} seconds)...")
+            await asyncio.sleep(LISTEN_SECONDS)
+
+            print(f"\n[RECEIVED TEXT] {''.join(received_text)!r}")
 
             # Unsubscribe
             for char in subscribed_chars:
@@ -565,8 +620,14 @@ async def main():
     print("="*60)
 
     target = None
-    if len(sys.argv) > 1:
-        target = sys.argv[1]
+    args = sys.argv[1:]
+    if "--listen" in args:
+        i = args.index("--listen")
+        global LISTEN_SECONDS
+        LISTEN_SECONDS = float(args[i + 1])
+        del args[i:i + 2]
+    if args:
+        target = args[0]
         print(f"Target specified: {target}")
 
     # If target looks like a MAC address, connect directly

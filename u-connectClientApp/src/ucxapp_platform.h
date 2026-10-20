@@ -51,6 +51,12 @@ int ucxapp_platform_list_serial_ports(ucxapp_serial_port_t *ports, int maxPorts)
 char *ucxapp_platform_https_get_text(const char *host, const char *path);
 char *ucxapp_platform_https_get_binary(const char *host, const char *path, size_t *outSize);
 
+/** Extracts a ZIP archive into destDir (created if missing) using the OS tools. */
+bool ucxapp_platform_extract_zip(const char *zipPath, const char *destDir);
+
+/** Finds the first file below dir whose name ends with ext (case-insensitive, e.g. ".bin"). */
+bool ucxapp_platform_find_file(const char *dir, const char *ext, char *out, size_t outSize);
+
 #ifdef __cplusplus
 }
 #endif

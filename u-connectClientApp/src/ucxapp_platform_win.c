@@ -71,6 +71,46 @@ int ucxapp_platform_get_key(void)
     return _getch();
 }
 
+bool ucxapp_platform_extract_zip(const char *zipPath, const char *destDir)
+{
+    if (strchr(zipPath, '"') != NULL || strchr(destDir, '"') != NULL) {
+        return false;
+    }
+    CreateDirectoryA(destDir, NULL);
+    char cmd[1200];
+    snprintf(cmd, sizeof(cmd), "tar -xf \"%s\" -C \"%s\"", zipPath, destDir);
+    return system(cmd) == 0;
+}
+
+bool ucxapp_platform_find_file(const char *dir, const char *ext, char *out, size_t outSize)
+{
+    char pattern[MAX_PATH];
+    snprintf(pattern, sizeof(pattern), "%s\\*", dir);
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    bool found = false;
+    size_t extLen = strlen(ext);
+    do {
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) {
+            continue;
+        }
+        char path[MAX_PATH];
+        snprintf(path, sizeof(path), "%s\\%s", dir, fd.cFileName);
+        size_t n = strlen(fd.cFileName);
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            found = ucxapp_platform_find_file(path, ext, out, outSize);
+        } else if (n >= extLen && _stricmp(fd.cFileName + n - extLen, ext) == 0) {
+            snprintf(out, outSize, "%s", path);
+            found = true;
+        }
+    } while (!found && FindNextFileA(h, &fd));
+    FindClose(h);
+    return found;
+}
+
 void ucxapp_platform_exe_dir(char *buffer, size_t bufferSize)
 {
     GetModuleFileNameA(NULL, buffer, (DWORD)bufferSize);

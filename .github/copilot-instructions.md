@@ -8,23 +8,23 @@ u-connectClientApp is a Windows console application for testing u-connectXpress 
 
 ### Quick Build (Recommended)
 ```powershell
-.\u-connectClientApp.cmd
+.\u-connectClientAppWin.cmd
 ```
 This auto-builds if needed and launches the application.
 
 ### Build Commands
 ```powershell
 # Standard Release build
-.\u-connectClientApp.cmd
+.\u-connectClientAppWin.cmd
 
 # Debug build
-.\u-connectClientApp.cmd debug
+.\u-connectClientAppWin.cmd debug
 
 # Clean build artifacts
-.\u-connectClientApp.cmd clean
+.\u-connectClientAppWin.cmd clean
 
 # Full rebuild from scratch
-.\u-connectClientApp.cmd rebuild
+.\u-connectClientAppWin.cmd rebuild
 ```
 
 ### Manual CMake Build
@@ -40,7 +40,7 @@ cmake --build build --config Release
 ## Project Structure
 
 - `u-connectClientApp/` - Main application source
-  - `u-connectClientApp.c` - Monolithic application code
+  - `src/` - Command layer; `src/ucxapp_main.c` is the entry point
   - `CMakeLists.txt` - Build configuration
   - `bin/` - Build outputs (gitignored)
   - `release/` - Signed releases
@@ -55,7 +55,7 @@ cmake --build build --config Release
 git submodule update --init u-connectClient
 
 # Update submodule to latest
-.\u-connectClientApp.cmd update
+.\u-connectClientAppWin.cmd update
 ```
 
 ## Code Style
@@ -75,20 +75,20 @@ python -m pytest
 
 CI (`.github/workflows/build.yml`) runs pytest and a Windows Release build on every push.
 
-New code should go into `u-connectClientApp/src/` as separate modules instead of the monolithic `u-connectClientApp.c`.
+New code goes into `u-connectClientApp/src/` as separate command modules.
 
 ```powershell
 # Run application with self-test
-.\u-connectClientApp.cmd selftest
+.\u-connectClientAppWin.cmd selftest
 
-# Firmware update mode
-.\u-connectClientApp.cmd flash
+# Firmware update
+.\u-connectClientApp.exe --exec "fw.flash <file>"
 ```
 
 ## Release Process
 
-1. Clean rebuild: `.\u-connectClientApp.cmd rebuild`
-2. Sign with certificate: `.\u-connectClientApp.cmd sign CERT_THUMBPRINT`
+1. Clean rebuild: `.\u-connectClientAppWin.cmd rebuild`
+2. Sign with certificate: `.\u-connectClientAppWin.cmd sign CERT_THUMBPRINT`
 3. Create git tag: `git tag -a v3.2.0.YYMMDD -m "Release message"`
 4. Push tag: `git push origin v3.2.0.YYMMDD`
 

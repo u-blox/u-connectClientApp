@@ -28,10 +28,10 @@ Version is generated at build time by CMake from `u-connectClientApp/version.h.i
 
 ```powershell
 # Clean rebuild Release configuration (forces version regeneration)
-.\u-connectClientApp.cmd rebuild
+.\u-connectClientAppWin.cmd rebuild
 
 # Build Release configuration and sign with certificate
-.\u-connectClientApp.cmd sign EF3FD135F1CD...
+.\u-connectClientAppWin.cmd sign EF3FD135F1CD...
 
 # This will:
 # - Generate version.h with date-based build number (3.2.0.YYMMDD)
@@ -63,7 +63,7 @@ git push origin v3.2.0.251204
 ```
 
 ### 4. Create GitHub Release
-1. Go to: https://github.com/u-blox/ucx-windows-app/releases
+1. Go to: https://github.com/u-blox/u-connectClientApp/releases
 2. Click "Draft a new release"
 3. **Tag:** v3.2.0.251204 (must match Git tag)
 4. **Title:** u-connectClientApp v3.2.0.251204
@@ -99,27 +99,27 @@ git push origin v3.2.0.251204
 Users who need Debug builds or modifications:
 ```bash
 # Clone repository with submodule
-git clone --recurse-submodules https://github.com/u-blox/ucx-windows-app.git
-cd ucx-windows-app
+git clone --recurse-submodules https://github.com/u-blox/u-connectClientApp.git
+cd u-connectClientApp
 
 # Build and run (auto-builds if needed)
-.\u-connectClientApp.cmd
+.\u-connectClientAppWin.cmd
 
 # Build Debug configuration
-.\u-connectClientApp.cmd debug
+.\u-connectClientAppWin.cmd debug
 
 # Build all configurations
-.\u-connectClientApp.cmd all
+.\u-connectClientAppWin.cmd all
 ```
 
 ## Directory Structure
 
 ```
-ucx-windows-app/
-├── u-connectClientApp.cmd              (Launch script)
+u-connectClientApp/
+├── u-connectClientAppWin.cmd              (Launch script)
 ├── u-connectClientApp.ini                     (Settings, auto-created, gitignored)
 ├── u-connectClientApp/
-│   ├── u-connectClientApp.c               (Main application ~25,000 lines)
+│   ├── src/                               (Command layer and entry point)
 │   ├── u-connectClientApp.rc              (Resource file - icon, DLL, version)
 │   ├── version.h.in                    (Version template)
 │   ├── CMakeLists.txt                  (Build configuration)

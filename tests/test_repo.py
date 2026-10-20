@@ -20,7 +20,7 @@ def test_cmake_references_existing_submodule_files():
 
 
 def test_no_stale_ucxclient_paths_in_build_files():
-    for rel in ("u-connectClientApp.cmd", "u-connectClientApp/CMakeLists.txt"):
+    for rel in ("u-connectClientAppWin.cmd", "u-connectClientApp/CMakeLists.txt"):
         text = (ROOT / rel).read_text(encoding="utf-8")
         assert not re.search(r"(?<![\w-])ucxclient[\\/]", text), f"{rel} still references ucxclient/"
 

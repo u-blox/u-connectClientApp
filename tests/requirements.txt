@@ -1,4 +1,6 @@
 pytest
+pytest-cov
 ruff
-pywinpty; sys_platform == "win32"
+cryptography
+pyserial; sys_platform == "win32"
 bleak; sys_platform == "win32"
