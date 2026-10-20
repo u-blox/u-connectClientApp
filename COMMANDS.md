@@ -122,7 +122,7 @@ In the normal menu, press `:` to open the same shell; `exit` returns to the menu
 | `cert.info` | `<name>` | Size and SHA-256 fingerprint |
 | `cert.upload` | `<ca\|client\|key> <file> [name] [pw]` | Upload a PEM file (max 8192 bytes); the name defaults to the file name, `pw` is for encrypted keys. For `ca` and `client` the fingerprint is checked against the module afterwards |
 | `cert.remove` | `<name>` | Remove a certificate or key (type is looked up automatically) |
-| `fw.download` | `<url> <file> [sha256]` | Download via the module (follows redirects), print SHA-256, delete the file on mismatch |
+| `fw.download` | `<url> <file> [sha256]` or `latest [file]` | Download via the module (follows redirects), print SHA-256, delete the file on mismatch. `latest` looks up the newest u-connectXpress GitHub release for the connected module family (e.g. NORA-W36) and saves its zip (Windows only); flash it with `fw.flash` |
 | `fw.flash` | `<file.bin\|file.zip> [baud]` | XMODEM firmware update (default 921600 baud); a zip is only extracted (needs `tar` on Windows, `unzip` elsewhere), and only the `.bin` inside is flashed |
 | `at` | `<command>` | Send a raw AT command; the `AT` prefix is optional (`at +GMI`) |
 

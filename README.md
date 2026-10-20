@@ -1,184 +1,106 @@
-# u-connectClientApp - Command Shell for u-connectXpress (Windows, Linux, STM32)
+# u-connectClientApp
 
-A native C command-line application for testing and configuring u-connectXpress devices (NORA-W36, NORA-B26). It runs on Windows and Linux hosts and as FreeRTOS firmware on STM32 Nucleo boards (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI).
+**Talk to your u-connectXpress module in one line.** Scan Wi-Fi, join a network, open sockets, publish over MQTT, fetch HTTPS pages, pair Bluetooth devices and update firmware, from an interactive shell, a script or a web page. The same commands run on Windows, Linux and on an STM32 board.
 
-This repo contains https://github.com/u-blox/u-connectClient a small footprint AT command client for talking to the following u-blox u-connectXpress short-range modules:
+Supported modules: **NORA-W36** (Wi-Fi + Bluetooth LE) and **NORA-B26** (Bluetooth LE).
 
-* NORA-W36
-* NORA-B26
+| Windows | Linux | STM32 firmware |
+|---|---|---|
+| Signed `.exe`, FTDI driver built in | Single binary | NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI |
 
-## Prerequisites
+Download ready-made builds from the [Releases page](https://github.com/u-blox/u-connectClientApp/releases). No installation needed.
 
-### System Requirements
-- **Windows 10 or Windows 11** (64-bit) for the Windows build; Linux for the Linux build; an STM32 Nucleo board for the firmware build
-- **FTDI USB device** or a UART connection to a NORA module (NORA-W36 or NORA-B26)
-
-### Required Software
-1. **Visual Studio 2022 Build Tools** (or full Visual Studio 2022)
-   - Download: https://aka.ms/vs/17/release/vs_BuildTools.exe
-   - Install "Desktop development with C++" workload
-
-2. **CMake 3.15 or later**
-   - Download: https://cmake.org/download/
-   - Add to system PATH during installation
-
-3. **Git**
-   - Download: https://git-scm.com/download/win
-
-## Quick Start
+## Try it in 30 seconds
 
 ```powershell
-# Clone main repository only
-git clone https://github.com/u-blox/u-connectClientApp.git
-cd u-connectClientApp
-
-# Initialize only the u-connectClient submodule (without recursing into its submodules)
-git submodule update --init u-connectClient
-
-# Launch (auto-builds on first run)
-.\u-connectClientAppWin.cmd
+u-connectClientApp.exe COM13 --exec "device.info"
 ```
 
-## Launch Script Commands
+Leave out the port and the app finds your EVK by itself. Type `help` in the shell to list every command.
 
+## Powerful one-liners
+
+**Get online and fetch a web page**
 ```powershell
-# Run the command shell (auto-detects a NORA EVK)
-.\u-connectClientAppWin.cmd
-
-# Debug build
-.\u-connectClientAppWin.cmd debug
-
-# Update u-connectClient submodule
-.\u-connectClientAppWin.cmd update
-
-# Clean build artifacts
-.\u-connectClientAppWin.cmd clean
-
-# Rebuild from scratch
-.\u-connectClientAppWin.cmd rebuild
-
-# Code sign for distribution
-.\u-connectClientAppWin.cmd sign YOUR_CERT_THUMBPRINT
-
-# Workspace validation
-.\u-connectClientAppWin.cmd selftest
+u-connectClientApp.exe COM13 --exec "wifi.connect MySsid MyPassword" --exec "net.ping u-blox.com" --exec "http.get https://example.com"
 ```
 
-Launchers per target: `u-connectClientAppWin.cmd` (Windows), `u-connectClientAppLinux.sh` (Linux), `u-connectClientAppSTM32.cmd` (STM32 firmware, see below).
-
-## STM32 (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI)
-
+**Scan the air for networks**
 ```powershell
-# Build, flash over the ST-Link and open the console on its virtual COM port (default board: H753)
-.\u-connectClientAppSTM32.cmd --build --flash --log
-
-# Select another board: h753 (default), f767 or f439
-.\u-connectClientAppSTM32.cmd --board f767 --build --flash --log
-
-# Other options: --rebuild, --clean, --erase, --recover, --log COMx, --help
+u-connectClientApp.exe COM13 --exec "wifi.scan"
 ```
 
-The module is wired to USART1 (H753) or USART6 (F767, F439); the shell runs on the ST-Link VCP. `bridge [baud]` turns the board into a
-transparent console-to-module bridge (e.g. for AT debugging or XMODEM firmware update); press Ctrl-] with
-1 s of silence around it to return to the shell. Needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH` or
-`STM32CUBEF4_PATH`, or the u-connectClient submodule). Release builds of all three boards are published with each tag.
-
-## Key Features
-
-- **Bluetooth**: Scan, connect, bond, SPS, GATT Client/Server
-- **Wi-Fi** (NORA-W36): Station/AP modes, network scanning, auto-reconnect
-- **Network Services**: Socket, HTTP, MQTT, TLS/Security
-- **Firmware Updates**: XMODEM protocol with SHA256 verification (`fw.download`, `fw.flash`)
-- **Smart Auto-Detection**: FTDI device and COM port discovery
-
-## Command Layer (scriptable, portable)
-
-The app is a command layer (`app/src/ucxapp_*.c`)
-with no Windows dependencies, shared by the Windows and Linux builds.
-
+**Update the module firmware over XMODEM, with SHA256 verification**
 ```powershell
-# Run commands non-interactively and exit (exit code 1 on first failure)
-u-connectClientApp.exe COM13 --exec "device.info" --exec "wifi.scan"
-u-connectClientApp.exe COM13 --exec "wifi.connect MySsid MyPassword" --exec "sock.open tcp"
-
-# Interactive command shell; type 'help'
-u-connectClientApp.exe COM13 --shell
+u-connectClientApp.exe COM13 --exec "fw.flash module.bin"
 ```
 
-### Web UI (hosted on the module)
-
+**Always the newest firmware**: look up the latest GitHub release for the connected module and flash it
 ```powershell
-# The NORA-W36 serves the page over Wi-Fi (TCP listener); anyone on the network can open it
+u-connectClientApp.exe COM13 --exec "fw.download latest module.zip" --exec "fw.flash module.zip"
+```
+
+**Download firmware straight from GitHub and flash it**: the module fetches the release asset over Wi-Fi (redirects followed), the app verifies the SHA256 and flashes it
+```powershell
+u-connectClientApp.exe COM13 --exec "wifi.connect MySsid MyPassword" --exec "fw.download https://github.com/<owner>/<repo>/releases/download/<tag>/module.bin module.bin <sha256>" --exec "fw.flash module.bin"
+```
+`fw.download` deletes the file if the SHA256 does not match, so a bad download is never flashed. Without Wi-Fi, download the file in a browser and use `fw.flash` directly.
+
+**Remote control from any browser**: the module serves its own web UI over Wi-Fi
+```powershell
 u-connectClientApp.exe COM13 --exec "wifi.connect MySsid MyPassword" --exec "web.start" --shell
 ```
+It prints `http://<module-ip>:<port>/?t=<token>`. Open it on your phone or laptop for a command box with live output.
 
-`web.start [port] [token]` prints `http://<module-ip>:<port>/?t=<token>` (default port 80). The token is
-required for every request; a random one is generated unless you pass it. The page has a command box and
-live output; the app must keep running (shell or `--shell`) because commands run on the PC.
-Routes: `GET /`, `GET /events` (SSE: `out`, `done`), `POST /api/exec?cmd=...`. `web.stop`, `web.status`.
-The HTTP engine is `src/u_webserver.c` from u-connectMatter; routes are in `src/ucxapp_cmds_web.c`.
+**Use it in CI and test scripts**: every `--exec` runs in order and the app exits with code 1 on the first failure.
 
-Commands: `device.info`, `wifi.scan|connect|status|disconnect`,
-`sock.open|connect|send|read|close|list`, `net.ping|dns`, `http.get`, `mqtt.*`, `bt.*` (incl. `bt.profile.*`), `wifi.profile.*`, `at`, plus Windows-only `device.connect|disconnect`.
-A command is a table entry (`name`, `usage`, `help`, `run()`); see `src/ucxapp_cmds_wifi.c`.
+## Highlights
 
-Host-OS services (COM-port discovery, HTTPS download, key input) sit behind `src/ucxapp_platform.h`,
+- **Bluetooth**: scan, connect, bond, SPS, GATT client and server, saved profiles
+- **Wi-Fi** (NORA-W36): station and AP modes, scanning, auto-reconnect, saved profiles
+- **Network services**: sockets, HTTP/HTTPS, MQTT, TLS and certificates, ping, DNS
+- **Firmware updates**: XMODEM with SHA256 verification
+- **Scriptable**: `--exec` for one-shots, `--shell` for interactive use
+- **Portable C11 command layer**: add a command by adding one table entry
+- **On a microcontroller too**: run the same shell on an STM32 Nucleo board with the module wired to a UART, with a transparent `bridge` mode for AT debugging
 
-with the Windows backend in `src/ucxapp_platform_win.c`.
-Full reference: [app/UCXAPP_COMMANDS.md](app/UCXAPP_COMMANDS.md).
+## Commands at a glance
 
-## File Structure
+Type `help` in the shell, or `help wifi` to filter by prefix. Full list with arguments: [command reference](COMMANDS.md).
 
-```
-u-connectClientApp/
-├── u-connectClientAppWin.cmd      # Windows launch script
-├── u-connectClientAppLinux.sh     # Linux launch script
-├── u-connectClientAppSTM32.cmd    # STM32 build/flash/log script
-├── README.md
-├── app/
-│   ├── src/                        # Command layer and entry point (ucxapp_main.c)
-│   ├── stm32/                      # STM32 firmware (NUCLEO-H753ZI) entry, platform and CMake
-│   ├── CMakeLists.txt
-│   ├── bin/                        # Build outputs (gitignored)
-│   ├── release/                    # Signed releases
-│   └── third-party/                # FTDI DLL, Bluetooth SIG, etc.
-├── u-connectClient/                # Git submodule: AT client library
-│   ├── src/                        # UCX client library
-│   ├── inc/                        # Headers
-│   ├── ucx_api/                    # UCX API definitions
-│   └── ports/                      # Platform ports
-└── build/                          # CMake artifacts (gitignored)
-```
+| Area | Commands |
+|---|---|
+| Device | `device.info`, `device.reboot`, `at <raw AT command>` |
+| Wi-Fi | `wifi.scan`, `wifi.connect <ssid> [pw]`, `wifi.status`, `wifi.disconnect`, `wifi.ip`, `wifi.rssi`, `wifi.profile.*`, `wifi.ap.*` |
+| Network | `net.ping <host>`, `net.dns <host>`, `http.get <url>`, `http.download <url> <file>` |
+| Sockets | `sock.open`, `sock.connect`, `sock.send`, `sock.read`, `sock.listen`, `sock.accept`, `sock.sendto`, `sock.recvfrom`, `sock.close` |
+| MQTT | `mqtt.connect`, `mqtt.subscribe`, `mqtt.publish`, `mqtt.read`, `mqtt.disconnect` |
+| Bluetooth | `bt.scan`, `bt.connect`, `bt.pairing`, `bt.bonds`, `bt.profile.*`, `bt.list` |
+| GATT | `gatt.services`, `gatt.read`, `gatt.write`, `gatt.subscribe`, `gatt.client.example.*`, `gatt.server.example.*` (heart rate, battery, NUS, SPS, Wi-Fi provisioning and more) |
+| HID | `hid.setup`, `hid.text`, `hid.key` (act as a Bluetooth keyboard) |
+| QR codes | `qr.text`, `qr.wifi`, `qr.geo` |
+| Certificates | `cert.list`, `cert.upload`, `cert.info`, `cert.remove` |
+| Firmware | `fw.download <url> <file> [sha256]`, `fw.flash <file> [baud]` |
+| Web UI | `web.start`, `web.stop`, `web.status` |
 
-## Manual Building
+## Quick start from source
 
 ```powershell
-# Using CMake
-cmake -S app -B build/windows
-cmake --build build/windows --config Release
-
-# Using Visual Studio
-# Open build/u-connectClientApp.sln
+git clone https://github.com/u-blox/u-connectClientApp.git
+cd u-connectClientApp
+git submodule update --init u-connectClient
+.\u-connectClientAppWin.cmd          # builds on first run, then starts the shell
 ```
 
-## Production Deployment
+Linux: `./u-connectClientAppLinux.sh`. STM32: `.\u-connectClientAppSTM32.cmd --build --flash --log`.
 
-```powershell
-# Build release version
-.\u-connectClientAppWin.cmd
+## Documentation
 
-# Code sign (creates u-connectClientApp-signed.exe in release/)
-.\u-connectClientAppWin.cmd sign YOUR_CERT_THUMBPRINT
-```
-
-**Distribution**: `app/release/u-connectClientApp-signed.exe` is self-contained (~2.5 MB) with FTDI DLL embedded.
+- [Command reference](COMMANDS.md): every command with usage
+- [Building, flashing and releasing](BUILDING.md): prerequisites, launchers, STM32 boards, signing, file structure
+- [u-connectClient](https://github.com/u-blox/u-connectClient): the small-footprint AT client library underneath
 
 ---
-
-**Version**: 3.2.0 (aligned with UCX API)  
-**Platform**: Windows 10/11 (64-bit)  
-
-
 
 # Disclaimer
 Copyright &#x00a9; u-blox

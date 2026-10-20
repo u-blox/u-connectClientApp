@@ -13,7 +13,7 @@ description: Build and run u-connectClientApp on Linux to test and configure a u
 ## Use
 - Serial access: add your user to the `dialout` group (`sudo usermod -aG dialout $USER`, then log in again).
 - Connect to a module: `device.connect /dev/ttyUSB0` in the shell, or pass the port on the command line.
-- Script commands non-interactively with `--exec "<command>"`; type `help` for the full list (see `app/UCXAPP_COMMANDS.md`).
+- Script commands non-interactively with `--exec "<command>"`; type `help` for the full list (see `COMMANDS.md`).
 
 ## Module documentation
 Look up AT commands and behaviour with the `u-blox-docs` MCP server (`.vscode/mcp.json`).

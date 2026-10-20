@@ -29,7 +29,7 @@ NORA-W36 on the Arduino header CN10, 115200 baud:
 ## Use
 - The shell connects to the module at startup; `device.connect [uart] [baud]` reconnects.
 - `bridge [baud]` makes the board a transparent console-to-module bridge (AT debugging, XMODEM updates). Press Ctrl-] with 1 s of silence before and after to return to the shell.
-- Command list: `app/UCXAPP_COMMANDS.md`.
+- Command list: `COMMANDS.md`.
 
 ## Module documentation
 Look up AT commands and behaviour with the `u-blox-docs` MCP server (`.vscode/mcp.json`).

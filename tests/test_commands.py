@@ -46,9 +46,9 @@ def test_command_scan_finds_the_new_packs():
 
 
 def test_every_command_is_documented():
-    doc = (APP / "UCXAPP_COMMANDS.md").read_text(encoding="utf-8")
+    doc = (ROOT / "COMMANDS.md").read_text(encoding="utf-8")
     missing = sorted(n for n in registered_commands() if f"`{_doc_name(n)}" not in doc)
-    assert not missing, f"undocumented in UCXAPP_COMMANDS.md: {missing}"
+    assert not missing, f"undocumented in COMMANDS.md: {missing}"
 
 
 def test_every_source_file_is_built_by_both_targets():
