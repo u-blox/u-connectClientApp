@@ -9,12 +9,12 @@ bin/*.dll
 !bin/.gitkeep
 
 # u-connectClientApp build outputs
-u-connectClientApp/bin/u-connectClientApp.exe
-u-connectClientApp/bin/u-connectClientApp-debug.exe
+app/bin/u-connectClientApp.exe
+app/bin/u-connectClientApp-debug.exe
 
 # Release binaries (tracked in git for distribution)
-!u-connectClientApp/release/
-!u-connectClientApp/release/*.exe
+!app/release/
+!app/release/*.exe
 
 # Python
 __pycache__/
@@ -59,3 +59,5 @@ tests/logs/
 .venv-test/
 build-command-output.log
 j_wps_cli_clean.txt
+
+dist/

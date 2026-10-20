@@ -6,7 +6,7 @@ REM Order of execution: clean, build, erase, flash, log.
 
 set "ROOT=%~dp0"
 set "SELF=%~f0"
-set "SRC=%ROOT%u-connectClientApp\stm32"
+set "SRC=%ROOT%app\stm32"
 set "VARIANT=h753"
 set "DO_CLEAN=" & set "DO_BUILD=" & set "DO_ERASE=" & set "DO_FLASH=" & set "DO_LOG=" & set "DO_RECOVER="
 set "LOG_PORT="

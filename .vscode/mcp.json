@@ -1,5 +1,4 @@
 {
-  "$schema": "https://aka.ms/vscode-mcp-schema",
   "servers": {
     "u-blox-docs": {
       "type": "http",

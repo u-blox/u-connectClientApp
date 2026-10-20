@@ -93,7 +93,7 @@ transparent console-to-module bridge (e.g. for AT debugging or XMODEM firmware u
 
 ## Command Layer (scriptable, portable)
 
-The app is a command layer (`u-connectClientApp/src/ucxapp_*.c`)
+The app is a command layer (`app/src/ucxapp_*.c`)
 with no Windows dependencies, shared by the Windows and Linux builds.
 
 ```powershell
@@ -125,7 +125,7 @@ A command is a table entry (`name`, `usage`, `help`, `run()`); see `src/ucxapp_c
 Host-OS services (COM-port discovery, HTTPS download, key input) sit behind `src/ucxapp_platform.h`,
 
 with the Windows backend in `src/ucxapp_platform_win.c`.
-Full reference: [u-connectClientApp/UCXAPP_COMMANDS.md](u-connectClientApp/UCXAPP_COMMANDS.md).
+Full reference: [app/UCXAPP_COMMANDS.md](app/UCXAPP_COMMANDS.md).
 
 ## File Structure
 
@@ -135,14 +135,14 @@ u-connectClientApp/
 ├── u-connectClientAppLinux.sh     # Linux launch script
 ├── u-connectClientAppSTM32.cmd    # STM32 build/flash/log script
 ├── README.md
-├── u-connectClientApp/
-│   ├── src/                           # Command layer and entry point (ucxapp_main.c)
+├── app/
+│   ├── src/                        # Command layer and entry point (ucxapp_main.c)
 │   ├── stm32/                      # STM32 firmware (NUCLEO-H753ZI) entry, platform and CMake
 │   ├── CMakeLists.txt
 │   ├── bin/                        # Build outputs (gitignored)
 │   ├── release/                    # Signed releases
 │   └── third-party/                # FTDI DLL, Bluetooth SIG, etc.
-├── u-connectClient/                      # Git submodule
+├── u-connectClient/                # Git submodule: AT client library
 │   ├── src/                        # UCX client library
 │   ├── inc/                        # Headers
 │   ├── ucx_api/                    # UCX API definitions
@@ -154,8 +154,8 @@ u-connectClientApp/
 
 ```powershell
 # Using CMake
-cmake -S u-connectClientApp -B build
-cmake --build build --config Release
+cmake -S app -B build/windows
+cmake --build build/windows --config Release
 
 # Using Visual Studio
 # Open build/u-connectClientApp.sln
@@ -171,7 +171,7 @@ cmake --build build --config Release
 .\u-connectClientAppWin.cmd sign YOUR_CERT_THUMBPRINT
 ```
 
-**Distribution**: `u-connectClientApp/release/u-connectClientApp-signed.exe` is self-contained (~2.5 MB) with FTDI DLL embedded.
+**Distribution**: `app/release/u-connectClientApp-signed.exe` is self-contained (~2.5 MB) with FTDI DLL embedded.
 
 ---
 

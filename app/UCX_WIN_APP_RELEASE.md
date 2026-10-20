@@ -12,7 +12,7 @@ Releases are **GitHub-only** with signed executables. Users clone the repository
 - Major.Minor.Patch follows UCX API version (currently 3.2.0)
 - Build number updates daily based on current date
 
-Version is generated at build time by CMake from `u-connectClientApp/version.h.in`.
+Version is generated at build time by CMake from `app/version.h.in`.
 
 ## Creating a Release
 
@@ -31,7 +31,7 @@ Version is generated at build time by CMake from `u-connectClientApp/version.h.i
 .\u-connectClientAppWin.cmd rebuild
 
 # Build Release configuration and sign with certificate
-.\u-connectClientAppWin.cmd sign EF3FD135F1CD...
+.\u-connectClientAppWin.cmd sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
 
 # This will:
 # - Generate version.h with date-based build number (3.2.0.YYMMDD)
@@ -39,7 +39,7 @@ Version is generated at build time by CMake from `u-connectClientApp/version.h.i
 # - Sign with u-blox AG GlobalSign EV CodeSigning certificate
 # - Timestamp with DigiCert server (valid until Dec 2027)
 # - Verify signature and certificate chain
-# - Create u-connectClientApp-signed.exe in u-connectClientApp/release/
+# - Create u-connectClientApp-signed.exe in app/release/
 ```
 
 **Verify Version Before Release:**
@@ -48,7 +48,7 @@ Version is generated at build time by CMake from `u-connectClientApp/version.h.i
 # Should show: "Build version: 3.2.0.YYMMDD (date-based)"
 
 # Or run the executable to verify
-.\examples\u-connectClientApp\release\u-connectClientApp-signed.exe
+.\app\release\u-connectClientApp-signed.exe
 # Menu header should show: "Application v3.2.0.YYMMDD"
 ```
 
@@ -63,6 +63,18 @@ git push origin v3.2.0.251204
 ```
 
 ### 4. Create GitHub Release
+Automatic: `.\scripts\release.ps1 -Publish` does steps 2-4 below (`-DryRun` only builds and signs). The tag is `vX.Y.Z.YYMMDD`, with X.Y.Z from `app/CMakeLists.txt`.
+
+Pushing the `v*` tag runs `.github/workflows/release.yml`, which builds Linux and the three STM32 images and creates a **draft** release using `.github/release-notes.md`. The Windows exe is signed locally (the EV certificate is not available to CI):
+
+```powershell
+.\u-connectClientAppWin.cmd rebuild
+.\u-connectClientAppWin.cmd sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
+gh release upload v3.2.0.251204 "app\release\u-connectClientApp-signed.exe#u-connectClientApp-windows-x64.exe"
+```
+Then review the draft on GitHub and publish it. The manual steps below are the fallback.
+
+#### Manual alternative
 1. Go to: https://github.com/u-blox/u-connectClientApp/releases
 2. Click "Draft a new release"
 3. **Tag:** v3.2.0.251204 (must match Git tag)
@@ -87,10 +99,10 @@ git push origin v3.2.0.251204
    Download u-connectClientApp-signed.exe and run - no installation required.
    FTDI drivers are embedded in the executable.
    ```
-6. **Attach file:** `u-connectClientApp-signed.exe` (from u-connectClientApp/release/)
+6. **Attach file:** `u-connectClientApp-signed.exe` (from app/release/)
 7. **Calculate SHA256** and add to release notes:
    ```powershell
-   Get-FileHash u-connectClientApp\release\u-connectClientApp-signed.exe -Algorithm SHA256
+   Get-FileHash app\release\u-connectClientApp-signed.exe -Algorithm SHA256
    ```
 8. Click "Publish release"
 
@@ -118,7 +130,7 @@ cd u-connectClientApp
 u-connectClientApp/
 ├── u-connectClientAppWin.cmd              (Launch script)
 ├── u-connectClientApp.ini                     (Settings, auto-created, gitignored)
-├── u-connectClientApp/
+├── app/
 │   ├── src/                               (Command layer and entry point)
 │   ├── u-connectClientApp.rc              (Resource file - icon, DLL, version)
 │   ├── version.h.in                    (Version template)

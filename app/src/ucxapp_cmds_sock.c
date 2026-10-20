@@ -179,7 +179,7 @@ static int cmdSockBind(ucxapp_t *app, int argc, char *argv[])
 static int cmdSockListen(ucxapp_t *app, int argc, char *argv[])
 {
     int32_t handle;
-    int32_t port;
+    int32_t port = 0;
     int32_t result;
 
     if (argc < 2 || argc > 3 || !parseHandle(argv[1], &handle) ||

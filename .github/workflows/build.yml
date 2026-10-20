@@ -37,14 +37,14 @@ jobs:
       - name: Build instrumented ucxapp
         run: |
           python -m pip install pytest gcovr
-          cmake -S u-connectClientApp -B build-cov -DUCXAPP_COVERAGE=ON
+          cmake -S app -B build-cov -DUCXAPP_COVERAGE=ON
           cmake --build build-cov
       - name: Run CLI tests and report C coverage
         env:
-          UCX_APP_EXE: ${{ github.workspace }}/u-connectClientApp/bin/ucxapp
+          UCX_APP_EXE: ${{ github.workspace }}/app/bin/ucxapp
         run: |
           python -m pytest tests/test_cli.py -q
-          gcovr -r . --filter 'u-connectClientApp/src/' --object-directory build-cov --txt --xml coverage-c.xml
+          gcovr -r . --filter 'app/src/' --object-directory build-cov --txt --xml coverage-c.xml
       - uses: actions/upload-artifact@v4
         with:
           name: c-coverage
@@ -57,7 +57,7 @@ jobs:
       - name: Init u-connectClient (not its nested submodules)
         run: git submodule update --init u-connectClient
       - name: Configure
-        run: cmake -S u-connectClientApp -B build/windows -A x64
+        run: cmake -S app -B build/windows -A x64
       - name: Build
         run: cmake --build build/windows --config Release
       - uses: actions/setup-python@v5
@@ -70,4 +70,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: u-connectClientApp
-          path: u-connectClientApp/bin/u-connectClientApp.exe
+          path: app/bin/u-connectClientApp.exe

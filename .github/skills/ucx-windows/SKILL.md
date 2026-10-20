@@ -14,7 +14,7 @@ description: Build and run u-connectClientApp on Windows to test and configure a
 - Connect an EVK (FTDI USB). The app auto-detects the COM port, or pass it: `u-connectClientApp.exe COM13`.
 - Script: `u-connectClientApp.exe COM13 --exec "device.info" --exec "wifi.scan"` (exit code 1 on first failure).
 - Firmware update: `--exec "fw.flash <file>"`.
-- Type `help` in the shell for all commands; see `u-connectClientApp/UCXAPP_COMMANDS.md`.
+- Type `help` in the shell for all commands; see `app/UCXAPP_COMMANDS.md`.
 
 ## Module documentation
 Look up AT commands and behaviour with the `u-blox-docs` MCP server (`.vscode/mcp.json`).

@@ -13,10 +13,10 @@ Always use the `u-blox-docs` MCP server (`.vscode/mcp.json`) to look up u-connec
 | Target | Launcher | Notes |
 |---|---|---|
 | Windows | `.\u-connectClientAppWin.cmd` | Visual Studio 2022 + CMake |
-| Linux | `./u-connectClientAppLinux.sh` | CMake + gcc, binary `u-connectClientApp/bin/ucxapp` |
+| Linux | `./u-connectClientAppLinux.sh` | CMake + gcc, binary `app/bin/ucxapp` |
 | STM32 | `.\u-connectClientAppSTM32.cmd [--board h753\|f767\|f439] --build --flash --log` | H753 is the default; needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH`, `STM32CUBEF4_PATH`) |
 
-The command layer in `u-connectClientApp/src/ucxapp_*.c` is portable; platform code lives in `ucxapp_platform_*.c` and `u-connectClientApp/stm32/`.
+The command layer in `app/src/ucxapp_*.c` is portable; platform code lives in `ucxapp_platform_*.c` and `app/stm32/`.
 
 Customer-facing skills for each target are in `.github/skills/`. Releases are built by `.github/workflows/release.yml` on `v*` tags (Windows, Linux and the three STM32 images).
 
@@ -45,7 +45,7 @@ This auto-builds if needed and launches the application.
 
 ### Manual CMake Build
 ```powershell
-cmake -S u-connectClientApp -B build/windows -A x64
+cmake -S app -B build/windows -A x64
 cmake --build build/windows --config Release
 ```
 
@@ -55,7 +55,7 @@ cmake --build build/windows --config Release
 
 ## Project Structure
 
-- `u-connectClientApp/` - Main application source
+- `app/` - Main application source
   - `src/` - Command layer; `src/ucxapp_main.c` is the entry point
   - `CMakeLists.txt` - Build configuration
   - `bin/` - Build outputs (gitignored)
@@ -91,7 +91,7 @@ python -m pytest
 
 CI (`.github/workflows/build.yml`) runs pytest and a Windows Release build on every push.
 
-New code goes into `u-connectClientApp/src/` as separate command modules.
+New code goes into `app/src/` as separate command modules.
 
 ```powershell
 # Run application with self-test

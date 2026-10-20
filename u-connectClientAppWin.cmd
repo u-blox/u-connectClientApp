@@ -148,9 +148,9 @@ if /i "%1"=="debug" (
     echo.
 )
 
-REM Set build directory to u-connectClientApp/bin (where CMake outputs executables)
-set BUILD_DIR=u-connectClientApp\bin
-set FTDI_DLL=u-connectClientApp\third-party\ftdi\ftd2xx64.dll
+REM Set build directory to app/bin (where CMake outputs executables)
+set BUILD_DIR=app\bin
+set FTDI_DLL=app\third-party\ftdi\ftd2xx64.dll
 set SETTINGS_FILE=u-connectClientApp.ini
 
 REM Create settings file in project root if it doesn't exist
@@ -173,8 +173,8 @@ if /i "!CONFIG!"=="Debug" (
 REM Check if executable exists and if source files are newer
 set NEED_BUILD=0
 set EXE_PATH=!BUILD_DIR!\!EXE_NAME!
-set SOURCE_FILE=u-connectClientApp\src\ucxapp_main.c
-set SIGNED_EXE=u-connectClientApp\release\u-connectClientApp-signed.exe
+set SOURCE_FILE=app\src\ucxapp_main.c
+set SIGNED_EXE=app\release\u-connectClientApp-signed.exe
 set USE_SIGNED=0
 
 if not exist "!EXE_PATH!" (
@@ -213,7 +213,7 @@ if not exist "!EXE_PATH!" (
     
     REM Simple comparison: if source is newer, rebuild
     if "!SOURCE_FILE!" NEQ "" (
-        forfiles /P "u-connectClientApp\src" /M "ucxapp_main.c" /D +0 /C "cmd /c if @fdate GTR !EXE_TIME! set NEED_BUILD=1" 2>nul
+        forfiles /P "app\src" /M "ucxapp_main.c" /D +0 /C "cmd /c if @fdate GTR !EXE_TIME! set NEED_BUILD=1" 2>nul
         if exist "!SOURCE_FILE!" (
             powershell -Command "if ((Get-Item '!SOURCE_FILE!').LastWriteTime -gt (Get-Item '!EXE_PATH!').LastWriteTime) { exit 1 }" >nul 2>&1
             if errorlevel 1 (
@@ -233,7 +233,7 @@ if !NEED_BUILD! EQU 1 (
     REM Configure if needed
     if not exist "build\windows\CMakeCache.txt" (
         echo Configuring CMake...
-        cmake -S u-connectClientApp -B build\windows
+        cmake -S app -B build\windows
         if errorlevel 1 (
             echo ERROR: CMake configuration failed!
             exit /b 1
@@ -275,7 +275,7 @@ if /i "%CONFIG%"=="Debug" (
     echo.
     echo To debug in VS Code:
     echo   1. Open workspace in VS Code
-    echo   2. Set breakpoints in u-connectClientApp\src\ucxapp_main.c
+    echo   2. Set breakpoints in app\src\ucxapp_main.c
     echo   3. Press F5 to start debugging (or Run and Debug ^> C/C++: u-connectClientApp^)
     echo.
     echo Or run directly: !EXE_PATH!
@@ -290,7 +290,7 @@ echo.
 REM If USE_SIGNED flag is set from earlier check, use signed version
 if !USE_SIGNED! EQU 1 (
     set LAUNCH_EXE=!SIGNED_EXE!
-    set LAUNCH_DIR=u-connectClientApp\release
+    set LAUNCH_DIR=app\release
     echo Launching u-connectClientApp-signed.exe ^(for fast getting started^)...
     echo [INFO] This is the pre-built signed version.
     echo [INFO] If you modify the source code, it will be rebuilt automatically on next launch.
@@ -303,7 +303,7 @@ if exist "!SIGNED_EXE!" (
     powershell -Command "if ((Get-Item '!SIGNED_EXE!').LastWriteTime -ge (Get-Item '!EXE_PATH!').LastWriteTime) { exit 0 } else { exit 1 }" >nul 2>&1
     if not errorlevel 1 (
         set LAUNCH_EXE=!SIGNED_EXE!
-        set LAUNCH_DIR=u-connectClientApp\release
+        set LAUNCH_DIR=app\release
         echo Launching u-connectClientApp-signed.exe ^(Signed Release - newer or equal^)...
     ) else (
         set LAUNCH_EXE=!EXE_PATH!
@@ -346,7 +346,7 @@ echo Launching Signed Release
 echo ===================================
 echo.
 
-set SIGNED_EXE=u-connectClientApp\release\u-connectClientApp-signed.exe
+set SIGNED_EXE=app\release\u-connectClientApp-signed.exe
 
 if not exist "!SIGNED_EXE!" (
     echo [ERROR] Signed executable not found: !SIGNED_EXE!
@@ -360,7 +360,7 @@ if not exist "!SIGNED_EXE!" (
 echo Launching u-connectClientApp-signed.exe...
 echo.
 
-cd u-connectClientApp\release
+cd app\release
 
 REM Pass arguments (skip first argument which is --signed)
 u-connectClientApp-signed.exe %2 %3 %4 %5 %6 %7 %8 %9
@@ -384,12 +384,12 @@ echo ===================================
 echo.
 
 REM Use unsigned (development) version for HID mode
-set UNSIGNED_EXE=u-connectClientApp\bin\u-connectClientApp.exe
+set UNSIGNED_EXE=app\bin\u-connectClientApp.exe
 
 if exist "!UNSIGNED_EXE!" (
     echo Launching development version with HID mode...
     echo.
-    cd u-connectClientApp\bin
+    cd app\bin
     u-connectClientApp.exe %2 %3 %4 %5 %6 %7 %8 %9 --exec "hid.setup" --shell
 ) else (
     echo [ERROR] No executable found!
@@ -510,7 +510,7 @@ cmake --build build\windows --config %REBUILD_CONFIG% --target clean 2>nul
 REM Force CMake reconfigure to pick up latest Git commit count
 echo Step 2: Reconfiguring CMake...
 del /Q build\windows\CMakeCache.txt 2>nul
-cmake -S u-connectClientApp -B build\windows
+cmake -S app -B build\windows
 if errorlevel 1 (
     echo ERROR: CMake configuration failed!
     pause
@@ -547,7 +547,7 @@ echo.
 REM Configure if needed
 if not exist "build\windows\u-connectClientApp.vcxproj" (
     echo Configuring CMake...
-    cmake -S u-connectClientApp -B build\windows
+    cmake -S app -B build\windows
     if errorlevel 1 (
         echo ERROR: CMake configuration failed!
         exit /b 1
@@ -588,8 +588,8 @@ echo All Configurations Built Successfully!
 echo ===================================
 echo.
 echo Output files:
-echo   u-connectClientApp\bin\u-connectClientApp-debug.exe
-echo   u-connectClientApp\bin\u-connectClientApp.exe
+echo   app\bin\u-connectClientApp-debug.exe
+echo   app\bin\u-connectClientApp.exe
 echo.
 exit /b 0
 
@@ -605,8 +605,8 @@ echo.
 REM Always sign Release configuration
 set SIGN_CONFIG=Release
 
-set SIGN_EXE=u-connectClientApp\bin\u-connectClientApp.exe
-set SIGN_EXE_SIGNED=u-connectClientApp\release\u-connectClientApp-signed.exe
+set SIGN_EXE=app\bin\u-connectClientApp.exe
+set SIGN_EXE_SIGNED=app\release\u-connectClientApp-signed.exe
 
 REM Accept thumbprint from either %1 (called as subroutine) or %2 (called from command line)
 if not "%~1"=="" (
@@ -709,8 +709,8 @@ echo ===================================
 echo.
 
 REM Create release folder if it doesn't exist
-if not exist "u-connectClientApp\release" (
-    mkdir "u-connectClientApp\release"
+if not exist "app\release" (
+    mkdir "app\release"
 )
 
 REM Copy the signed executable to release folder
@@ -774,14 +774,14 @@ if defined SIGN_THUMBPRINT (
     call :sign !SIGN_THUMBPRINT!
     if errorlevel 1 (
         echo [WARNING] Signing failed, continuing with unsigned binary
-        set RELEASE_FILE=u-connectClientApp\bin\u-connectClientApp.exe
+        set RELEASE_FILE=app\bin\u-connectClientApp.exe
     ) else (
-        set RELEASE_FILE=u-connectClientApp\release\u-connectClientApp-signed.exe
+        set RELEASE_FILE=app\release\u-connectClientApp-signed.exe
     )
 ) else (
     echo [Step 2/5] Skipping signing (no thumbprint provided)
     echo.
-    set RELEASE_FILE=u-connectClientApp\bin\u-connectClientApp.exe
+    set RELEASE_FILE=app\bin\u-connectClientApp.exe
 )
 
 REM Step 3: Commit the built/signed executable
@@ -1161,10 +1161,10 @@ set "SELFTEST_ERRORS=0"
 set "SELFTEST_WARNINGS=0"
 
 REM Check current directory is project root
-if not exist "u-connectClientApp\src\ucxapp_main.c" (
+if not exist "app\src\ucxapp_main.c" (
     echo [ERROR] Not in u-connectClientApp project root!
     echo Current directory: %CD%
-    echo Expected to find: u-connectClientApp\src\ucxapp_main.c
+    echo Expected to find: app\src\ucxapp_main.c
     exit /b 1
 )
 echo [OK] Working directory is u-connectClientApp project root
@@ -1172,7 +1172,7 @@ echo [OK] Working directory is u-connectClientApp project root
 REM Check critical directory structure
 echo.
 echo Checking directory structure...
-set "REQUIRED_DIRS=u-connectClient u-connectClient\src u-connectClient\inc u-connectClient\ucx_api u-connectClientApp build"
+set "REQUIRED_DIRS=u-connectClient u-connectClient\src u-connectClient\inc u-connectClient\ucx_api app build"
 for %%d in (%REQUIRED_DIRS%) do (
     if exist "%%d\" (
         echo [OK] %%d\
@@ -1185,7 +1185,7 @@ for %%d in (%REQUIRED_DIRS%) do (
 REM Check critical source files
 echo.
 echo Checking critical source files...
-set "REQUIRED_FILES=u-connectClient\src\u_cx_at_client.c u-connectClient\inc\u_cx_at_client.h u-connectClientApp\src\ucxapp_main.c u-connectClientApp\CMakeLists.txt README.md"
+set "REQUIRED_FILES=u-connectClient\src\u_cx_at_client.c u-connectClient\inc\u_cx_at_client.h app\src\ucxapp_main.c app\CMakeLists.txt README.md"
 for %%f in (%REQUIRED_FILES%) do (
     if exist "%%f" (
         echo [OK] %%f
@@ -1234,9 +1234,9 @@ if exist "build\windows\u-connectClientApp.sln" (
 REM Check executables
 echo.
 echo Checking executables...
-set "RELEASE_EXE=u-connectClientApp\bin\u-connectClientApp.exe"
-set "DEBUG_EXE=u-connectClientApp\bin\u-connectClientApp-debug.exe"
-set "SIGNED_EXE=u-connectClientApp\release\u-connectClientApp-signed.exe"
+set "RELEASE_EXE=app\bin\u-connectClientApp.exe"
+set "DEBUG_EXE=app\bin\u-connectClientApp-debug.exe"
+set "SIGNED_EXE=app\release\u-connectClientApp-signed.exe"
 
 if exist "!RELEASE_EXE!" (
     echo [OK] Release executable exists
@@ -1419,7 +1419,7 @@ REM Compare directory structure
 echo Comparing directory structure...
 echo.
 
-set "COMPARE_DIRS=u-connectClient u-connectClient\src u-connectClient\inc u-connectClient\ucx_api u-connectClientApp build"
+set "COMPARE_DIRS=u-connectClient u-connectClient\src u-connectClient\inc u-connectClient\ucx_api app build"
 for %%d in (!COMPARE_DIRS!) do (
     if exist "%%d\" (
         if exist "!TEMP_DIR!\%%d\" (
@@ -1444,7 +1444,7 @@ if exist "!TEMP_DIR!\u-connectClientApp\" (
     REM Count .c files
     set "LOCAL_C=0"
     set "MASTER_C=0"
-    for %%f in (u-connectClientApp\*.c) do set /a LOCAL_C+=1
+    for %%f in (app\*.c) do set /a LOCAL_C+=1
     for %%f in (!TEMP_DIR!\u-connectClientApp\*.c) do set /a MASTER_C+=1
     echo   Local .c files:  !LOCAL_C!
     echo   Master .c files: !MASTER_C!
@@ -1452,7 +1452,7 @@ if exist "!TEMP_DIR!\u-connectClientApp\" (
     REM Count .h files
     set "LOCAL_H=0"
     set "MASTER_H=0"
-    for %%f in (u-connectClientApp\*.h) do set /a LOCAL_H+=1
+    for %%f in (app\*.h) do set /a LOCAL_H+=1
     for %%f in (!TEMP_DIR!\u-connectClientApp\*.h) do set /a MASTER_H+=1
     echo   Local .h files:  !LOCAL_H!
     echo   Master .h files: !MASTER_H!

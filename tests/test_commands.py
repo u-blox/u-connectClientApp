@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-APP = ROOT / "u-connectClientApp"
+APP = ROOT / "app"
 SRC = APP / "src"
 ENTRY = re.compile(
     r'^\s*\{ "([a-z][a-z0-9.]*)",\s*"[^"]*",\s*"(?:[^"\\]|\\.)*",\s*(?:UCXAPP_CMD_NEEDS_DEVICE|0),\s*\w+\s*\},',

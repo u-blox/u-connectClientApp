@@ -1,7 +1,7 @@
 # Command Layer
 
 A small, portable layer for driving a u-connectXpress module with text commands instead of the
-menu. It lives in `u-connectClientApp/src/ucxapp_*` and has no Windows dependencies, so the same
+menu. It lives in `app/src/ucxapp_*` and has no Windows dependencies, so the same
 commands can run in a PC console, a Linux terminal or a UART shell on an embedded target.
 
 ## Using it

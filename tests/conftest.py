@@ -1,7 +1,7 @@
 """Shared fixtures for tests that run the real u-connectClientApp.exe.
 
 Environment:
-  UCX_APP_EXE   path to the exe (default: u-connectClientApp/bin/u-connectClientApp.exe)
+  UCX_APP_EXE   path to the exe (default: app/bin/u-connectClientApp.exe)
   UCX_PORT_A    COM port of the first NORA-W36 (default: first FTDI port found)
   UCX_PORT_B    COM port of the second NORA-W36 (default: second FTDI port found)
 """
@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_EXE = ROOT / "u-connectClientApp" / "bin" / ("u-connectClientApp.exe" if sys.platform == "win32" else "ucxapp")
+DEFAULT_EXE = ROOT / "app" / "bin" / ("u-connectClientApp.exe" if sys.platform == "win32" else "ucxapp")
 
 
 @functools.lru_cache(maxsize=1)
