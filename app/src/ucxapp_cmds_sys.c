@@ -267,6 +267,54 @@ static int cmdFileHash(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+#define VIEW_DEFAULT_LINES 40
+#define VIEW_LINE_MAX      120
+
+static int cmdFileView(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    size_t len;
+    long maxLines = VIEW_DEFAULT_LINES;
+
+    if (argc < 2 || argc > 3) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 3) {
+        char *end = NULL;
+        maxLines = strtol(argv[2], &end, 10);
+        if (end == argv[2] || *end != '\0' || maxLines <= 0) {
+            return UCXAPP_ERR_USAGE;
+        }
+    }
+    uint8_t *data = ucxapp_store_load(argv[1], &len);
+    if (data == NULL) {
+        ucxapp_print("ERROR: cannot read %s\n", argv[1]);
+        return UCXAPP_ERR_FAILED;
+    }
+
+    long lineNo = 0;
+    size_t pos = 0;
+    while (pos < len && lineNo < maxLines) {
+        char line[VIEW_LINE_MAX + 1];
+        size_t n = 0;
+        while (pos < len && data[pos] != '\n') {
+            if (n < VIEW_LINE_MAX) {
+                uint8_t c = data[pos];
+                line[n++] = (c >= 0x20 && c < 0x7f) || c == '\t' || c == '\r' ? (char)c : '.';
+            }
+            pos++;
+        }
+        line[n] = '\0';
+        pos++;
+        ucxapp_print("%4ld  %s\n", ++lineNo, line);
+    }
+    if (pos < len) {
+        ucxapp_print("... (%ld lines shown, file has more; pass a line count to see more)\n", lineNo);
+    }
+    free(data);
+    return UCXAPP_OK;
+}
+
 #define LISTED_MAX      64
 #define LISTED_NAME_LEN 128
 
@@ -429,6 +477,7 @@ static const ucxapp_cmd_t gSysCmds[] = {
     { "log.stop", "", "Finish and write the log file started by log.save", 0, cmdLogStop },
     { "log.clear", "", "Clear the log", 0, cmdLogClear },
     { "file.hash", "<md5|sha256> <file>", "Print the hash of a file", 0, cmdFileHash },
+    { "file.view", "<file> [lines]", "Show the first lines of a text file (read only, default 40 lines)", 0, cmdFileView },
     { "file.list", "", "List the files in the working folder with numbers and sizes", 0, cmdFileList },
     { "file.remove", "<file|number>", "Delete a file, by name or by its number from file.list", 0, cmdFileRemove },
     { "stats.show", "[tcp|udp|sps|gatt|http|mqtt|web] [rx|tx]", "Payload bytes sent and received per channel; with rx or tx, print just that number", 0, cmdStatsShow },

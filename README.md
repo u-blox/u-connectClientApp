@@ -14,6 +14,7 @@ Download ready-made builds from the [Releases page](https://github.com/u-blox/u-
 
 ```powershell
 ucxapp COM13 --exec "device.info"
+ucxapp device.info
 ```
 
 Leave out the port and the app finds your EVK by itself. Type `help` in the shell to list every command.
@@ -27,22 +28,22 @@ ucxapp COM13 --exec "wifi.connect MySsid MyPassword" --exec "net.ping u-blox.com
 
 **Scan the air for networks**
 ```powershell
-ucxapp COM13 --exec "wifi.scan"
+ucxapp wifi.scan
 ```
 
 **Update the module firmware over XMODEM, with SHA256 verification**
 ```powershell
-ucxapp COM13 --exec "fw.flash module.bin"
+ucxapp fw.flash module.bin
 ```
 
 **Always the newest firmware**: look up the latest GitHub release for the connected module and flash it
 ```powershell
-ucxapp COM13 --exec "fw.download latest module.zip" --exec "fw.flash module.zip"
+ucxapp --exec "fw.download latest module.zip" --exec "fw.flash module.zip"
 ```
 
 **Download firmware straight from GitHub and flash it**: the module fetches the release asset over Wi-Fi (redirects followed), the app verifies the SHA256 and flashes it
 ```powershell
-ucxapp COM13 --exec "wifi.connect MySsid MyPassword" --exec "fw.download https://github.com/<owner>/<repo>/releases/download/<tag>/module.bin module.bin <sha256>" --exec "fw.flash module.bin"
+ucxapp --exec "wifi.connect MySsid MyPassword" --exec "fw.download https://github.com/<owner>/<repo>/releases/download/<tag>/module.bin module.bin <sha256>" --exec "fw.flash module.bin"
 ```
 `fw.download` deletes the file if the SHA256 does not match, so a bad download is never flashed. Without Wi-Fi, download the file in a browser and use `fw.flash` directly.
 

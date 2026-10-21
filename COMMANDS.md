@@ -12,6 +12,10 @@ ucxapp COM13 --exec "device.info" --exec "wifi.scan"
 
 # Interactive shell
 ucxapp COM13 --shell
+
+# A single command can be given directly (no spaces, no quotes), port optional
+ucxapp COM13 device.info
+ucxapp device.info
 ```
 
 - Add `--tui` for a three-pane text UI (see [Text UI](#text-ui)).
@@ -391,6 +395,7 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 | `log.stop` | | Finish and write the file started by `log.save` |
 | `log.clear` | | Clear the log (in the text UI the Log pane) |
 | `file.hash` | `<md5\|sha256> <file>` | Print the hash of a file (no device needed) |
+| `file.view` | `<file> [lines]` | Show the first lines of a text file, read only (default 40 lines; non-printable bytes shown as dots) |
 | `file.list` | | List the files in the working folder, numbered, with sizes |
 | `file.remove` | `<file\|number>` | Delete a file by name or by its number from `file.list` |
 | `stats.show` | `[tcp\|udp\|sps\|gatt\|http\|mqtt\|web] [rx\|tx]` | Payload bytes sent and received per channel; `stats.show tcp rx` prints just the number |

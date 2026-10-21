@@ -398,11 +398,6 @@ static int compareNet(const void *pa, const void *pb)
     return ((const scanNet_t *)pb)->rssi - ((const scanNet_t *)pa)->rssi;
 }
 
-static const char *congestion(int networks)
-{
-    return networks >= 5 ? "  CONGESTED" : networks >= 3 ? "  busy" : "";
-}
-
 /* Quietest channel among the candidates; 2.4 GHz only has three that do not overlap. */
 static int quietest(const int *counts, const int *candidates, int n, int *found)
 {
@@ -434,18 +429,6 @@ static void printChannelSummary(void)
             count24[ch]++;
         } else if (ch >= 36 && ch <= 165) {
             count5[ch]++;
-        }
-    }
-    ucxapp_print("Channels in use:\n");
-    for (int ch = 1; ch <= 165; ch++) {
-        int n = ch <= 14 ? count24[ch] : (ch >= 36 ? count5[ch] : 0);
-        char bar[12] = "";
-
-        for (int k = 0; k < n && k < 10; k++) {
-            bar[k] = '#';
-        }
-        if (n > 0) {
-            ucxapp_print("  %s GHz ch%-3d %-10s %d%s\n", ch <= 14 ? "2.4" : "  5", ch, bar, n, congestion(n));
         }
     }
     ch24 = quietest(count24, best24, 3, &n24);

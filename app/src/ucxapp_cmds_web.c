@@ -55,6 +55,8 @@ static const char kPage[] =
     "border:1px solid #2b3648;border-radius:6px}"
     "button{padding:.4rem .8rem;background:#233047;color:#d6dde6;border:1px solid var(--bd);border-radius:6px;cursor:pointer;transition:background .15s}"
     "button:hover{background:#2d3f5e}#run{background:var(--ac);border-color:var(--ac)}#cmd:focus,.c input:focus{outline:none;border-color:var(--ac)}"
+    "summary:focus-visible,button:focus-visible,#out:focus-visible,#ev:focus-visible{outline:2px solid var(--ac);outline-offset:1px}"
+    "#keys{padding:.3rem .6rem;font:12px Consolas,monospace;color:#8fa3bf;background:#0a0d12;border-top:1px solid #2b3648}"
     "#side{flex:1;overflow:auto;background:#0a0d12;border:1px solid #2b3648;border-radius:6px;padding:.4rem}"
     "summary{cursor:pointer;padding:.25rem;font-weight:600;text-transform:uppercase;font-size:.8rem;color:#8fa3bf}"
     ".c{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;padding:.3rem 0;border-bottom:1px solid #1d2635}"
@@ -73,7 +75,7 @@ static const char kPage[] =
     "<div class=\"pane\"><h4>Log</h4><div id=\"out\"></div></div>"
     "<div class=\"pane\"><h4>Events</h4><div id=\"ev\"></div></div></main>"
     "<footer><input id=\"cmd\" placeholder=\"command, e.g. wifi.scan (up/down for history)\" autofocus>"
-    "<button id=\"run\">Run</button></footer><script>"
+    "<button id=\"run\">Run</button></footer><div id=\"keys\"></div><script>"
     "const $=i=>document.getElementById(i),out=$('out'),ev=$('ev'),st=$('st'),cmd=$('cmd'),"
     "T=new URLSearchParams(location.search).get('t')||'',H=[];let hi=0;"
     "const stick=el=>el.scrollTop+el.clientHeight>=el.scrollHeight-20;"
@@ -119,6 +121,21 @@ static const char kPage[] =
     "s.textContent=g;d.appendChild(s);d.ontoggle=()=>{if(d.open&&!l){l=1;"
     "fetch('/api/commands?t='+T+'&g='+g).then(r=>r.json()).then(cs=>cs.forEach(c=>d.appendChild(mk(c))))}};"
     "$('side').appendChild(d)})});"
+    "const kh=$('keys');kh.textContent='/ command   Up/Down select   Enter open or run   Left/Right fold   PgUp/PgDn log   End bottom   Ctrl-L clear   Esc back';"
+    "function nav(){return Array.from(document.querySelectorAll('#side summary, #side .c button')).filter(e=>e.offsetParent!==null)}"
+    "function moveFocus(d){const L=nav();if(!L.length)return;let i=L.indexOf(document.activeElement);"
+    "i=i<0?(d>0?0:L.length-1):Math.max(0,Math.min(L.length-1,i+d));L[i].focus();L[i].scrollIntoView({block:'nearest'})}"
+    "document.onkeydown=e=>{const t=e.target,typing=['INPUT','SELECT','TEXTAREA'].includes(t.tagName);"
+    "if(e.ctrlKey&&e.key.toLowerCase()==='l'){e.preventDefault();out.textContent='';ev.textContent='';return}"
+    "if(typing){if(e.key==='Escape'){t.blur();const f=nav()[0];if(f)f.focus();e.preventDefault()}return}"
+    "if(e.key==='/'){cmd.focus();e.preventDefault()}"
+    "else if(e.key==='ArrowDown'){moveFocus(1);e.preventDefault()}"
+    "else if(e.key==='ArrowUp'){moveFocus(-1);e.preventDefault()}"
+    "else if(e.key==='ArrowRight'&&t.tagName==='SUMMARY'){t.parentElement.open=true;e.preventDefault()}"
+    "else if(e.key==='ArrowLeft'){const d=t.closest('details');if(d){d.open=false;d.querySelector('summary').focus()}e.preventDefault()}"
+    "else if(e.key==='PageUp'){out.scrollTop-=out.clientHeight*0.8;e.preventDefault()}"
+    "else if(e.key==='PageDown'){out.scrollTop+=out.clientHeight*0.8;e.preventDefault()}"
+    "else if(e.key==='End'){out.scrollTop=out.scrollHeight;e.preventDefault()}};"
     "</script></body></html>";
 
 static ucxapp_t *gApp;
@@ -642,7 +659,6 @@ static int cmdWebStop(ucxapp_t *app, int argc, char *argv[])
     (void)argc;
     (void)argv;
     if (gServer == NULL) {
-        ucxapp_print("not running\n");
         return UCXAPP_OK;
     }
     webStop();

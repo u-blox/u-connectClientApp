@@ -279,6 +279,7 @@ static void outTitleBorder(const char *left, const char *title, int width)
 
 typedef struct {
     bool isGroup;
+    bool isQuit;
     int gi;
     int ci;
 } entry_t;
@@ -303,13 +304,19 @@ static int gHistCount, gHistPos;
 
 static int entryCount(void)
 {
-    return gGroupCount + (gExpanded >= 0 ? gGrpCmdCount : 0);
+    return gGroupCount + (gExpanded >= 0 ? gGrpCmdCount : 0) + 1;
 }
 
 static entry_t entryAt(int i)
 {
-    entry_t e = { true, i, -1 };
+    entry_t e = { true, false, i, -1 };
 
+    if (i == entryCount() - 1) {
+        e.isGroup = false;
+        e.isQuit = true;
+        e.gi = -1;
+        return e;
+    }
     if (gExpanded >= 0) {
         if (i > gExpanded && i <= gExpanded + gGrpCmdCount) {
             e.isGroup = false;
@@ -420,6 +427,10 @@ static void drawCommandCell(int row, int bodyRows, int width)
     entry_t e = entryAt(idx);
     char text[64];
 
+    if (e.isQuit) {
+        outCell("  Quit (exit)", width, 91, idx == gSel && gListFocus);
+        return;
+    }
     if (e.isGroup) {
         snprintf(text, sizeof(text), "%s %s", gGroupCount > 0 && e.gi == gExpanded ? G_CLOSE : G_OPEN,
                  gGroups[e.gi]);
@@ -516,7 +527,7 @@ static void drawFrame(int rows, bool busy)
             char state[200];
 
             ucxapp_ui_state(state, sizeof(state));
-            snprintf(text, sizeof(text), "%s   (Tab complete, Esc list/input, F10 quit)", state);
+            snprintf(text, sizeof(text), "%s   (Tab complete, Esc list/input, Ctrl-C or F10 quit)", state);
             outCell(text, W_CMD + W_LOG + W_EVT + 4, 90, false);
         }
     }
@@ -600,17 +611,21 @@ static void historyMove(int dir)
     setInput(gHist[pos % HIST_LEN]);
 }
 
-static void activateEntry(void)
+/* Returns true to quit. */
+static bool activateEntry(void)
 {
     entry_t e;
 
     if (gSel < 0 || gSel >= entryCount()) {
-        return;
+        return false;
     }
     e = entryAt(gSel);
+    if (e.isQuit) {
+        return true;
+    }
     if (e.isGroup) {
         expandGroup(e.gi);
-        return;
+        return false;
     }
     char text[64];
 
@@ -618,9 +633,10 @@ static void activateEntry(void)
     setInput(text);
     if (strchr(gGrpCmds[e.ci]->usage, '<') == NULL && strchr(gGrpCmds[e.ci]->usage, '[') == NULL) {
         submitLine();   /* no arguments at all, run it right away and stay in the list */
-        return;
+        return false;
     }
     gListFocus = false;
+    return false;
 }
 
 /* Returns true to quit. */
@@ -650,7 +666,7 @@ static bool handleKey(int key, int rows)
         case UCXAPP_KEY_END:  gSel = count - 1; return false;
         case UCXAPP_KEY_RIGHT:
         case 13:
-        case 10:              activateEntry(); return false;
+        case 10:              return activateEntry();
         case UCXAPP_KEY_LEFT: {
             entry_t e = entryAt(gSel);
 

@@ -423,9 +423,7 @@ static bool initFtd2xxLibrary(void)
     // Step 2: Try to load the extracted DLL
     if (dllExtracted) {
         gFtd2xxModule = LoadLibrary(dllPath);
-        if (gFtd2xxModule != NULL) {
-            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Loaded FTDI DLL from: %s", dllPath);
-        } else {
+        if (gFtd2xxModule == NULL) {
             U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "LoadLibrary failed for %s, error: %lu", dllPath, GetLastError());
         }
     }

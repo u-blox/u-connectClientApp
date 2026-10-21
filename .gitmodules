@@ -5,3 +5,6 @@
 [submodule "u-connectXpress"]
 	path = u-connectXpress
 	url = https://github.com/u-blox/u-connectXpress
+[submodule "third-party/mbedtls"]
+	path = third-party/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls.git

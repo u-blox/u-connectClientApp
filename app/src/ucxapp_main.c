@@ -1,5 +1,6 @@
 /* Portable command-line entry point for Windows and POSIX hosts. */
 
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -21,6 +22,7 @@
 #endif
 
 #define MAX_EXEC 16
+#define MAX_POS 16
 #define UART_BAUD 115200
 
 static uCxAtClient_t gAtClient;
@@ -108,9 +110,28 @@ static const ucxapp_cmd_t gConnectCmds[] = {
 static void printUsage(const char *prog)
 {
     ucxapp_print("usage: %s [port] [--exec \"<command>\"]... [--shell] [--tui] [--list-ports] [--list-modules] [--version]\n", prog);
+    ucxapp_print("  a command can also be given directly: %s [port] device.info (no spaces inside the command)\n", prog);
     ucxapp_print("  without a port, --exec/--shell use the first NORA EVK found\n");
     ucxapp_print("  with no --exec/--shell the text UI starts (command shell if not on a terminal); 'help' lists the commands\n");
     ucxapp_print("  --tui forces the three-pane text UI (commands, log, events), --shell the plain command shell\n");
+}
+
+static bool isPort(const char *name)
+{
+    ucxapp_serial_port_t ports[32];
+    int count = ucxapp_platform_list_serial_ports(ports, 32);
+    for (int i = 0; i < count; i++) {
+        const char *a = ports[i].name;
+        const char *b = name;
+        while (*a != '\0' && *b != '\0' && toupper((unsigned char)*a) == toupper((unsigned char)*b)) {
+            a++;
+            b++;
+        }
+        if (*a == '\0' && *b == '\0') {
+            return true;
+        }
+    }
+    return false;
 }
 
 static void listPorts(void)
@@ -133,6 +154,8 @@ int main(int argc, char *argv[])
     int execCount = 0;
     bool shellMode = false;
     bool tuiMode = false;
+    const char *pos[MAX_POS];
+    int posCount = 0;
 
     ucxapp_platform_init();
     ucxapp_io_set(&ucxapp_io_stdio);
@@ -163,12 +186,26 @@ int main(int argc, char *argv[])
         } else if (strcmp(argv[i], "--list-ports") == 0) {
             listPorts();
             return 0;
-        } else if (argv[i][0] != '-' && port == NULL) {
-            port = argv[i];
+        } else if (argv[i][0] != '-' && posCount < MAX_POS) {
+            pos[posCount++] = argv[i];
         } else {
             printUsage(argv[0]);
             return 2;
         }
+    }
+
+    static char posCmd[256];
+    posCmd[0] = '\0';
+    for (int k = 0; k < posCount; k++) {
+        if (port == NULL && isPort(pos[k])) {
+            port = pos[k];
+        } else {
+            size_t used = strlen(posCmd);
+            snprintf(posCmd + used, sizeof(posCmd) - used, "%s%s", used > 0 ? " " : "", pos[k]);
+        }
+    }
+    if (posCmd[0] != '\0' && execCount < MAX_EXEC) {
+        execCmds[execCount++] = posCmd;
     }
 
     ucxapp_cmd_register(gConnectCmds, sizeof(gConnectCmds) / sizeof(gConnectCmds[0]));

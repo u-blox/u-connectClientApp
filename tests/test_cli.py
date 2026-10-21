@@ -69,7 +69,7 @@ def test_http_commands_reject_bad_arguments(app_exe, tmp_path, command):
 def test_web_stop_and_status_work_without_device(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "COM255", "web.status", "web.stop")
     assert out.returncode == 0, out.stdout
-    assert "not running" in out.stdout
+    assert "web server: stopped" in out.stdout
 
 
 def test_qr_text_needs_no_device(app_exe, tmp_path):

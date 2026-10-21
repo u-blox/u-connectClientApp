@@ -216,18 +216,14 @@ static int cmdDetect(ucxapp_t *app, int argc, char *argv[])
         if (argc == 2 ? strcasecmp(sp->name, argv[1]) != 0 : ucxapp_port_skip(sp)) {
             continue;
         }
-        ucxapp_print("  %s%s%s%s: ", sp->name, sp->desc[0] ? " (" : "", sp->desc, sp->desc[0] ? ")" : "");
-        bool hit = false;
-        for (size_t b = 0; b < sizeof(kBauds) / sizeof(kBauds[0]) && !hit; b++) {
+        for (size_t b = 0; b < sizeof(kBauds) / sizeof(kBauds[0]); b++) {
             if (openPort(sp->name, kBauds[b])) {
+                ucxapp_print("  %s%s%s%s: ", sp->name, sp->desc[0] ? " (" : "", sp->desc, sp->desc[0] ? ")" : "");
                 ucxapp_print("AT module at %d baud: %s\n", (int)kBauds[b], gMaker);
                 closePort();
-                hit = true;
                 found++;
+                break;
             }
-        }
-        if (!hit) {
-            ucxapp_print("no AT response\n");
         }
     }
     ucxapp_print("%d AT port(s) found\n", found);
