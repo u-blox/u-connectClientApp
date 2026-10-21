@@ -7,7 +7,7 @@ sign and upload the Windows exe.
 3. Tags and pushes; .github/workflows/release.yml builds Linux + STM32 and creates a draft release.
 4. Waits for the draft, uploads the signed exe and its SHA-256 (Windows only), optionally publishes.
 
-X.Y.Z is APP_VERSION_MAJOR/MINOR/PATCH in app/CMakeLists.txt, YYMMDD is today.
+X.Y.Z is U_CX_VERSION_MAJOR/MINOR/PATCH in u_cx_version.h (the same header app/CMakeLists.txt reads), YYMMDD is today.
 
 Examples:
     python scripts/release.py --dry-run     # build and sign only, nothing is tagged or pushed
@@ -53,12 +53,12 @@ def out(*cmd):
 
 
 def read_version():
-    cmake = (ROOT / "app" / "CMakeLists.txt").read_text(encoding="utf-8")
+    header = (ROOT / "u-connectClient" / "ucx_api" / "generated" / "NORA-W36X" / "u_cx_version.h").read_text(encoding="utf-8")
     parts = []
     for n in ("MAJOR", "MINOR", "PATCH"):
-        m = re.search(rf"set\(APP_VERSION_{n}\s+(\d+)\)", cmake)
+        m = re.search(rf"#define U_CX_VERSION_{n} (\d+)", header)
         if not m:
-            fail(f"APP_VERSION_{n} not found in app/CMakeLists.txt")
+            fail(f"U_CX_VERSION_{n} not found in u_cx_version.h")
         parts.append(m.group(1))
     return "v{}.{}.{}.{}".format(*parts, datetime.date.today().strftime("%y%m%d"))
 
