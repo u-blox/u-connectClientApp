@@ -99,7 +99,7 @@ static const char kApache[] =
 
 static const component_t kComponents[] = {
     { "u-connectXpressApp", APP_VERSION, "Copyright (C) u-blox AG", "this application",
-      "https://github.com/u-blox/u-connectClientApp", NULL },
+      "https://github.com/u-blox/u-connectXpressApp", NULL },
     { "u-connectClient", UCX_API_VERSION, "Apache-2.0", "AT command client for u-connectXpress modules",
       "https://github.com/u-blox/u-connectClient", kApache },
 #if HOSTED
@@ -207,8 +207,8 @@ static int cmdInfo(ucxapp_t *app, int argc, char *argv[])
     ucxapp_print("Command shell for u-connectXpress modules (NORA-W36, NORA-B26)\n");
     ucxapp_print("platform  %s %s\n", APP_PLATFORM, APP_ARCH);
     ucxapp_print("module    %s\n", app->ucx != NULL ? "connected" : "not connected");
-    ucxapp_print("home      https://github.com/u-blox/u-connectClientApp\n");
-    ucxapp_print("releases  https://github.com/u-blox/u-connectClientApp/releases\n");
+    ucxapp_print("home      https://github.com/u-blox/u-connectXpressApp\n");
+    ucxapp_print("releases  https://github.com/u-blox/u-connectXpressApp/releases\n");
     ucxapp_print("firmware  https://github.com/u-blox/u-connectXpress/releases\n");
     ucxapp_print("web       https://www.u-blox.com\n");
     return UCXAPP_OK;

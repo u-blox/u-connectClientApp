@@ -17,7 +17,7 @@ STM32 builds additionally need the Arm GNU toolchain, Ninja and STM32CubeProgram
 ## Get the sources
 
 ```powershell
-git clone https://github.com/u-blox/u-connectClientApp.git
+git clone https://github.com/u-blox/u-connectXpressApp.git
 cd u-connectXpressApp
 
 # Only the u-connectClient submodule (without recursing into its submodules)

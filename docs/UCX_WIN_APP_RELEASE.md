@@ -71,7 +71,7 @@ gh release upload v3.2.0.251204 "app\release\ucxapp-signed.exe#ucxapp-windows-x6
 Then review the draft on GitHub and publish it. The manual steps below are the fallback.
 
 #### Manual alternative
-1. Go to: https://github.com/u-blox/u-connectClientApp/releases
+1. Go to: https://github.com/u-blox/u-connectXpressApp/releases
 2. Click "Draft a new release"
 3. **Tag:** v3.2.0.251204 (must match Git tag)
 4. **Title:** u-connectXpressApp v3.2.0.251204
@@ -107,7 +107,7 @@ Then review the draft on GitHub and publish it. The manual steps below are the f
 Users who need Debug builds or modifications:
 ```bash
 # Clone repository with submodule
-git clone --recurse-submodules https://github.com/u-blox/u-connectClientApp.git
+git clone --recurse-submodules https://github.com/u-blox/u-connectXpressApp.git
 cd u-connectXpressApp
 
 # Build and run (auto-builds if needed)

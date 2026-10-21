@@ -8,7 +8,7 @@ Supported modules: **NORA-W36** (Wi-Fi + Bluetooth LE) and **NORA-B26** (Bluetoo
 |---|---|---|
 | Signed `.exe`, FTDI driver built in | Single binary | NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI |
 
-Download ready-made builds from the [Releases page](https://github.com/u-blox/u-connectClientApp/releases). No installation needed.
+Download ready-made builds from the [Releases page](https://github.com/u-blox/u-connectXpressApp/releases). No installation needed.
 
 ## Try it in 30 seconds
 
@@ -87,7 +87,7 @@ Type `help` in the shell, or `help wifi` to filter by prefix. Full list with arg
 ## Quick start from source
 
 ```powershell
-git clone https://github.com/u-blox/u-connectClientApp.git
+git clone https://github.com/u-blox/u-connectXpressApp.git
 cd u-connectXpressApp
 git submodule update --init u-connectClient
 .\ucxapp             # builds on first run, then starts the shell
