@@ -273,7 +273,7 @@ static char *winHttpGet(const char *host, const char *path, bool binary, size_t 
         return NULL;
     }
 
-    hSession = WinHttpOpen(L"u-connectClientApp/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+    hSession = WinHttpOpen(L"u-connectXpressApp/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) goto cleanup;
 
@@ -347,7 +347,7 @@ char *ucxapp_platform_https_get_binary(const char *host, const char *path, size_
 }
 
 // Initialize FTD2XX library (dynamic loading)
-// Resource ID for embedded FTDI DLL (must match u-connectClientApp.rc)
+// Resource ID for embedded FTDI DLL (must match ucxapp.rc)
 #define IDR_FTD2XX_DLL 101
 
 static bool initFtd2xxLibrary(void)

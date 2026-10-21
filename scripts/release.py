@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Release u-connectClientApp: tag vX.Y.Z.YYMMDD, let CI build Linux and STM32,
+"""Release u-connectXpressApp: tag vX.Y.Z.YYMMDD, let CI build Linux and STM32,
 sign and upload the Windows exe.
 
 1. Checks the work tree is clean, on master and in sync with origin.
@@ -53,7 +53,8 @@ def out(*cmd):
 
 
 def read_version():
-    header = (ROOT / "u-connectClient" / "ucx_api" / "generated" / "NORA-W36X" / "u_cx_version.h").read_text(encoding="utf-8")
+    header_path = ROOT / "u-connectClient" / "ucx_api" / "generated" / "NORA-W36X" / "u_cx_version.h"
+    header = header_path.read_text(encoding="utf-8")
     parts = []
     for n in ("MAJOR", "MINOR", "PATCH"):
         m = re.search(rf"#define U_CX_VERSION_{n} (\d+)", header)
@@ -148,7 +149,7 @@ def main():
         return
 
     step(f"Tagging and pushing {tag}")
-    run("git", "tag", "-a", tag, "-m", f"Release u-connectClientApp {tag}")
+    run("git", "tag", "-a", tag, "-m", f"Release u-connectXpressApp {tag}")
     run("git", "push", "origin", tag)
 
     if not wait_for_draft(tag, args.wait_minutes):

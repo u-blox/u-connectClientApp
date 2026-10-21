@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ucxapp, the u-connectClientApp launcher: build, run, test and find hardware on Windows, Linux (also WSL)
+"""ucxapp, the u-connectXpressApp launcher: build, run, test and find hardware on Windows, Linux (also WSL)
 and STM32.
 
   ucxapp                                    build if needed and start the app (this OS)
@@ -43,7 +43,7 @@ FTDI_PIDS = {0x6010, 0x6011, 0x6014, 0x601C, 0x6015}
 UBLOX_GNSS_PIDS = {0x01A4, 0x01A5, 0x01A6, 0x01A7, 0x01A8, 0x01A9}
 GNSS_DESC = re.compile(r"gnss|gps|\b(?:zed|neo|max|lea|evk)-[a-z]?\d", re.IGNORECASE)
 
-# Old verbs of u-connectClientAppWin.cmd, kept so existing habits and docs still work.
+# Old verbs of the former u-connectClientAppWin.cmd, kept so existing habits and docs still work.
 LEGACY = {
     "debug": ["--debug"], "build": ["--build"], "clean": ["--clean"], "rebuild": ["--rebuild"], "all": ["--all"],
     "signed": ["--signed"], "hid": ["--hid"], "selftest": ["--selftest"], "update": ["--update"],
@@ -378,6 +378,15 @@ def stm32_tools():
                  Path(r"C:\Program Files\Arm\GNU Toolchain mingw-w64-x86_64-arm-none-eabi\bin"),
                  ROOT.parent / "u-connectMatter" / "tools"]
         os.environ["PATH"] = os.pathsep.join([*(str(d) for d in extra if d.is_dir()), os.environ["PATH"]])
+    for _, _, family, hal_dir, portdir in BOARDS.values():
+        var = f"STM32CUBE{family}_PATH"
+        if os.environ.get(var):
+            continue
+        candidates = [ROOT / "u-connectClient" / "ports" / "extra" / portdir / hal_dir,
+                      ROOT.parent / "u-connectMatter" / "u-connectClient" / "ports" / "extra" / portdir / hal_dir]
+        hal = next((c for c in candidates if (c / "Drivers").is_dir()), None)
+        if hal is not None:
+            os.environ[var] = str(hal)
 
 
 def programmer():
@@ -405,10 +414,7 @@ def find_stlink(prog, board_name):
 def stm32_build(board, family, hal_dir, portdir, bd):
     for tool in ("cmake", "ninja", "arm-none-eabi-gcc"):
         require(tool, "See .github/skills/ucx-stm32/SKILL.md for the STM32 toolchain.")
-    candidates = [ROOT / "u-connectClient" / "ports" / "extra" / portdir / hal_dir,
-                  ROOT.parent / "u-connectMatter" / "u-connectClient" / "ports" / "extra" / portdir / hal_dir]
-    hal = os.environ.get(f"STM32CUBE{family}_PATH") or next(
-        (str(c) for c in candidates if (c / "Drivers").is_dir()), None)
+    hal = os.environ.get(f"STM32CUBE{family}_PATH")
     if hal is None:
         fail(f"{hal_dir} not found. Set STM32CUBE{family}_PATH or run: "
              f"git -C u-connectClient submodule update --init ports/extra/{portdir}/{hal_dir}")
@@ -524,8 +530,12 @@ def selftest():
             print(f"[{'OK' if out else 'ERROR'}] {exe.relative_to(ROOT)}: {out or 'does not run'}")
         else:
             print(f"[INFO] {exe.relative_to(ROOT)} not built")
+    stm32_tools()
     for tool in ("cmake", "git", "ninja", "arm-none-eabi-gcc"):
         print(f"[{'OK' if shutil.which(tool) else 'INFO'}] {tool} {'found' if shutil.which(tool) else 'not on PATH'}")
+    for _, _, family, _, _ in BOARDS.values():
+        var = f"STM32CUBE{family}_PATH"
+        print(f"[{'OK' if os.environ.get(var) else 'INFO'}] {var} {os.environ.get(var) or 'not set'}")
     print("Selftest passed" if errors == 0 else f"Selftest: {errors} error(s)")
     return 1 if errors else 0
 

@@ -98,7 +98,7 @@ static const char kApache[] =
     "CONDITIONS OF ANY KIND, either express or implied.\n";
 
 static const component_t kComponents[] = {
-    { "u-connectClientApp", APP_VERSION, "Copyright (C) u-blox AG", "this application",
+    { "u-connectXpressApp", APP_VERSION, "Copyright (C) u-blox AG", "this application",
       "https://github.com/u-blox/u-connectClientApp", NULL },
     { "u-connectClient", UCX_API_VERSION, "Apache-2.0", "AT command client for u-connectXpress modules",
       "https://github.com/u-blox/u-connectClient", kApache },
@@ -133,7 +133,7 @@ static int cmdVersion(ucxapp_t *app, int argc, char *argv[])
     if (argc != 1) {
         return UCXAPP_ERR_USAGE;
     }
-    ucxapp_print("u-connectClientApp %s\n", APP_VERSION);
+    ucxapp_print("u-connectXpressApp %s\n", APP_VERSION);
     ucxapp_print("built     %s %s\n", __DATE__, __TIME__);
     ucxapp_print("platform  %s %s\n", APP_PLATFORM, APP_ARCH);
     ucxapp_print("compiler  %s\n", APP_COMPILER);
@@ -203,7 +203,7 @@ static int cmdInfo(ucxapp_t *app, int argc, char *argv[])
     if (argc != 1) {
         return UCXAPP_ERR_USAGE;
     }
-    ucxapp_print("u-connectClientApp %s by u-blox AG\n", APP_VERSION);
+    ucxapp_print("u-connectXpressApp %s by u-blox AG\n", APP_VERSION);
     ucxapp_print("Command shell for u-connectXpress modules (NORA-W36, NORA-B26)\n");
     ucxapp_print("platform  %s %s\n", APP_PLATFORM, APP_ARCH);
     ucxapp_print("module    %s\n", app->ucx != NULL ? "connected" : "not connected");

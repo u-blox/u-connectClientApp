@@ -768,9 +768,9 @@ static bool pumpStreams(uint32_t *logCur, uint32_t *evCur, uint32_t *doneSeen)
 const char *ucxapp_version_text(void)
 {
 #ifdef APP_VERSION_STRING
-    return "u-connectClientApp " APP_VERSION_STRING " (built " __DATE__ " " __TIME__ ")";
+    return "u-connectXpressApp " APP_VERSION_STRING " (built " __DATE__ " " __TIME__ ")";
 #else
-    return "u-connectClientApp (built " __DATE__ " " __TIME__ ")";
+    return "u-connectXpressApp (built " __DATE__ " " __TIME__ ")";
 #endif
 }
 
@@ -812,7 +812,7 @@ int ucxapp_tui_run(ucxapp_t *app)
     ucxappLogWarnLock(true);
     fputs("\033[?1049h\033[2J", stdout);
     logLocal(ucxapp_version_text());
-    logLocal("u-connectClientApp text UI: Up/Down + Enter pick a command, or just type; Esc toggles list/input. 'help' lists commands.");
+    logLocal("u-connectXpressApp text UI: Up/Down + Enter pick a command, or just type; Esc toggles list/input. 'help' lists commands.");
 
     while (!quit) {
         int key;

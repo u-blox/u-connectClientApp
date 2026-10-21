@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(u-connectClientApp-stm32 C ASM)
+project(u-connectXpressApp-stm32 C ASM)
 
 # Cross build of the command layer for STM32 boards. Configure with
 #   -DCMAKE_TOOLCHAIN_FILE=<repo>/u-connectClient/cmake/arm-none-eabi-gcc.cmake -DSTM32_BOARD=nucleo_h753zi

@@ -169,6 +169,48 @@ def _wifi_credentials():
     return ssid, password
 
 
+PING_RE = re.compile(r"sent (\d+), received (\d+), average (\d+) ms")
+PING_MAX_AVG_MS = 1000
+
+
+def _join_wifi(exe, port, ssid, password):
+    """Joins the Wi-Fi and returns (module ip, gateway) from the link details."""
+    out = _run(exe, port, f"wifi.connect {ssid} {password}", timeout=180)
+    assert out.returncode == 0, out.stdout
+    ip, gateway = re.search(r"ip=(\S+)", out.stdout), re.search(r"gateway (\S+)", out.stdout)
+    assert ip and gateway, out.stdout
+    return ip.group(1), gateway.group(1)
+
+
+def _assert_ping(out, target):
+    match = PING_RE.search(out.stdout)
+    assert match, f"ping {target}: {out.stdout}"
+    sent, received, avg = map(int, match.groups())
+    assert received == sent, f"ping {target} lost packets: {out.stdout}"
+    assert avg < PING_MAX_AVG_MS, f"ping {target} too slow: {out.stdout}"
+
+
+@pytest.fixture(scope="module")
+def wifi_peers(app_exe, port_a, port_b):
+    """Both modules joined to the Wi-Fi: {port: (ip, gateway)}."""
+    ssid, password = _wifi_credentials()
+    return {port: _join_wifi(app_exe, port, ssid, password) for port in (port_a, port_b)}
+
+
+@pytest.mark.two_devices
+def test_wifi_ping_gateway_from_both_modules(app_exe, wifi_peers, port_a, port_b):
+    for port in (port_a, port_b):
+        _, gateway = wifi_peers[port]
+        _assert_ping(_run(app_exe, port, f"net.ping {gateway} 4"), gateway)
+
+
+@pytest.mark.two_devices
+def test_wifi_ping_between_modules_both_directions(app_exe, wifi_peers, port_a, port_b):
+    ip_a, ip_b = wifi_peers[port_a][0], wifi_peers[port_b][0]
+    for source, target in ((port_a, ip_b), (port_b, ip_a)):
+        _assert_ping(_run(app_exe, source, f"net.ping {target} 4"), target)
+
+
 @pytest.mark.two_devices
 def test_tcp_socket_between_two_modules(app_exe, port_a, port_b):
     """Module A hosts the web server (a TCP listener); module B opens a raw TCP socket to it."""

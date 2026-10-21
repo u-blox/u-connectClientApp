@@ -384,7 +384,7 @@ static void appTask(void *arg)
     (void)arg;
     ucxapp_io_set(&gConsoleIo);
     ucxapp_store_set_backend(&gRamStore);
-    ucxapp_print("\nu-connectClientApp (STM32), module on %s at %d baud\n", U_EXAMPLE_UART, (int)UCXAPP_MODULE_BAUD);
+    ucxapp_print("\nu-connectXpressApp (STM32), module on %s at %d baud\n", U_EXAMPLE_UART, (int)UCXAPP_MODULE_BAUD);
 
     ucxapp_cmd_register(gConnectCmds, sizeof(gConnectCmds) / sizeof(gConnectCmds[0]));
     ucxapp_register_device_cmds();

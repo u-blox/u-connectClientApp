@@ -1,4 +1,4 @@
-# u-connectClientApp
+# u-connectXpressApp
 
 **Talk to your u-connectXpress module in one line.** Scan Wi-Fi, join a network, open sockets, publish over MQTT, fetch HTTPS pages, pair Bluetooth devices and update firmware, from an interactive shell, a script or a web page. The same commands run on Windows, Linux and on an STM32 board.
 
@@ -88,7 +88,7 @@ Type `help` in the shell, or `help wifi` to filter by prefix. Full list with arg
 
 ```powershell
 git clone https://github.com/u-blox/u-connectClientApp.git
-cd u-connectClientApp
+cd u-connectXpressApp
 git submodule update --init u-connectClient
 .\ucxapp             # builds on first run, then starts the shell
 ```

@@ -43,9 +43,8 @@ def _launcher():
 
 def test_old_launchers_forward_to_the_python_launcher():
     assert "ucxapp.py" in (ROOT / "ucxapp.cmd").read_text(encoding="utf-8")
-    assert "ucxapp.cmd" in (ROOT / "u-connectClientAppWin.cmd").read_text(encoding="utf-8")
-    assert "--stm32" in (ROOT / "u-connectClientAppSTM32.cmd").read_text(encoding="utf-8")
-    assert "ucxapp.py" in (ROOT / "u-connectClientAppLinux.sh").read_text(encoding="utf-8")
+    assert "--stm32" in (ROOT / "ucxapp-stm32.cmd").read_text(encoding="utf-8")
+    assert "ucxapp.py" in (ROOT / "ucxapp.sh").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(

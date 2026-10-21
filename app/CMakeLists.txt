@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(u-connectClientApp)
+project(u-connectXpressApp)
 
 # Include u-connectClient library definitions from submodule
 set(UCX_MODULE "NORA-W36X" CACHE STRING "Generated API variant in u-connectClient/ucx_api/generated")
@@ -146,7 +146,7 @@ set(PORT_UART_SRC ../u-connectClient/ports/uart/u_port_uart_windows.c)
 
 # FTDI D2XX is loaded at run time from the DLL embedded by the .rc file
 
-# u-connectClientApp Application (ucxapp.exe)
+# u-connectXpressApp Application (ucxapp.exe)
 add_executable(ucxapp
   src/ucxapp_main.c
   src/ucxapp_urc.c
@@ -186,7 +186,7 @@ add_executable(ucxapp
   src/ucxapp_cmds_hid.c
   ${PORT_OS_SRC}
   ${PORT_UART_SRC}
-  u-connectClientApp.rc
+  ucxapp.rc
   third-party/qrcodegen/qrcodegen.c
   ${U_CONNECT_CLIENT_UCX_API_SRC}
   ${U_CONNECT_CLIENT_AT_API_SRC}

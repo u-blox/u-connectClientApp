@@ -13,7 +13,7 @@ Usage:
     python ble_gatt_hid_client.py [device_name_or_address] [--listen SECONDS]
 
 Keystroke reports are decoded into characters and the typed text is printed.
-Drive it from the module with hid.text / hid.key (u-connectClientApp).
+Drive it from the module with hid.text / hid.key (u-connectXpressApp).
 
 NOTE (unresolved): the module defines protocol mode, boot output, report output and
 control point with *authenticated* write security, which is carried over from the old

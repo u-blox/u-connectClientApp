@@ -1,5 +1,5 @@
 """
-PyInvoke tasks for u-connectClientApp.
+PyInvoke tasks for u-connectXpressApp.
 
 """
 
@@ -51,7 +51,7 @@ def _build_target(c, target=None, clean=False):
 
     # Build
     target_name = f" --target {target}" if target else ""
-    print(f"Building {target or 'u-connectClientApp'}...")
+    print(f"Building {target or 'u-connectXpressApp'}...")
     c.run(f'cmake --build {build_dir}{target_name}')
 
     print("\nBuild completed successfully!")
@@ -63,7 +63,7 @@ def _build_target(c, target=None, clean=False):
 
 @task(help={'clean': 'Clean build directory before building'})
 def build(c, clean=False):
-    """Build u-connectClientApp."""
+    """Build u-connectXpressApp."""
     _build_target(c, target='ucxapp', clean=clean)
 
 

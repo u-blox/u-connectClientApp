@@ -9,13 +9,15 @@
 			"*.h": "c",
 			"ostream": "c"
 		},
-		"cmake.sourceDirectory": "${workspaceFolder}/examples",
+		"cmake.sourceDirectory": "${workspaceFolder}/app",
+		"cmake.buildDirectory": "${workspaceFolder}/build/windows",
 		"debug.focusEditorOnBreak": false
 	},
 	"extensions": {
 		"recommendations": [
 			"ms-vscode.cpptools",
+			"ms-vscode.cmake-tools",
 			"shardulm94.trailing-spaces"
 		]
-	},
+	}
 }

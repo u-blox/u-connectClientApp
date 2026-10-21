@@ -1,9 +1,9 @@
 ---
 name: ucx-stm32
-description: Build, flash and use u-connectClientApp as firmware on NUCLEO-H753ZI, NUCLEO-F767ZI or NUCLEO-F439ZI boards driving a u-connectXpress module. Use for STM32 setup, HAL paths, flashing over ST-Link, the console and UART bridge mode.
+description: Build, flash and use u-connectXpressApp as firmware on NUCLEO-H753ZI, NUCLEO-F767ZI or NUCLEO-F439ZI boards driving a u-connectXpress module. Use for STM32 setup, HAL paths, flashing over ST-Link, the console and UART bridge mode.
 ---
 
-# u-connectClientApp on STM32 Nucleo
+# u-connectXpressApp on STM32 Nucleo
 
 ## Prerequisites
 - Arm GNU toolchain (`arm-none-eabi-gcc`), CMake, Ninja, STM32CubeProgrammer (ST-Link flashing).

@@ -1,8 +1,8 @@
-# u-connectClientApp Build Instructions
+# u-connectXpressApp Build Instructions
 
 ## Project Overview
 
-u-connectClientApp is a command shell for testing u-connectXpress devices (NORA-W36, NORA-B26). It runs on Windows, Linux and as FreeRTOS firmware on STM32 Nucleo boards (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI). It uses the u-connectClient library as a git submodule (branch `cmag_matter_support`).
+u-connectXpressApp is a command shell for testing u-connectXpress devices (NORA-W36, NORA-B26). It runs on Windows, Linux and as FreeRTOS firmware on STM32 Nucleo boards (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI). It uses the u-connectClient library as a git submodule (branch `cmag_matter_support`).
 
 ## Documentation
 
@@ -10,7 +10,7 @@ Always use the `u-blox-docs` MCP server (`.vscode/mcp.json`) to look up u-connec
 
 ## Targets and Launcher
 
-`ucxapp.py` is the one launcher for every target; `ucxapp.cmd` is only a thin Windows caller of it (type `.\ucxapp` in PowerShell, `./ucxapp.py` on Linux). The old `u-connectClientAppWin.cmd`, `u-connectClientAppSTM32.cmd` and `u-connectClientAppLinux.sh` just forward to it. The target is this OS unless a flag selects another one:
+`ucxapp.py` is the one launcher for every target; `ucxapp.cmd` is only a thin Windows caller of it (type `.\ucxapp` in PowerShell, `./ucxapp.py` on Linux). `ucxapp-stm32.cmd` and `ucxapp.sh` just forward to it. The target is this OS unless a flag selects another one:
 
 | Target | Command | Notes |
 |---|---|---|

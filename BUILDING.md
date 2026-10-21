@@ -1,4 +1,4 @@
-# Building and deploying u-connectClientApp
+# Building and deploying u-connectXpressApp
 
 Technical reference for building, flashing, signing and releasing. For an overview and examples see [README.md](README.md).
 
@@ -18,7 +18,7 @@ STM32 builds additionally need the Arm GNU toolchain, Ninja and STM32CubeProgram
 
 ```powershell
 git clone https://github.com/u-blox/u-connectClientApp.git
-cd u-connectClientApp
+cd u-connectXpressApp
 
 # Only the u-connectClient submodule (without recursing into its submodules)
 git submodule update --init u-connectClient
@@ -27,7 +27,7 @@ git submodule update --init u-connectClient
 ## Launcher
 
 `ucxapp.py` builds, runs, tests and flashes every target. On Windows `ucxapp.cmd` calls it;
-the old `u-connectClientAppWin.cmd`, `u-connectClientAppSTM32.cmd` and `u-connectClientAppLinux.sh` forward to it.
+`ucxapp-stm32.cmd` and `ucxapp.sh` forward to it.
 
 | Target | Command |
 |---|---|
@@ -79,7 +79,7 @@ Release builds of all three boards are published with each tag.
 ## File structure
 
 ```
-u-connectClientApp/
+u-connectXpressApp/
 ├── ucxapp.py                       # Launcher for every target (build, run, test, detect, STM32 flash)
 ├── ucxapp.cmd                      # Thin Windows caller of ucxapp.py
 ├── app/

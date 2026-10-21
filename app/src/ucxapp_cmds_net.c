@@ -262,7 +262,7 @@ static int downloadHop(ucxapp_t *app, char *url, ucxapp_store_writer_t *w, char 
 
     int32_t err = configureSession(app, https, host, path);
     if (err >= 0) {
-        err = uCxHttpAddHeaderField(app->ucx, HTTP_SESSION, "User-Agent", "u-connectClientApp/1.0");
+        err = uCxHttpAddHeaderField(app->ucx, HTTP_SESSION, "User-Agent", "u-connectXpressApp/1.0");
     }
     if (err < 0) {
         ucxapp_print("ERROR: cannot configure HTTP session (%d%s)\n", (int)err, ucxapp_errname(err));

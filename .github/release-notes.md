@@ -1,6 +1,6 @@
 ## What's in this release
 
-u-connectClientApp is the command shell for u-connectXpress modules (NORA-W36, NORA-B26). It runs on Windows and Linux, and as firmware on the NUCLEO-H753ZI, NUCLEO-F767ZI and NUCLEO-F439ZI boards.
+u-connectXpressApp is the command shell for u-connectXpress modules (NORA-W36, NORA-B26). It runs on Windows and Linux, and as firmware on the NUCLEO-H753ZI, NUCLEO-F767ZI and NUCLEO-F439ZI boards.
 
 - One launcher, `ucxapp.py`, for Windows, Linux (also WSL) and STM32
 - Hardware detection with `--detect`, including NORA modules, GNSS receiver and IMU

@@ -10,7 +10,7 @@ pytestmark = pytest.mark.app
 
 def test_version_flag(app_exe):
     out = subprocess.run([str(app_exe), "--version"], capture_output=True, text=True, timeout=10, check=True)
-    assert re.fullmatch(r"3\.4\.0\.\d{6}", out.stdout.strip())
+    assert re.match(r"u-connectXpressApp 3\.4\.0\.\d{6} ", out.stdout)
 
 
 def test_list_ports_exits_cleanly(app_exe):

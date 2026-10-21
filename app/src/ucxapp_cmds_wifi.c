@@ -799,7 +799,7 @@ static int cmdWifiDisconnect(ucxapp_t *app, int argc, char *argv[])
 static int cmdWifiApEnable(ucxapp_t *app, int argc, char *argv[])
 {
     uCxHandle_t *ucx = app->ucx;
-    const char *ssid = argc > 1 ? argv[1] : "u-connectClientApp AP";
+    const char *ssid = argc > 1 ? argv[1] : "u-connectXpressApp AP";
     const char *password = argc > 2 ? argv[2] : "12345678";
     int32_t channel = 6;
 

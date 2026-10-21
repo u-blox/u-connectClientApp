@@ -1,9 +1,9 @@
 ---
 name: ucx-windows
-description: Build and run u-connectClientApp on Windows to test and configure a u-connectXpress module (NORA-W36, NORA-B26). Use for Windows setup, COM port connection, scripted --exec runs and firmware updates.
+description: Build and run u-connectXpressApp on Windows to test and configure a u-connectXpress module (NORA-W36, NORA-B26). Use for Windows setup, COM port connection, scripted --exec runs and firmware updates.
 ---
 
-# u-connectClientApp on Windows
+# u-connectXpressApp on Windows
 
 ## Build and run
 1. Install Visual Studio 2022 Build Tools (Desktop development with C++), CMake 3.15+, Git and Python 3.10+.

@@ -38,7 +38,7 @@ typedef struct {
 } webEvent_t;
 
 static const char kPage[] =
-    "<!doctype html><html><head><meta charset=\"utf-8\"><title>u-connectClientApp</title>"
+    "<!doctype html><html><head><meta charset=\"utf-8\"><title>u-connectXpressApp</title>"
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
     "<style>:root{--ac:#2f6fed;--bd:#2b3648;--bg2:#0a0d12}body{margin:0;font:14px system-ui,-apple-system,'Segoe UI',sans-serif;background:#0f1419;color:#d6dde6}"
     "header{display:flex;align-items:center;gap:1rem;padding:.55rem 1rem;background:linear-gradient(90deg,#1a2230,#162033);border-bottom:2px solid var(--ac)}"
@@ -67,7 +67,7 @@ static const char kPage[] =
     "<g font-family=\"Arial,Helvetica,sans-serif\" font-weight=\"700\" font-size=\"300\">"
     "<text x=\"205\" y=\"325\" fill=\"#fff\" textLength=\"190\">u</text>"
     "<text x=\"410\" y=\"325\" fill=\"#1b1b1b\" textLength=\"600\">blox</text></g></svg>"
-    "<h1>u-connectClientApp</h1><span id=\"st\">connecting...</span><span id=\"state\"></span><span id=\"busy\"></span>"
+    "<h1>u-connectXpressApp</h1><span id=\"st\">connecting...</span><span id=\"state\"></span><span id=\"busy\"></span>"
     "<button id=\"clr\">Clear</button></header>"
     "<main><div class=\"pane\"><h4>Commands</h4><div id=\"side\"></div></div>"
     "<div class=\"pane\"><h4>Log</h4><div id=\"out\"></div></div>"
