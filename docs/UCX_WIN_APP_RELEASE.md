@@ -27,11 +27,8 @@ Version is generated at build time by CMake from `app/version.h.in`.
 **Important:** Always clean build before release to ensure correct version number:
 
 ```powershell
-# Clean rebuild Release configuration (forces version regeneration)
-.\u-connectClientAppWin.cmd rebuild
-
-# Build Release configuration and sign with certificate
-.\u-connectClientAppWin.cmd sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
+# Clean rebuild Release configuration (forces version regeneration) and sign with certificate
+.\ucxapp --rebuild --sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
 
 # This will:
 # - Generate version.h with date-based build number (3.2.0.YYMMDD)
@@ -39,7 +36,7 @@ Version is generated at build time by CMake from `app/version.h.in`.
 # - Sign with u-blox AG GlobalSign EV CodeSigning certificate
 # - Timestamp with DigiCert server (valid until Dec 2027)
 # - Verify signature and certificate chain
-# - Create u-connectClientApp-signed.exe in app/release/
+# - Create ucxapp-signed.exe in app/release/
 ```
 
 **Verify Version Before Release:**
@@ -48,7 +45,7 @@ Version is generated at build time by CMake from `app/version.h.in`.
 # Should show: "Build version: 3.2.0.YYMMDD (date-based)"
 
 # Or run the executable to verify
-.\app\release\u-connectClientApp-signed.exe
+.\app\release\ucxapp-signed.exe
 # Menu header should show: "Application v3.2.0.YYMMDD"
 ```
 
@@ -68,9 +65,8 @@ Automatic: `python scripts/release.py --publish` does steps 2-4 below (`--dry-ru
 Pushing the `v*` tag runs `.github/workflows/release.yml`, which builds Linux and the three STM32 images and creates a **draft** release using `.github/release-notes.md`. The Windows exe is signed locally (the EV certificate is not available to CI):
 
 ```powershell
-.\u-connectClientAppWin.cmd rebuild
-.\u-connectClientAppWin.cmd sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
-gh release upload v3.2.0.251204 "app\release\u-connectClientApp-signed.exe#u-connectClientApp-windows-x64.exe"
+.\ucxapp --rebuild --sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
+gh release upload v3.2.0.251204 "app\release\ucxapp-signed.exe#ucxapp-windows-x64.exe"
 ```
 Then review the draft on GitHub and publish it. The manual steps below are the fallback.
 
@@ -96,13 +92,13 @@ Then review the draft on GitHub and publish it. The manual steps below are the f
    sha256:PASTE_HASH_HERE_AFTER_CALCULATING
    
    ## Installation
-   Download u-connectClientApp-signed.exe and run - no installation required.
+   Download ucxapp-signed.exe and run - no installation required.
    FTDI drivers are embedded in the executable.
    ```
-6. **Attach file:** `u-connectClientApp-signed.exe` (from app/release/)
+6. **Attach file:** `ucxapp-signed.exe` (from app/release/)
 7. **Calculate SHA256** and add to release notes:
    ```powershell
-   Get-FileHash app\release\u-connectClientApp-signed.exe -Algorithm SHA256
+   Get-FileHash app\release\ucxapp-signed.exe -Algorithm SHA256
    ```
 8. Click "Publish release"
 
@@ -115,38 +111,39 @@ git clone --recurse-submodules https://github.com/u-blox/u-connectClientApp.git
 cd u-connectClientApp
 
 # Build and run (auto-builds if needed)
-.\u-connectClientAppWin.cmd
+.\ucxapp
 
 # Build Debug configuration
-.\u-connectClientAppWin.cmd debug
+.\ucxapp --debug
 
 # Build all configurations
-.\u-connectClientAppWin.cmd all
+.\ucxapp --all
 ```
 
 ## Directory Structure
 
 ```
 u-connectClientApp/
-├── u-connectClientAppWin.cmd              (Launch script)
-├── u-connectClientApp.ini                     (Settings, auto-created, gitignored)
+├── ucxapp.py                              (Launcher for every target)
+├── ucxapp.cmd                             (Thin Windows caller of the launcher)
+├── ucxapp.ini                                 (Settings, auto-created, gitignored)
 ├── app/
 │   ├── src/                               (Command layer and entry point)
 │   ├── u-connectClientApp.rc              (Resource file - icon, DLL, version)
 │   ├── version.h.in                    (Version template)
 │   ├── CMakeLists.txt                  (Build configuration)
 │   ├── bin/
-│   │   ├── u-connectClientApp.exe         (Release, unsigned, gitignored)
-│   │   └── u-connectClientApp-debug.exe   (Debug, gitignored)
+│   │   ├── ucxapp.exe                     (Release, unsigned, gitignored)
+│   │   └── ucxapp-debug.exe               (Debug, gitignored)
 │   └── release/
-│       └── u-connectClientApp-signed.exe  (Signed release, tracked in git)
+│       └── ucxapp-signed.exe              (Signed release, tracked in git)
 ├── u-connectClient/                              (Git submodule)
 │   ├── src/                            (UCX client library source)
 │   ├── inc/                            (UCX client library headers)
 │   └── ucx_api/                        (UCX API definitions)
-└── build/
+└── build/windows/
     ├── u-connectClientApp.sln                 (Visual Studio solution)
-    ├── u-connectClientApp.vcxproj             (Visual Studio project)
+    ├── ucxapp.vcxproj                         (Visual Studio project)
     └── version.h                        (Generated by CMake, gitignored)
 ```
 

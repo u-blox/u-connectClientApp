@@ -231,7 +231,7 @@ static int cmdCertUpload(ucxapp_t *app, int argc, char *argv[])
     }
     free(data);
     if (err != 0) {
-        ucxapp_print("ERROR: upload failed (%d); check PEM format, size and that the name is unused\n", (int)err);
+        ucxapp_print("ERROR: upload failed (%d%s); check PEM format, size and that the name is unused\n", (int)err, ucxapp_errname(err));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("uploaded %s %s (%u bytes)\n", typeName(type), name, (unsigned)len);
@@ -263,7 +263,7 @@ static int cmdCertRemove(ucxapp_t *app, int argc, char *argv[])
     }
     int32_t err = uCxSecurityCertificateRemove(app->ucx, type, argv[1]);
     if (err != 0) {
-        ucxapp_print("ERROR: remove failed (%d); the certificate may be in use\n", (int)err);
+        ucxapp_print("ERROR: remove failed (%d%s); the certificate may be in use\n", (int)err, ucxapp_errname(err));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("removed %s %s\n", typeName(type), argv[1]);

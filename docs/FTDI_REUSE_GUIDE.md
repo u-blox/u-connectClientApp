@@ -1,6 +1,6 @@
 # FTDI D2XX: Embedded DLL Extraction & COM Port Detection
 
-Reusable patterns from u-connectClientApp for any Windows application using FTDI USB-serial devices.
+Reusable patterns from u-connectClientApp for any Windows application using FTDI USB-serial devices. The working implementation is in `app/src/ucxapp_platform_win.c` (loader, COM port detection) and `app/u-connectClientApp.rc` (embedded DLL); the snippets below are simplified.
 
 ---
 
@@ -9,7 +9,7 @@ Reusable patterns from u-connectClientApp for any Windows application using FTDI
 **Resource file (.rc):**
 ```rc
 // Resource ID 101, type RT_RCDATA
-IDR_FTD2XX_DLL 101 "third-party/ftdi/ftd2xx64.dll"
+IDR_FTD2XX_DLL RCDATA "third-party/ftdi/ftd2xx64.dll"
 ```
 
 **resource.h:**

@@ -1,7 +1,7 @@
 /*
  * u_webserver.c
  * 
- * Pure C HTTP server implementation for ucxclient - EVENT-DRIVEN ARCHITECTURE
+ * Pure C HTTP server implementation for u-connectClient - EVENT-DRIVEN ARCHITECTURE
  * Platform-independent (Windows/Linux/FreeRTOS) via u_port.h abstraction
  * 
  * Uses NORA-W36's u_cx_socket API with async callbacks (not blocking BSD sockets)
@@ -20,6 +20,7 @@
 #include "u_cx_socket.h"
 #include "u_cx_log.h"
 #include "u_port.h"
+#include "ucxapp_stats.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -287,6 +288,9 @@ static int32_t client_drain_tx(uWebServer_t *server, uWebServerClient_t *client)
     int32_t result = uCxSocketWrite(server->ucx_handle, client->socket,
                                     (const uint8_t *)(client->tx_buffer + client->tx_offset),
                                     chunk_len);
+    if (result > 0) {
+        ucxapp_stats_add(UCXAPP_STATS_WEB, (size_t)result, 0);
+    }
     if (result < 0) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Deferred write failed at offset %d (socket=%d)",
                       (int)client->tx_offset, (int)client->socket);
@@ -518,6 +522,7 @@ static void on_data_available(struct uCxHandle *puCxHandle, int32_t socket, int3
     int32_t result = uCxSocketRead(puCxHandle, socket, rx_space, rx_ptr);
     
     if (result > 0) {
+        ucxapp_stats_add(UCXAPP_STATS_WEB, 0, (size_t)result);
         client->rx_length += result;
         client->rx_buffer[client->rx_length] = '\0';
         
@@ -1099,6 +1104,7 @@ void uWebServerHandleDataAvailable(uWebServer_t *server, struct uCxHandle *puCxH
     int32_t result = uCxSocketRead(puCxHandle, socketHandle, rx_space, rx_ptr);
     
     if (result > 0) {
+        ucxapp_stats_add(UCXAPP_STATS_WEB, 0, (size_t)result);
         client->rx_length += result;
         client->rx_buffer[client->rx_length] = '\0';
         

@@ -1,8 +1,11 @@
 #include "ucxapp_cmd.h"
 
 #include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "u_cx_error_codes.h"
 
 typedef struct {
     const ucxapp_cmd_t *table;
@@ -33,6 +36,23 @@ static const ucxapp_cmd_t *findCmd(const char *name)
         }
     }
     return NULL;
+}
+
+const ucxapp_cmd_t *ucxapp_cmd_find(const char *name)
+{
+    return findCmd(name);
+}
+
+const char *ucxapp_errname(int32_t code)
+{
+    static char text[64];
+    const char *name = uCxGetErrorName(code);
+
+    if (name == NULL) {
+        return "";
+    }
+    snprintf(text, sizeof(text), ": %s", name);
+    return text;
 }
 
 bool ucxapp_parse_int(const char *s, int32_t *out)
@@ -92,6 +112,15 @@ static int tokenize(char *line, char *argv[], int maxArgs)
     return argc;
 }
 
+void ucxapp_cmd_foreach(void (*visit)(const ucxapp_cmd_t *cmd, void *user), void *user)
+{
+    for (size_t p = 0; p < gPackCount; p++) {
+        for (size_t i = 0; i < gPacks[p].count; i++) {
+            visit(&gPacks[p].table[i], user);
+        }
+    }
+}
+
 void ucxapp_cmd_print_help(const char *prefix)
 {
     size_t prefixLen = prefix != NULL ? strlen(prefix) : 0;
@@ -112,6 +141,127 @@ void ucxapp_cmd_print_help(const char *prefix)
     }
 }
 
+#define HANDLE_MAX 8
+
+typedef struct {
+    int32_t ids[HANDLE_MAX];
+    int count;
+} handleSet_t;
+
+static handleSet_t gHandles[2];
+static volatile uint32_t gHandleVersion;
+
+uint32_t ucxapp_handle_version(void)
+{
+    return gHandleVersion;
+}
+
+int ucxapp_handle_list(ucxapp_handle_kind_t kind, int32_t *out, int max)
+{
+    handleSet_t *s = &gHandles[kind];
+    int n;
+
+    ucxapp_events_lock();
+    n = s->count < max ? s->count : max;
+    memcpy(out, s->ids, sizeof(out[0]) * (size_t)n);
+    ucxapp_events_unlock();
+    return n;
+}
+
+void ucxapp_handle_remove(ucxapp_handle_kind_t kind, int32_t id)
+{
+    handleSet_t *s = &gHandles[kind];
+
+    ucxapp_events_lock();
+    for (int i = 0; i < s->count; i++) {
+        if (s->ids[i] == id) {
+            memmove(&s->ids[i], &s->ids[i + 1], sizeof(s->ids[0]) * (size_t)(s->count - i - 1));
+            s->count--;
+            gHandleVersion++;
+            break;
+        }
+    }
+    ucxapp_events_unlock();
+}
+
+/* The newest handle becomes the current one; the oldest is dropped when the list is full. */
+void ucxapp_handle_add(ucxapp_handle_kind_t kind, int32_t id)
+{
+    handleSet_t *s = &gHandles[kind];
+
+    ucxapp_handle_remove(kind, id);
+    ucxapp_events_lock();
+    if (s->count == HANDLE_MAX) {
+        memmove(&s->ids[0], &s->ids[1], sizeof(s->ids[0]) * (HANDLE_MAX - 1));
+        s->count--;
+    }
+    s->ids[s->count++] = id;
+    gHandleVersion++;
+    ucxapp_events_unlock();
+}
+
+int32_t ucxapp_handle_current(ucxapp_handle_kind_t kind)
+{
+    handleSet_t *s = &gHandles[kind];
+
+    ucxapp_events_lock();
+    int32_t id = s->count > 0 ? s->ids[s->count - 1] : -1;
+    ucxapp_events_unlock();
+    return id;
+}
+
+/* A usage starting with "[handle]" (socket) or "[conn]" (BLE) takes the current one when it is left out. */
+static void insertCurrentHandle(const ucxapp_cmd_t *cmd, int *argc, char *argv[])
+{
+    static char text[16];
+    ucxapp_handle_kind_t kind;
+    const char *u = cmd->usage;
+    int required = 0;
+    int depth = 0;
+    int32_t id;
+
+    if (strncmp(u, "[handle]", 8) == 0) {
+        kind = UCXAPP_HANDLE_SOCK;
+        u += 8;
+    } else if (strncmp(u, "[conn]", 6) == 0) {
+        kind = UCXAPP_HANDLE_CONN;
+        u += 6;
+    } else {
+        return;
+    }
+    for (; *u != '\0'; u++) {
+        if (*u == '<' || *u == '[') {
+            required += (*u == '<' && depth == 0);
+            depth++;
+        } else if (*u == '>' || *u == ']') {
+            depth--;
+        }
+    }
+    if (*argc >= UCXAPP_MAX_ARGS || (*argc - 1 > required && ucxapp_parse_int(argv[1], &id))) {
+        return;
+    }
+    id = ucxapp_handle_current(kind);
+    if (id < 0) {
+        return;
+    }
+    snprintf(text, sizeof(text), "%d", (int)id);
+    memmove(&argv[2], &argv[1], (size_t)(*argc - 1) * sizeof(argv[0]));
+    argv[1] = text;
+    (*argc)++;
+}
+
+static bool gAtMode;
+
+void ucxapp_at_mode(bool on)
+{
+    gAtMode = on;
+}
+
+bool ucxapp_at_mode_active(void)
+{
+    return gAtMode;
+}
+
 int ucxapp_cmd_exec(ucxapp_t *app, char *line)
 {
     char *argv[UCXAPP_MAX_ARGS];
@@ -122,6 +272,14 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
     }
     if (*line == '\0' || *line == '#') {
         return UCXAPP_OK;
+    }
+    if (gAtMode) {
+        if (strcmp(line, "back") == 0) {
+            gAtMode = false;
+            ucxapp_print("command mode\n");
+            return UCXAPP_OK;
+        }
+        return app->ucx != NULL ? ucxapp_at_send(app, line) : UCXAPP_ERR_NOT_CONNECTED;
     }
     argc = tokenize(line, argv, UCXAPP_MAX_ARGS);
     if (argc < 0) {
@@ -138,6 +296,16 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
     }
 
     const ucxapp_cmd_t *cmd = findCmd(argv[0]);
+    if (cmd == NULL && argc < UCXAPP_MAX_ARGS && strlen(argv[0]) > 2 && strchr(argv[0], '.') == NULL &&
+        (argv[0][0] == 'a' || argv[0][0] == 'A') && (argv[0][1] == 't' || argv[0][1] == 'T')) {
+        /* "ati9" or "AT+GMR" typed directly is sent as a raw AT command */
+        static char atName[] = "at";
+
+        memmove(&argv[1], &argv[0], (size_t)argc * sizeof(argv[0]));
+        argv[0] = atName;
+        argc++;
+        cmd = findCmd("at");
+    }
     if (cmd == NULL) {
         ucxapp_print("ERROR: unknown command '%s' (try 'help')\n", argv[0]);
         return UCXAPP_ERR_UNKNOWN_CMD;
@@ -147,7 +315,10 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
         return UCXAPP_ERR_NOT_CONNECTED;
     }
 
-    int result = cmd->run(app, argc, argv);
+    int result;
+
+    insertCurrentHandle(cmd, &argc, argv);
+    result = cmd->run(app, argc, argv);
     if (result == UCXAPP_ERR_USAGE) {
         ucxapp_print("usage: %s %s\n", cmd->name, cmd->usage);
     }

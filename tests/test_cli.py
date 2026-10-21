@@ -1,6 +1,8 @@
-"""Command-layer CLI tests: u-connectClientApp.exe <port> --exec "<command>" ..."""
+"""Command-layer CLI tests: ucxapp <port> --exec "<command>" ..."""
 
+import re
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -71,7 +73,10 @@ def test_web_stop_and_status_work_without_device(app_exe, tmp_path):
 
 
 def test_qr_text_needs_no_device(app_exe, tmp_path):
-    out = _run(app_exe, tmp_path, "COM255", "qr.text hello", "qr.wifi stenmo secret", "qr.geo 59.9 10.7")
+    out = _run(
+        app_exe, tmp_path, "COM255",
+        "utils.qr.text hello", "utils.qr.wifi stenmo secret", "utils.qr.geo 59.9 10.7",
+    )
     assert out.returncode == 0, out.stdout
 
 
@@ -113,7 +118,7 @@ def test_wifi_profiles_round_trip(app_exe, tmp_path):
     assert "cafe: ssid=CafeNet open" in out.stdout
     assert "2 profile(s)" in out.stdout
     assert "s3cret!" not in out.stdout
-    assert "s3cret!" not in (tmp_path / "u-connectClientApp.wifi").read_text()
+    assert "s3cret!" not in (tmp_path / "ucxapp.wifi").read_text()
 
     out = run("wifi.profile.add home ubx newpass", "wifi.profile.remove cafe", "wifi.profile.list")
     assert "1 profile(s)" in out.stdout
@@ -124,6 +129,67 @@ def test_wifi_profiles_round_trip(app_exe, tmp_path):
     out = run("wifi.profile.connect home")
     assert out.returncode == 1
     assert "not connected" in out.stdout
+
+
+def test_wifi_profiles_move_from_the_old_file_name(app_exe, tmp_path):
+    def run(*commands):
+        args = [str(app_exe), "COM255"]
+        for command in commands:
+            args += ["--exec", command]
+        return subprocess.run(args, capture_output=True, text=True, timeout=60, errors="replace", cwd=tmp_path)
+
+    run("wifi.profile.add home ubx s3cret!")
+    (tmp_path / "ucxapp.wifi").rename(tmp_path / "u-connectClientApp.wifi")
+    out = run("wifi.profile.list")
+    assert "home: ssid=ubx WPA" in out.stdout
+    assert (tmp_path / "ucxapp.wifi").exists()
+    assert not (tmp_path / "u-connectClientApp.wifi").exists()
+
+
+def test_app_about_commands(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "app.info", "app.version", "app.uptime", "app.sbom", "app.license",
+               "app.license qrcodegen")
+    assert out.returncode == 0, out.stdout
+    assert "u-blox AG" in out.stdout
+    assert re.search(r"built\s+\w{3} +\d+ \d{4} \d\d:\d\d:\d\d", out.stdout)
+    assert re.search(r"^0 days 00:00:\d\d$", out.stdout, re.M)
+    assert "u-connectClient " in out.stdout and "Apache-2.0" in out.stdout
+    assert "Permission is hereby granted" in out.stdout
+    assert _run(app_exe, tmp_path, "COM255", "app.license nosuch").returncode != 0
+
+
+def test_stats_show_and_clear(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "stats.show", "stats.show tcp rx", "stats.clear", "stats.clear sps")
+    assert out.returncode == 0, out.stdout
+    assert re.search(r"^mqtt\s+0\s+0$", out.stdout, re.M)
+    assert re.search(r"^0$", out.stdout, re.M)
+    for bad in ("stats.show foo", "stats.show tcp up", "stats.clear foo"):
+        assert _run(app_exe, tmp_path, "COM255", bad).returncode != 0, bad
+
+
+def test_file_list_and_remove(app_exe, tmp_path):
+    def run(*commands):
+        args = [str(app_exe), "COM255"]
+        for command in commands:
+            args += ["--exec", command]
+        return subprocess.run(args, capture_output=True, text=True, timeout=60, errors="replace", cwd=tmp_path)
+
+    (tmp_path / "a.zip").write_bytes(b"x" * 1234)
+    (tmp_path / "b.bin").write_bytes(b"y")
+    (tmp_path / "sub").mkdir()
+    out = run("file.list")
+    assert out.returncode == 0, out.stdout
+    assert re.search(r"\d+\s+1234\s+a\.zip", out.stdout)
+    assert "sub" not in out.stdout
+
+    number = re.search(r"(\d+)\s+1\s+b\.bin", out.stdout).group(1)
+    out = run("file.list", f"file.remove {number}", "file.remove a.zip")
+    assert out.returncode == 0, out.stdout
+    assert not (tmp_path / "a.zip").exists()
+    assert not (tmp_path / "b.bin").exists()
+
+    for bad in ("file.remove 99", "file.remove ../x", "file.remove missing.bin"):
+        assert run(bad).returncode == 1, bad
 
 
 def test_hid_key_usage_error(app_exe, tmp_path):
@@ -139,3 +205,251 @@ def test_device_info_and_wifi_status(app_exe, tmp_path, port_a):
     assert "NORA-W36" in out.stdout
     assert "wifi:" in out.stdout
     assert "socket(s)" in out.stdout
+
+
+@pytest.mark.parametrize("command", [
+    "gnss.status", "gnss.close", "gnss.send 00", "gnss.log off", "gnss.bridge tcp", "gnss.bridge status",
+])
+def test_gnss_commands_need_an_open_receiver(app_exe, tmp_path, command):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 1
+    assert "no receiver open" in out.stdout
+
+
+@pytest.mark.parametrize("command", [
+    "imu.status", "imu.close", "imu.send aa", "imu.rate 10", "imu.bridge udp host 5005", "imu.bridge ble",
+])
+def test_imu_commands_need_an_open_sensor(app_exe, tmp_path, command):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 1
+    assert "no IMU open" in out.stdout
+
+
+@pytest.mark.parametrize("command, usage", [
+    ("gnss.restart bogus", "usage: gnss.restart"),
+    ("gnss.rate x", "usage: gnss.rate"),
+])
+def test_gnss_commands_reject_bad_arguments(app_exe, tmp_path, command, usage):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 1
+    assert usage in out.stdout
+
+
+def test_gnss_and_imu_detect_without_hardware_do_not_crash(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "gnss.detect COM254", "imu.detect COM254")
+    assert out.returncode in (0, 1)
+    assert "Traceback" not in out.stdout
+
+
+@pytest.mark.parametrize("command", [
+    "gatt.listen", "gatt.listen off", "gatt.listen 1", "gatt.client.example.wit", "gatt.client.example.hrs",
+])
+def test_gatt_listen_and_examples_need_a_device(app_exe, tmp_path, command):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 1
+    assert "not connected" in out.stdout
+
+
+def test_gatt_listen_help_mentions_off(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "help gatt.listen", "help gatt.client.example.wit")
+    assert "[seconds|off]" in out.stdout
+    assert "WitMotion" in out.stdout
+
+
+@pytest.mark.parametrize("command", [
+    "cell.close", "cell.status", "cell.at AT", "cell.apn", "cell.apn internet", "cell.attach", "cell.ping 8.8.8.8",
+    "cell.bridge tcp", "cell.bridge uart COM1",
+])
+def test_cell_commands_need_an_open_module(app_exe, tmp_path, command):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 1
+    assert "no cellular module open" in out.stdout
+
+
+@pytest.mark.parametrize("command, expected", [
+    ("gnss.bridge uart COM1", "no receiver open"),
+    ("gnss.bridge tcpc 10.0.0.1 80", "no receiver open"),
+    ("gnss.bridge udps 5000", "no receiver open"),
+    ("gnss.bridge ble sps", "no receiver open"),
+    ("imu.bridge uart COM1", "no IMU open"),
+    ("imu.bridge udp 10.0.0.1 5000 6000", "no IMU open"),
+    ("cell.bridge uart COM1 9600", "no cellular module open"),
+    ("cell.bridge tcpc 10.0.0.1 80", "no cellular module open"),
+])
+def test_uart_bridge_needs_an_open_device(app_exe, tmp_path, command, expected):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 1
+    assert expected in out.stdout
+
+
+def test_hw_gpio_roundtrip(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "hw.gpio.mode 3 out", "hw.gpio.write 3 1", "hw.gpio.read 3",
+               "hw.gpio.toggle 3", "hw.gpio.read 3")
+    assert out.returncode == 0
+    assert out.stdout.count("pin 3 = 1") >= 2
+    assert "pin 3 = 0" in out.stdout
+
+
+def test_hw_led_on_toggle_off(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "hw.led 5 on", "hw.gpio.read 5", "hw.led 5 toggle",
+               "hw.gpio.read 5", "hw.led 5 off", "hw.gpio.read 5")
+    assert out.returncode == 0
+    assert "led on pin 5 = 1" in out.stdout
+    assert "led on pin 5 = 0" in out.stdout
+    assert "pin 5 = 0" in out.stdout
+
+
+def test_hw_i2c_scan_and_registers(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "hw.i2c.scan", "hw.i2c.reg 0x68 0x75", "hw.i2c.write 0x48 10 AA BB",
+               "hw.i2c.reg 0x48 0x10 2")
+    assert out.returncode == 0
+    assert "found 0x48 0x68 0x76" in out.stdout
+    assert "\n68\n" in out.stdout
+    assert "AA BB" in out.stdout
+
+
+def test_hw_i2c_nack_fails(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "hw.i2c.read 0x50 1")
+    assert out.returncode == 1
+    assert "no ACK from 0x50" in out.stdout
+
+
+def test_hw_spi_loopback_adc_pwm_and_can(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "hw.spi.xfer 9F 00 12", "hw.adc.read 2", "hw.pwm.set 1 2000 12.5",
+               "hw.can.send 0x123 DE AD BE EF", "hw.can.recv", "hw.can.recv", "hw.status")
+    assert out.returncode == 0
+    assert "9F 00 12" in out.stdout
+    assert "adc 2 = " in out.stdout
+    assert "pwm 1: 2000 Hz, 12.5 %" in out.stdout
+    assert "0x123 [4] DE AD BE EF" in out.stdout
+    assert "no frame" in out.stdout
+    assert "pwm 1 of 4 channels running" in out.stdout
+
+
+@pytest.mark.parametrize("command, usage", [
+    ("hw.gpio.read 99", "usage: hw.gpio.read"),
+    ("hw.gpio.write 1 2", "usage: hw.gpio.write"),
+    ("hw.led 3", "usage: hw.led"),
+    ("hw.led 3 blink", "usage: hw.led"),
+    ("hw.i2c.write 0x48", "usage: hw.i2c.write"),
+    ("hw.spi.xfer zz", "usage: hw.spi.xfer"),
+    ("hw.adc.read 8", "usage: hw.adc.read"),
+    ("hw.pwm.set 0 1000 101", "usage: hw.pwm.set"),
+    ("hw.can.send 0x20000000", "usage: hw.can.send"),
+])
+def test_hw_commands_reject_bad_arguments(app_exe, tmp_path, command, usage):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 1
+    assert usage in out.stdout
+
+
+def test_hw_exec_speaks_the_bridge_protocol(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "hw.exec gpio.write 4 1", "hw.exec gpio.read 4", "hw.exec i2c.scan",
+               "hw.exec nope")
+    assert "OK pin 4 = 1" in out.stdout
+    assert "OK found 0x48" in out.stdout
+    assert "ERR unknown command 'nope'" in out.stdout
+
+
+BOARDS = Path(__file__).resolve().parents[1] / "app" / "boards"
+
+
+@pytest.mark.parametrize("board", ["h753", "f767", "f439"])
+def test_hw_load_board_profiles(app_exe, tmp_path, board):
+    out = _run(app_exe, tmp_path, "COM255", f"hw.load {BOARDS / (board + '.json')}", "hw.board", "hw.gpio.mode PB0 out",
+               "hw.gpio.write PB0 1", "hw.gpio.read pb0", "hw.i2c.scan", "hw.adc.read 3", "hw.adc.read 4")
+    assert "loaded NUCLEO-" in out.stdout
+    assert "i2c scl PB8 sda PB9" in out.stdout
+    assert "pin 0 = 1" in out.stdout
+    assert "found 0x48 0x68 0x76" in out.stdout
+    assert out.returncode == 1   # adc 4 does not exist on the profile
+    assert "usage: hw.adc.read" in out.stdout
+
+
+@pytest.mark.parametrize("text, message", [
+    ('{"board":"x","gpio":["PB0","PB0"]}', "pin PB0 is assigned twice"),
+    ('{"board":"x","gpio":["PB7"],"reserved":["PB7"]}', "pin PB7 is reserved"),
+    ('{"board":"x","gpio":["B7"]}', "bad pin name 'B7'"),
+    ('{"board":"x","gpoi":["PB1"]}', "unknown or invalid key 'gpoi[0]'"),
+    ('{"board":"x",', "JSON syntax error"),
+])
+def test_hw_load_rejects_bad_profiles(app_exe, tmp_path, text, message):
+    path = tmp_path / "bad.json"
+    path.write_text(text, encoding="utf-8")
+    out = _run(app_exe, tmp_path, "COM255", f"hw.load {path}")
+    assert out.returncode == 1
+    assert message in out.stdout
+
+
+def test_hw_load_missing_file(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "hw.load nothere.json")
+    assert out.returncode == 1
+    assert "cannot open nothere.json" in out.stdout
+
+
+def test_hw_help_lists_every_documented_command(app_exe, tmp_path):
+    doc = (Path(__file__).resolve().parents[1] / "COMMANDS.md").read_text(encoding="utf-8")
+    out = _run(app_exe, tmp_path, "COM255", "help hw.")
+    for name in sorted(set(re.findall(r"`(hw\.[a-z0-9.]+)`", doc))):
+        assert name in out.stdout, name
+
+
+def test_hw_bridge_without_module_or_port_fails_cleanly(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "hw.bridge status", "hw.bridge off", "hw.bridge udp 10.0.0.1 5000")
+    assert out.stdout.count("bridge: off") == 2
+    assert "no module connected" in out.stdout
+    out = _run(app_exe, tmp_path, "COM255", "hw.bridge uart COM254")
+    assert out.returncode == 1
+    assert "cannot open COM254" in out.stdout
+
+
+def test_cell_connect_needs_an_open_module(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "cell.connect 10.0.0.1 80")
+    assert out.returncode == 1
+    assert "no cellular module open" in out.stdout
+
+
+@pytest.mark.parametrize("command", ["cell.connect", "cell.connect host", "cell.connect host 0", "cell.connect h 1 x"])
+def test_cell_connect_rejects_bad_arguments(app_exe, tmp_path, command):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 1
+    assert "usage: cell.connect" in out.stdout
+
+
+def test_bridge_over_cell_needs_a_data_link(app_exe, tmp_path):
+    for command in ("cell.disconnect", "hw.bridge cell"):
+        out = _run(app_exe, tmp_path, "COM255", command)
+        assert out.returncode == 1
+        assert "no cellular data link" in out.stdout
+
+
+@pytest.mark.parametrize("command, expected", [
+    ("hw.bridge ble custom 6E400001-B5A3-F393-E0A9-E50E24DCCA9E", "no module connected"),
+    ("hw.bridge ble custom 6E400001B5A3F393E0A9E50E24DCCA9E", "no module connected"),
+    ("hw.bridge ble custom zz", "usage: hw.bridge"),
+    ("hw.bridge ble custom 6E400001-B5A3-F393-E0A9-E50E24DCCA9E 6E400002-B5A3-F393-E0A9-E50E24DCCA9E",
+     "usage: hw.bridge"),
+])
+def test_custom_ble_bridge_arguments(app_exe, tmp_path, command, expected):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 1
+    assert expected in out.stdout
+
+
+@pytest.mark.parametrize("command, usage", [
+    ("cell.open", "usage: cell.open"),
+    ("cell.open COM254 x", "usage: cell.open"),
+    ("cell.at", "usage: cell.at"),
+    ("cell.attach maybe", "usage: cell.attach"),
+    ("cell.ping", "usage: cell.ping"),
+])
+def test_cell_commands_reject_bad_arguments(app_exe, tmp_path, command, usage):
+    out = _run(app_exe, tmp_path, "COM255", command)
+    assert out.returncode == 1
+    assert usage in out.stdout
+
+
+def test_cell_open_on_missing_port_fails_cleanly(app_exe, tmp_path):
+    out = _run(app_exe, tmp_path, "COM255", "cell.open COM254")
+    assert out.returncode == 1
+    assert "no AT response" in out.stdout

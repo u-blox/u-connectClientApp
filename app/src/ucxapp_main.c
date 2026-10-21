@@ -5,6 +5,7 @@
 
 #include "ucxapp_cmd.h"
 #include "ucxapp_platform.h"
+#include "ucxapp_tui.h"
 #ifdef APP_VERSION_MAJOR
 #include "version.h"
 #endif
@@ -106,9 +107,10 @@ static const ucxapp_cmd_t gConnectCmds[] = {
 
 static void printUsage(const char *prog)
 {
-    ucxapp_print("usage: %s [port] [--exec \"<command>\"]... [--shell] [--list-ports] [--list-modules] [--version]\n", prog);
+    ucxapp_print("usage: %s [port] [--exec \"<command>\"]... [--shell] [--tui] [--list-ports] [--list-modules] [--version]\n", prog);
     ucxapp_print("  without a port, --exec/--shell use the first NORA EVK found\n");
-    ucxapp_print("  with no --exec/--shell the command shell starts; 'help' lists the commands\n");
+    ucxapp_print("  with no --exec/--shell the text UI starts (command shell if not on a terminal); 'help' lists the commands\n");
+    ucxapp_print("  --tui forces the three-pane text UI (commands, log, events), --shell the plain command shell\n");
 }
 
 static void listPorts(void)
@@ -130,6 +132,7 @@ int main(int argc, char *argv[])
     const char *execCmds[MAX_EXEC];
     int execCount = 0;
     bool shellMode = false;
+    bool tuiMode = false;
 
     ucxapp_platform_init();
     ucxapp_io_set(&ucxapp_io_stdio);
@@ -139,9 +142,11 @@ int main(int argc, char *argv[])
             execCmds[execCount++] = argv[++i];
         } else if (strcmp(argv[i], "--shell") == 0) {
             shellMode = true;
+        } else if (strcmp(argv[i], "--tui") == 0) {
+            tuiMode = true;
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
 #ifdef APP_VERSION_STRING
-            ucxapp_print("%s\n", APP_VERSION_STRING);
+            ucxapp_print("%s\n", ucxapp_version_text());
 #else
             ucxapp_print("unknown\n");
 #endif
@@ -172,12 +177,18 @@ int main(int argc, char *argv[])
     ucxapp_register_sock_cmds();
     ucxapp_register_net_cmds();
     ucxapp_register_sys_cmds();
+    ucxapp_register_app_cmds();
     ucxapp_register_mqtt_cmds();
     ucxapp_register_bt_cmds();
     ucxapp_register_cert_cmds();
     ucxapp_register_fw_cmds();
     ucxapp_register_gatt_cmds();
     ucxapp_register_qr_cmds();
+    ucxapp_register_utils_cmds();
+    ucxapp_register_gnss_cmds();
+    ucxapp_register_cell_cmds();
+    ucxapp_register_imu_cmds();
+    ucxapp_register_hw_cmds();
     ucxapp_register_hid_cmds();
     ucxapp_register_web_cmds();
 
@@ -202,7 +213,13 @@ int main(int argc, char *argv[])
             rc = 1;
         }
     }
-    if (rc == 0 && (shellMode || execCount == 0)) {
+    if (rc == 0 && (tuiMode || (execCount == 0 && !shellMode))) {
+        rc = ucxapp_tui_run(&app);
+        if (rc != 0 && !tuiMode) {
+            ucxapp_shell_run(&app);   /* not a terminal (piped input): plain shell */
+            rc = 0;
+        }
+    } else if (rc == 0 && shellMode) {
         ucxapp_shell_run(&app);
     }
     {

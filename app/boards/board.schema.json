@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "u-connectClientApp board profile",
+  "type": "object",
+  "required": ["board"],
+  "additionalProperties": false,
+  "definitions": {
+    "pin": { "type": "string", "pattern": "^P[A-K]([0-9]|1[0-5])$" },
+    "pins": { "type": "array", "items": { "$ref": "#/definitions/pin" }, "uniqueItems": true }
+  },
+  "properties": {
+    "board": { "type": "string" },
+    "gpio": { "$ref": "#/definitions/pins", "maxItems": 32 },
+    "adc": { "$ref": "#/definitions/pins", "maxItems": 16 },
+    "pwm": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["pin", "timer"],
+        "additionalProperties": false,
+        "properties": { "pin": { "$ref": "#/definitions/pin" }, "timer": { "type": "string" } }
+      }
+    },
+    "i2c": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "scl": { "$ref": "#/definitions/pin" }, "sda": { "$ref": "#/definitions/pin" } }
+    },
+    "spi": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sck": { "$ref": "#/definitions/pin" },
+        "miso": { "$ref": "#/definitions/pin" },
+        "mosi": { "$ref": "#/definitions/pin" },
+        "cs": { "$ref": "#/definitions/pin" }
+      }
+    },
+    "can": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "rx": { "$ref": "#/definitions/pin" }, "tx": { "$ref": "#/definitions/pin" } }
+    },
+    "reserved": { "$ref": "#/definitions/pins", "maxItems": 16 },
+    "emu": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "i2c": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["addr"],
+            "additionalProperties": false,
+            "properties": {
+              "addr": { "type": "string" },
+              "regs": { "type": "object", "additionalProperties": { "type": "string" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

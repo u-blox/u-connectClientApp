@@ -1,0 +1,22 @@
+{
+  "board": "NUCLEO-H753ZI",
+  "gpio": ["PB0", "PB14", "PE1", "PC13", "PF15", "PF14", "PF13", "PF12", "PD15", "PD14"],
+  "adc": ["PA3", "PC0", "PC3", "PF10"],
+  "pwm": [
+    { "pin": "PE9", "timer": "TIM1_CH1" },
+    { "pin": "PE11", "timer": "TIM1_CH2" },
+    { "pin": "PE13", "timer": "TIM1_CH3" },
+    { "pin": "PE14", "timer": "TIM1_CH4" }
+  ],
+  "i2c": { "scl": "PB8", "sda": "PB9" },
+  "spi": { "sck": "PE2", "miso": "PE5", "mosi": "PE6", "cs": "PE4" },
+  "can": { "rx": "PD0", "tx": "PD1" },
+  "reserved": ["PB6", "PB7", "PG9", "PG14", "PD8", "PD9"],
+  "emu": {
+    "i2c": [
+      { "addr": "0x48", "regs": { "0": "0x19" } },
+      { "addr": "0x68", "regs": { "0x75": "0x68" } },
+      { "addr": "0x76", "regs": { "0xD0": "0x60" } }
+    ]
+  }
+}

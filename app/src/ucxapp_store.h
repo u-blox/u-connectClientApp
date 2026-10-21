@@ -13,6 +13,8 @@
 extern "C" {
 #endif
 
+typedef void (*ucxapp_store_list_cb_t)(const char *name, uint64_t size, void *ctx);
+
 typedef struct {
     /* Returns a handle or NULL. Names are plain relative file names. */
     void *(*open)(const char *name, bool forWrite);
@@ -23,6 +25,8 @@ typedef struct {
     bool (*remove)(const char *name);
     /* Replaces `to` if it exists. */
     bool (*rename)(const char *from, const char *to);
+    /* Calls cb for every stored file; returns the count, -1 if listing failed. */
+    int (*list)(ucxapp_store_list_cb_t cb, void *ctx);
 } ucxapp_store_ops_t;
 
 typedef struct ucxapp_store_writer ucxapp_store_writer_t;
@@ -41,6 +45,8 @@ uint8_t *ucxapp_store_load(const char *name, size_t *outLen);
 
 bool ucxapp_store_exists(const char *name);
 bool ucxapp_store_remove(const char *name);
+/** Calls cb for every stored file (no folders); returns the count, -1 if the backend cannot list. */
+int ucxapp_store_list(ucxapp_store_list_cb_t cb, void *ctx);
 
 /** Streaming write for large data such as downloads. Nothing appears under `name` until commit. */
 ucxapp_store_writer_t *ucxapp_store_begin(const char *name);

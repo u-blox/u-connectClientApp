@@ -58,13 +58,13 @@ def _build_target(c, target=None, clean=False):
     if target:
         print(f"Executable: bin/{target}.exe")
     else:
-        print("Executable: bin/u-connectClientApp.exe")
+        print("Executable: bin/ucxapp.exe")
 
 
 @task(help={'clean': 'Clean build directory before building'})
 def build(c, clean=False):
     """Build u-connectClientApp."""
-    _build_target(c, target='u-connectClientApp', clean=clean)
+    _build_target(c, target='ucxapp', clean=clean)
 
 
 @task

@@ -19,6 +19,14 @@ static int gPendingKey = -1;
 void ucxapp_web_on_incoming(int32_t sock, int32_t listenSock) { (void)sock; (void)listenSock; }
 void ucxapp_web_on_data(int32_t sock, int32_t bytes) { (void)sock; (void)bytes; }
 void ucxapp_web_on_closed(int32_t sock) { (void)sock; }
+void ucxapp_stream_on_incoming(int32_t sock, int32_t listenSock) { (void)sock; (void)listenSock; }
+void ucxapp_stream_on_closed(int32_t sock) { (void)sock; }
+void ucxapp_stream_on_data(int32_t sock) { (void)sock; }
+void ucxapp_stream_on_sps_data(void) { }
+void ucxapp_stream_on_ble_rx(const uint8_t *data, size_t len) { (void)data; (void)len; }
+size_t ucxapp_gnss_summary(char *out, size_t size) { (void)size; out[0] = '\0'; return 0; }
+size_t ucxapp_imu_summary(char *out, size_t size) { (void)size; out[0] = '\0'; return 0; }
+void ucxapp_ui_event(const char *text) { (void)text; }
 bool ucxapp_hid_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len)
 {
     (void)conn; (void)handle; (void)data; (void)len;
@@ -44,6 +52,13 @@ int _gettimeofday(struct timeval *tv, void *tz)
 
 void ucxapp_platform_init(void)
 {
+}
+
+bool ucxapp_platform_local_ip(char *out, size_t size)
+{
+    (void)out;
+    (void)size;
+    return false;
 }
 
 uint32_t ucxapp_platform_tick_ms(void)
@@ -116,4 +131,12 @@ bool ucxapp_platform_find_file(const char *dir, const char *ext, char *out, size
     (void)out;
     (void)outSize;
     return false;
+}
+
+int ucxapp_platform_list_files(const char *dir, void (*cb)(const char *name, uint64_t size, void *ctx), void *ctx)
+{
+    (void)dir;
+    (void)cb;
+    (void)ctx;
+    return -1;
 }

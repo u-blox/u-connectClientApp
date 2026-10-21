@@ -8,39 +8,42 @@ u-connectClientApp is a command shell for testing u-connectXpress devices (NORA-
 
 Always use the `u-blox-docs` MCP server (`.vscode/mcp.json`) to look up u-connectXpress AT commands, module behaviour and firmware details before answering or changing module-related code.
 
-## Targets and Launchers
+## Targets and Launcher
 
-| Target | Launcher | Notes |
+`ucxapp.py` is the one launcher for every target; `ucxapp.cmd` is only a thin Windows caller of it (type `.\ucxapp` in PowerShell, `./ucxapp.py` on Linux). The old `u-connectClientAppWin.cmd`, `u-connectClientAppSTM32.cmd` and `u-connectClientAppLinux.sh` just forward to it. The target is this OS unless a flag selects another one:
+
+| Target | Command | Notes |
 |---|---|---|
-| Windows | `.\u-connectClientAppWin.cmd` | Visual Studio 2022 + CMake |
-| Linux | `./u-connectClientAppLinux.sh` | CMake + gcc, binary `app/bin/ucxapp` |
-| STM32 | `.\u-connectClientAppSTM32.cmd [--board h753\|f767\|f439] --build --flash --log` | H753 is the default; needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH`, `STM32CUBEF4_PATH`) |
+| Windows | `.\ucxapp` | Visual Studio 2022 + CMake |
+| Linux | `./ucxapp.py` (or `.\ucxapp --linux` for WSL) | CMake + gcc, binary `app/bin/ucxapp` (Windows exe: `app/bin/ucxapp.exe`) |
+| STM32 | `.\ucxapp --stm32 [--board h753\|f767\|f439\|all] --build --flash --log` | H753 is the default; needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH`, `STM32CUBEF4_PATH`) |
 
 The command layer in `app/src/ucxapp_*.c` is portable; platform code lives in `ucxapp_platform_*.c` and `app/stm32/`.
 
 Customer-facing skills for each target are in `.github/skills/`. Releases are built by `.github/workflows/release.yml` on `v*` tags (Windows, Linux and the three STM32 images).
 
+## Use the same scripts every time
+
+- Find hardware with `.\ucxapp --detect`: ports with their role, NORA modules, GNSS receiver (port and baud), IMU, and the `UCX_*` test variables. `--detect --test tests/test_hardware.py` runs the hardware tests on what it found.
+- Do not write one-off probe, port-scan or test scripts (no temporary `.ps1`/`.py` files, no ad-hoc loops over COM ports). If the launcher, the app detectors (`gnss.detect`, `imu.detect`, `cell.detect`, `--list-modules`, `--list-ports`) or the tests miss something, improve them and add a test in `tests/`.
+- New launcher features go into `ucxapp.py`, never into the `.cmd` callers.
+
 ## Building
 
 ### Quick Build (Recommended)
 ```powershell
-.\u-connectClientAppWin.cmd
+.\ucxapp
 ```
 This auto-builds if needed and launches the application.
 
 ### Build Commands
 ```powershell
-# Standard Release build
-.\u-connectClientAppWin.cmd
-
-# Debug build
-.\u-connectClientAppWin.cmd debug
-
-# Clean build artifacts
-.\u-connectClientAppWin.cmd clean
-
-# Full rebuild from scratch
-.\u-connectClientAppWin.cmd rebuild
+.\ucxapp                  # Release build if needed, then run
+.\ucxapp --debug          # Debug build
+.\ucxapp --clean          # clean build artifacts
+.\ucxapp --rebuild        # reconfigure and rebuild from scratch
+.\ucxapp --build --run    # build, then start
+.\ucxapp --help           # all options
 ```
 
 ### Manual CMake Build
@@ -71,7 +74,7 @@ cmake --build build/windows --config Release
 git submodule update --init u-connectClient
 
 # Update submodule to latest
-.\u-connectClientAppWin.cmd update
+.\ucxapp --update
 ```
 
 ## Code Style
@@ -86,7 +89,10 @@ git submodule update --init u-connectClient
 ```powershell
 # Static checks (ruff, shellcheck) and repo sanity checks
 python -m pip install pytest ruff
-python -m pytest
+.\ucxapp --test
+
+# Hardware tests on the detected modules, GNSS receiver and IMU
+.\ucxapp --detect --test tests/test_hardware.py
 ```
 
 CI (`.github/workflows/build.yml`) runs pytest and a Windows Release build on every push.
@@ -94,19 +100,16 @@ CI (`.github/workflows/build.yml`) runs pytest and a Windows Release build on ev
 New code goes into `app/src/` as separate command modules.
 
 ```powershell
-# Run application with self-test
-.\u-connectClientAppWin.cmd selftest
+# Workspace and executable checks
+.\ucxapp --selftest
 
 # Firmware update
-.\u-connectClientApp.exe --exec "fw.flash <file>"
+.\ucxapp COM13 --exec "fw.flash <file>"
 ```
 
 ## Release Process
 
-1. Clean rebuild: `.\u-connectClientAppWin.cmd rebuild`
-2. Sign with certificate: `.\u-connectClientAppWin.cmd sign CERT_THUMBPRINT`
-3. Create git tag: `git tag -a v3.2.0.YYMMDD -m "Release message"`
-4. Push tag: `git push origin v3.2.0.YYMMDD`
+`python scripts/release.py` (or `.\ucxapp --release`) rebuilds, signs, tags and uploads; `--dry-run` only builds and signs. Signing alone: `.\ucxapp --rebuild --sign CERT_THUMBPRINT`.
 
 ## Version Numbering
 
@@ -119,5 +122,6 @@ New code goes into `app/src/` as separate command modules.
 - Windows 10/11 (64-bit)
 - Visual Studio 2022 Build Tools
 - CMake 3.15+
+- Python 3.10+ (launcher and tests)
 - FTDI USB device or UART connection to a NORA module
 - STM32 builds: Arm GNU toolchain, Ninja, STM32CubeProgrammer

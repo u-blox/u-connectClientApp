@@ -207,7 +207,20 @@ static bool ramRename(const char *from, const char *to)
     return true;
 }
 
-static const ucxapp_store_ops_t gRamStore = { ramOpen, ramRead, ramWrite, ramClose, ramRemove, ramRename };
+static int ramList(ucxapp_store_list_cb_t cb, void *ctx)
+{
+    int count = 0;
+
+    for (int i = 0; i < RAM_FILES; i++) {
+        if (gRamFiles[i].used) {
+            cb(gRamFiles[i].name, gRamFiles[i].len, ctx);
+            count++;
+        }
+    }
+    return count;
+}
+
+static const ucxapp_store_ops_t gRamStore = { ramOpen, ramRead, ramWrite, ramClose, ramRemove, ramRename, ramList };
 
 /* ---- module connection ---------------------------------------------------- */
 
@@ -379,6 +392,7 @@ static void appTask(void *arg)
     ucxapp_register_sock_cmds();
     ucxapp_register_net_cmds();
     ucxapp_register_sys_cmds();
+    ucxapp_register_app_cmds();
     ucxapp_register_mqtt_cmds();
     ucxapp_register_bt_cmds();
     ucxapp_register_cert_cmds();

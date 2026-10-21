@@ -1,21 +1,34 @@
 /* POSIX backend for ucxapp_platform.h */
 
 #define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
 
 #include "ucxapp_platform.h"
 
+#include <arpa/inet.h>
 #include <dirent.h>
+#include <ifaddrs.h>
 #include <limits.h>
+#include <net/if.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/ioctl.h>
 #include <sys/select.h>
+#include <sys/stat.h>
+#include <termios.h>
 #include <time.h>
 #include <unistd.h>
 
 void ucxapp_platform_init(void)
 {
+}
+
+void ucxapp_platform_sleep_ms(uint32_t ms)
+{
+    usleep((useconds_t)ms * 1000u);
 }
 
 uint32_t ucxapp_platform_tick_ms(void)
@@ -37,6 +50,137 @@ bool ucxapp_platform_key_pressed(void)
 int ucxapp_platform_get_key(void)
 {
     return getchar();
+}
+
+static struct termios gSavedTermios;
+static bool gTermActive;
+
+bool ucxapp_platform_terminal_enter(void)
+{
+    struct termios raw;
+
+    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO) || tcgetattr(STDIN_FILENO, &gSavedTermios) != 0) {
+        return false;
+    }
+    raw = gSavedTermios;
+    raw.c_iflag &= ~(tcflag_t)(IXON | ICRNL);
+    raw.c_lflag &= ~(tcflag_t)(ICANON | ECHO | ISIG);
+    raw.c_cc[VMIN] = 0;
+    raw.c_cc[VTIME] = 0;
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) != 0) {
+        return false;
+    }
+    gTermActive = true;
+    return true;
+}
+
+void ucxapp_platform_terminal_leave(void)
+{
+    if (gTermActive) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &gSavedTermios);
+        gTermActive = false;
+    }
+}
+
+void ucxapp_platform_terminal_size(int *cols, int *rows)
+{
+    struct winsize ws;
+
+    *cols = 80;
+    *rows = 24;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0 && ws.ws_row > 0) {
+        *cols = ws.ws_col;
+        *rows = ws.ws_row;
+    }
+}
+
+static int readByte(void)
+{
+    unsigned char c;
+
+    return read(STDIN_FILENO, &c, 1) == 1 ? (int)c : -1;
+}
+
+int ucxapp_platform_read_key(void)
+{
+    int c = readByte();
+
+    if (c == 127) {
+        return 8;
+    }
+    if (c != 27) {
+        return c;
+    }
+    int c1 = readByte();
+    if (c1 < 0) {
+        return 27;
+    }
+    int c2 = readByte();
+    if (c1 == '[' || c1 == 'O') {
+        switch (c2) {
+        case 'A': return UCXAPP_KEY_UP;
+        case 'B': return UCXAPP_KEY_DOWN;
+        case 'C': return UCXAPP_KEY_RIGHT;
+        case 'D': return UCXAPP_KEY_LEFT;
+        case 'H': return UCXAPP_KEY_HOME;
+        case 'F': return UCXAPP_KEY_END;
+        case 'P': return UCXAPP_KEY_F1;
+        case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': {
+            int num = c2 - '0';
+            int d = readByte();
+            while (d >= '0' && d <= '9') {
+                num = num * 10 + (d - '0');
+                d = readByte();
+            }
+            if (d == '~') {
+                switch (num) {
+                case 1: case 7: return UCXAPP_KEY_HOME;
+                case 3: return UCXAPP_KEY_DEL;
+                case 4: case 8: return UCXAPP_KEY_END;
+                case 5: return UCXAPP_KEY_PGUP;
+                case 6: return UCXAPP_KEY_PGDN;
+                case 11: return UCXAPP_KEY_F1;
+                case 21: return UCXAPP_KEY_F10;
+                default: break;
+                }
+            }
+            return -1;
+        }
+        default: break;
+        }
+    }
+    return -1;
+}
+
+bool ucxapp_platform_local_ip(char *out, size_t size)
+{
+    static const char *const skip[] = { "docker", "veth", "br-", "virbr", "tun", "tap", "vmnet", "wg" };
+    struct ifaddrs *all;
+    bool found = false;
+
+    out[0] = '\0';
+    if (getifaddrs(&all) != 0) {
+        return false;
+    }
+    for (struct ifaddrs *a = all; a != NULL && !found; a = a->ifa_next) {
+        char ip[INET_ADDRSTRLEN];
+        bool virt = false;
+
+        if (a->ifa_addr == NULL || a->ifa_addr->sa_family != AF_INET || (a->ifa_flags & IFF_LOOPBACK) != 0 ||
+            (a->ifa_flags & IFF_UP) == 0) {
+            continue;
+        }
+        for (size_t i = 0; i < sizeof(skip) / sizeof(skip[0]); i++) {
+            virt = virt || strncmp(a->ifa_name, skip[i], strlen(skip[i])) == 0;
+        }
+        if (!virt && inet_ntop(AF_INET, &((struct sockaddr_in *)a->ifa_addr)->sin_addr, ip, sizeof(ip)) != NULL &&
+            strncmp(ip, "169.254.", 8) != 0) {
+            snprintf(out, size, "%s", ip);
+            found = true;
+        }
+    }
+    freeifaddrs(all);
+    return found;
 }
 
 void ucxapp_platform_exe_dir(char *buffer, size_t bufferSize)
@@ -87,6 +231,11 @@ int ucxapp_platform_list_serial_ports(ucxapp_serial_port_t *ports, int maxPorts)
         }
         count++;
         readSysfsText(entry->d_name, "product", port->desc, sizeof(port->desc));
+        char id[8];
+        readSysfsText(entry->d_name, "idVendor", id, sizeof(id));
+        port->vid = (uint16_t)strtoul(id, NULL, 16);
+        readSysfsText(entry->d_name, "idProduct", id, sizeof(id));
+        port->pid = (uint16_t)strtoul(id, NULL, 16);
         port->available = access(port->name, R_OK | W_OK) == 0;
     }
     closedir(dir);
@@ -101,6 +250,28 @@ bool ucxapp_platform_extract_zip(const char *zipPath, const char *destDir)
     char cmd[2 * PATH_MAX];
     snprintf(cmd, sizeof(cmd), "unzip -o -q \"%s\" -d \"%s\"", zipPath, destDir);
     return system(cmd) == 0;
+}
+
+int ucxapp_platform_list_files(const char *dir, void (*cb)(const char *name, uint64_t size, void *ctx), void *ctx)
+{
+    DIR *d = opendir(dir);
+    struct dirent *e;
+    int count = 0;
+
+    if (d == NULL) {
+        return -1;
+    }
+    while ((e = readdir(d)) != NULL) {
+        char path[PATH_MAX];
+        struct stat st;
+        int n = snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
+        if (n > 0 && (size_t)n < sizeof(path) && stat(path, &st) == 0 && S_ISREG(st.st_mode)) {
+            cb(e->d_name, (uint64_t)st.st_size, ctx);
+            count++;
+        }
+    }
+    closedir(d);
+    return count;
 }
 
 bool ucxapp_platform_find_file(const char *dir, const char *ext, char *out, size_t outSize)

@@ -6,9 +6,13 @@ description: Build and run u-connectClientApp on Linux to test and configure a u
 # u-connectClientApp on Linux
 
 ## Build and run
-1. Install `cmake`, `gcc` and `git`.
+1. Install `cmake`, `gcc`, `git` and `python3`.
 2. `git submodule update --init u-connectClient`
-3. `./u-connectClientAppLinux.sh` builds and starts the shell (the binary is `app/bin/ucxapp`).
+3. `./ucxapp.py` builds and starts the shell (the binary is `app/bin/ucxapp`). `--help` lists the options.
+4. From Windows, `.\ucxapp --linux` runs the same build inside WSL. Attach USB serial devices to WSL with `usbipd` first.
+
+## Find the hardware
+`./ucxapp.py --detect` lists the ports, NORA modules, GNSS receiver and IMU and prints the `UCX_*` test variables; `--detect --test tests/test_hardware.py` runs the hardware tests on them. Do not write one-off probe scripts; improve `detect()` in `ucxapp.py` or the app detectors instead.
 
 ## Use
 - Serial access: add your user to the `dialout` group (`sudo usermod -aG dialout $USER`, then log in again).

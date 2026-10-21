@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ucxapp_platform.h"
+
 #define NAME_MAX_LEN 256
 #define TMP_SUFFIX   ".part"
 
@@ -57,8 +59,13 @@ static bool stdioRename(const char *from, const char *to)
     return rename(a, b) == 0;
 }
 
+static int stdioList(ucxapp_store_list_cb_t cb, void *ctx)
+{
+    return ucxapp_platform_list_files(gDir[0] != '\0' ? gDir : ".", cb, ctx);
+}
+
 static const ucxapp_store_ops_t gStdioOps = {
-    stdioOpen, stdioRead, stdioWrite, stdioClose, stdioRemove, stdioRename
+    stdioOpen, stdioRead, stdioWrite, stdioClose, stdioRemove, stdioRename, stdioList
 };
 static const ucxapp_store_ops_t *gOps = &gStdioOps;
 
@@ -77,6 +84,11 @@ void ucxapp_store_set_backend(const ucxapp_store_ops_t *ops)
 void ucxapp_store_set_dir(const char *dir)
 {
     snprintf(gDir, sizeof(gDir), "%s", dir != NULL ? dir : "");
+}
+
+int ucxapp_store_list(ucxapp_store_list_cb_t cb, void *ctx)
+{
+    return gOps->list != NULL ? gOps->list(cb, ctx) : -1;
 }
 
 ucxapp_store_writer_t *ucxapp_store_begin(const char *name)
@@ -134,9 +146,23 @@ bool ucxapp_store_save(const char *name, const void *data, size_t len)
     return ucxapp_store_end(w, ok);
 }
 
-uint8_t *ucxapp_store_load(const char *name, size_t *outLen)
+/* Opens for reading; a file still under its old name (u-connectClientApp.wifi -> ucxapp.wifi) is moved first. */
+static void *openForRead(const char *name)
 {
     void *h = gOps->open(name, false);
+    char old[NAME_MAX_LEN + 16];
+    if (h == NULL && strncmp(name, "ucxapp.", 7) == 0) {
+        snprintf(old, sizeof(old), "u-connectClientApp%s", name + 6);
+        if (gOps->rename(old, name)) {
+            h = gOps->open(name, false);
+        }
+    }
+    return h;
+}
+
+uint8_t *ucxapp_store_load(const char *name, size_t *outLen)
+{
+    void *h = openForRead(name);
     if (h == NULL) {
         return NULL;
     }
@@ -177,7 +203,7 @@ uint8_t *ucxapp_store_load(const char *name, size_t *outLen)
 
 bool ucxapp_store_exists(const char *name)
 {
-    void *h = gOps->open(name, false);
+    void *h = openForRead(name);
     if (h == NULL) {
         return false;
     }

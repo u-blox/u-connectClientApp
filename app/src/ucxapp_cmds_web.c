@@ -9,6 +9,7 @@
 
 #include "ucxapp_cmd.h"
 #include "ucxapp_thread.h"
+#include "ucxapp_ui.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -24,7 +25,6 @@
 #define DEFAULT_PORT   80
 #define TOKEN_LEN      12
 #define MAX_EVENTS     64
-#define RING_SIZE      8192
 #define OUT_CHUNK_ESC  380      /* escaped bytes per SSE event; the engine caps an event at 512 */
 #define KEEPALIVE_MS   15000
 #define MAX_JOB        256
@@ -39,28 +39,86 @@ typedef struct {
 
 static const char kPage[] =
     "<!doctype html><html><head><meta charset=\"utf-8\"><title>u-connectClientApp</title>"
-    "<style>body{font-family:sans-serif;margin:1rem;background:#f4f4f4}"
-    "#out{background:#111;color:#ddd;padding:.5rem;height:60vh;overflow:auto;white-space:pre-wrap;font:13px monospace}"
-    "input{width:60%;padding:.3rem;font:14px monospace}button{padding:.3rem .8rem;margin-right:.3rem}"
-    "#st{margin-left:1rem;color:#555}</style></head><body>"
-    "<h3>u-connectClientApp <span id=\"st\">connecting...</span></h3>"
-    "<div id=\"out\"></div><p><input id=\"cmd\" placeholder=\"command, e.g. device.info\" autofocus> "
-    "<button id=\"run\">Run</button> <button data-c=\"help\">help</button>"
-    "<button data-c=\"device.info\">device.info</button><button data-c=\"wifi.status\">wifi.status</button>"
-    "</p><script>"
-    "const out=document.getElementById('out'),st=document.getElementById('st'),cmd=document.getElementById('cmd');"
-    "const T=new URLSearchParams(location.search).get('t')||'';"
-    "function add(t){out.textContent+=t.replace(/\\x1b\\[[0-9;]*m/g,'');out.scrollTop=out.scrollHeight}"
+    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+    "<style>:root{--ac:#2f6fed;--bd:#2b3648;--bg2:#0a0d12}body{margin:0;font:14px system-ui,-apple-system,'Segoe UI',sans-serif;background:#0f1419;color:#d6dde6}"
+    "header{display:flex;align-items:center;gap:1rem;padding:.55rem 1rem;background:linear-gradient(90deg,#1a2230,#162033);border-bottom:2px solid var(--ac)}"
+    "h1{margin:0;font-size:1.05rem;font-weight:600;letter-spacing:.02em}.logo{height:1.9rem;width:auto;background:#fff;border-radius:6px;padding:.25rem .5rem}"
+    "#st{font-size:.78rem;padding:.1rem .55rem;border-radius:1rem;background:#2a2410;color:#f2c94c}#st.ok{background:#12301f;color:#6fcf97}#st.bad{background:#3a1717;color:#eb5757}"
+    "#busy{margin-left:auto;font-size:.85rem;color:#f2994a}#state{font-size:.85rem;color:#8fa3bf}"
+    "main{display:grid;grid-template-columns:19rem 3fr 2fr;gap:.6rem;padding:.6rem;height:calc(100vh - 9rem)}"
+    ".pane{display:flex;flex-direction:column;min-height:0}.pane h4{margin:0 0 .3rem;color:#8fa3bf;font-weight:600;font-size:.75rem;text-transform:uppercase;letter-spacing:.08em}"
+    "#out,#ev{flex:1;overflow:auto;background:#0a0d12;border:1px solid #2b3648;border-radius:6px;padding:.5rem;"
+    "font:13px/1.4 Consolas,monospace}#out{white-space:pre-wrap}.e{white-space:pre-wrap}"
+    ".e.wifi,.e.net,.e.sock{color:#6fcf97}.e.mqtt{color:#bb86fc}.e.bt,.e.gatt,.e.sps{color:#f2c94c}.e.http,.e.ping{color:#56ccf2}"
+    "footer{padding:0 .6rem .6rem;display:flex;gap:.4rem;flex-wrap:wrap}"
+    "#cmd{flex:1;min-width:12rem;padding:.5rem;font:14px Consolas,monospace;background:#0a0d12;color:#d6dde6;"
+    "border:1px solid #2b3648;border-radius:6px}"
+    "button{padding:.4rem .8rem;background:#233047;color:#d6dde6;border:1px solid var(--bd);border-radius:6px;cursor:pointer;transition:background .15s}"
+    "button:hover{background:#2d3f5e}#run{background:var(--ac);border-color:var(--ac)}#cmd:focus,.c input:focus{outline:none;border-color:var(--ac)}"
+    "#side{flex:1;overflow:auto;background:#0a0d12;border:1px solid #2b3648;border-radius:6px;padding:.4rem}"
+    "summary{cursor:pointer;padding:.25rem;font-weight:600;text-transform:uppercase;font-size:.8rem;color:#8fa3bf}"
+    ".c{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center;padding:.3rem 0;border-bottom:1px solid #1d2635}"
+    ".c b{width:100%;font:12px Consolas,monospace;color:#8fb4ff;cursor:help}"
+    ".c input,.c select{flex:1;min-width:4rem;padding:.25rem;background:#0f1419;color:#d6dde6;"
+    "border:1px solid #2b3648;border-radius:4px}.c button{padding:.25rem .6rem}"
+    "@media(max-width:800px){main{grid-template-columns:1fr;height:auto}#out,#ev,#side{height:35vh}}</style></head><body>"
+    "<header><svg class=\"logo\" viewBox=\"0 0 1024 400\" role=\"img\" aria-label=\"u-blox\">"
+    "<circle cx=\"200\" cy=\"200\" r=\"190\" fill=\"#e60000\"/><circle cx=\"165\" cy=\"130\" r=\"32\" fill=\"#fff\"/>"
+    "<g font-family=\"Arial,Helvetica,sans-serif\" font-weight=\"700\" font-size=\"300\">"
+    "<text x=\"205\" y=\"325\" fill=\"#fff\" textLength=\"190\">u</text>"
+    "<text x=\"410\" y=\"325\" fill=\"#1b1b1b\" textLength=\"600\">blox</text></g></svg>"
+    "<h1>u-connectClientApp</h1><span id=\"st\">connecting...</span><span id=\"state\"></span><span id=\"busy\"></span>"
+    "<button id=\"clr\">Clear</button></header>"
+    "<main><div class=\"pane\"><h4>Commands</h4><div id=\"side\"></div></div>"
+    "<div class=\"pane\"><h4>Log</h4><div id=\"out\"></div></div>"
+    "<div class=\"pane\"><h4>Events</h4><div id=\"ev\"></div></div></main>"
+    "<footer><input id=\"cmd\" placeholder=\"command, e.g. wifi.scan (up/down for history)\" autofocus>"
+    "<button id=\"run\">Run</button></footer><script>"
+    "const $=i=>document.getElementById(i),out=$('out'),ev=$('ev'),st=$('st'),cmd=$('cmd'),"
+    "T=new URLSearchParams(location.search).get('t')||'',H=[];let hi=0;"
+    "const stick=el=>el.scrollTop+el.clientHeight>=el.scrollHeight-20;"
+    "function add(t){const s=stick(out);out.textContent+=t.replace(/\\x1b\\[[0-9;]*m/g,'');"
+    "if(out.textContent.length>60000)out.textContent=out.textContent.slice(-40000);if(s)out.scrollTop=out.scrollHeight}"
+    "function addEv(t){const s=stick(ev),d=document.createElement('div');d.className='e '+t.split(':')[0];"
+    "d.textContent=new Date().toLocaleTimeString()+'  '+t;ev.appendChild(d);"
+    "while(ev.children.length>200)ev.removeChild(ev.firstChild);if(s)ev.scrollTop=ev.scrollHeight}"
     "const es=new EventSource('/events?t='+T);"
-    "es.onopen=()=>st.textContent='live';es.onerror=()=>st.textContent='disconnected';"
+    "es.onopen=()=>{st.textContent='live';st.className='ok'};"
+    "es.onerror=()=>{st.textContent='disconnected';st.className='bad'};"
     "es.addEventListener('out',e=>add(JSON.parse(e.data)));"
-    "es.addEventListener('done',e=>add('[exit '+e.data+']\\n'));"
-    "async function run(c){if(!c)return;add('> '+c+'\\n');"
-    "const r=await fetch('/api/exec?t='+T+'&cmd='+encodeURIComponent(c),{method:'POST'});"
-    "if(r.status==409)add('busy: a command is still running\\n');else if(!r.ok)add('error '+r.status+'\\n')}"
-    "document.getElementById('run').onclick=()=>{run(cmd.value);cmd.value=''};"
-    "cmd.onkeydown=e=>{if(e.key==='Enter'){run(cmd.value);cmd.value=''}};"
-    "document.querySelectorAll('button[data-c]').forEach(b=>b.onclick=()=>run(b.dataset.c));"
+    "es.addEventListener('evt',e=>addEv(JSON.parse(e.data)));"
+    "es.addEventListener('state',e=>{$('state').textContent=JSON.parse(e.data)});"
+    "es.addEventListener('done',e=>{$('busy').textContent='';add('[exit '+e.data+']\\n')});"
+    "async function run(c,a,raw){c=c.trim();if(!c)return;const sh=c+(a?' '+a.join(' '):'');"
+    "if(H[H.length-1]!==sh)H.push(sh);hi=H.length;add('> '+sh+'\\n');"
+    "try{let u='/api/exec?t='+T+'&cmd='+encodeURIComponent(c);"
+    "if(a){while(a.length&&!a[a.length-1])a.pop();a.forEach((v,i)=>u+='&a'+i+'='+encodeURIComponent(v));if(raw)u+='&r=1'}"
+    "const r=await fetch(u,{method:'POST'});"
+    "if(r.status==409)add('busy: a command is still running\\n');"
+    "else if(!r.ok)add('error '+r.status+'\\n');else $('busy').textContent='running '+c}"
+    "catch(x){add('send failed\\n')}}"
+    "$('run').onclick=()=>{run(cmd.value);cmd.value=''};"
+    "$('clr').onclick=()=>{out.textContent='';ev.textContent=''};"
+    "cmd.onkeydown=e=>{if(e.key==='Enter'){run(cmd.value);cmd.value=''}"
+    "else if(e.key==='ArrowUp'&&hi>0){cmd.value=H[--hi];e.preventDefault()}"
+    "else if(e.key==='ArrowDown'){hi=Math.min(hi+1,H.length);cmd.value=H[hi]||''}};"
+    "const DF={url:'http://example.com',host:'example.com',port:'80',count:'4',topic:'test/ucx',text:'hello',"
+    "lat:'59.3293',lon:'18.0686',file:'download.bin',key:'a',command:'AT',seconds:'10'};"
+    "function dv(n,k){return n==='sock.bind'&&k==='port'?'5000':DF[k.replace(/[.]+$/,'')]||''}"
+    "function mk(c){const d=document.createElement('div'),b=document.createElement('b'),"
+    "raw=!c.f,f=c.f||(c.u?[['args',1,'']]:[]),ins=[];"
+    "d.className='c';b.textContent=c.n;b.title=c.h+'  '+c.u;d.appendChild(b);"
+    "f.forEach(x=>{let e;if(x[2]){e=document.createElement('select');"
+    "if(x[1])e.add(new Option('',''));x[2].split('|').forEach(v=>e.add(new Option(v,v)))}"
+    "else{e=document.createElement('input');e.placeholder=x[0];e.title=c.u;if(!x[1])e.value=dv(c.n,x[0])}"
+    "ins.push(e);d.appendChild(e)});"
+    "const g=document.createElement('button');g.textContent='Run';g.title=c.h;"
+    "g.onclick=()=>run(c.n,ins.map(e=>e.value.trim()),raw);d.appendChild(g);return d}"
+    "fetch('/api/groups?t='+T).then(r=>r.json()).then(gs=>{"
+    "gs.forEach(g=>{const d=document.createElement('details'),s=document.createElement('summary');let l=0;"
+    "s.textContent=g;d.appendChild(s);d.ontoggle=()=>{if(d.open&&!l){l=1;"
+    "fetch('/api/commands?t='+T+'&g='+g).then(r=>r.json()).then(cs=>cs.forEach(c=>d.appendChild(mk(c))))}};"
+    "$('side').appendChild(d)})});"
     "</script></body></html>";
 
 static ucxapp_t *gApp;
@@ -71,17 +129,11 @@ static volatile bool gRunning;
 static volatile bool gStop;
 static U_CX_MUTEX_HANDLE gLock;
 static ucxapp_thread_t *gPumpThread;
-static ucxapp_thread_t *gWorkerThread;
 
 static webEvent_t gEvents[MAX_EVENTS];
 static int gEvHead, gEvCount;
 
-static char gRing[RING_SIZE];
-static int gRingHead, gRingCount;
-
-static char gJob[MAX_JOB];
-static bool gJobPending, gJobRunning, gDonePending;
-static int gDoneRc;
+static uint32_t gLogCur, gEvCur, gDoneSeen;   /* this front end's positions in the shared streams */
 
 /* ---- queues shared with the URC and print contexts ------------------------ */
 
@@ -131,36 +183,17 @@ static bool popEvent(webEvent_t *e)
     return have;
 }
 
-/* Keeps the newest RING_SIZE bytes so a browser that connects late still sees recent output. */
-static void outputSink(const char *text, size_t len)
-{
-    if (!gRunning) {
-        return;
-    }
-    U_CX_MUTEX_LOCK(gLock);
-    for (size_t i = 0; i < len; i++) {
-        if (gRingCount == RING_SIZE) {
-            gRingHead = (gRingHead + 1) % RING_SIZE;
-            gRingCount--;
-        }
-        gRing[(gRingHead + gRingCount) % RING_SIZE] = text[i];
-        gRingCount++;
-    }
-    U_CX_MUTEX_UNLOCK(gLock);
-}
-
 /* ---- pump thread: the only thread that touches the HTTP engine ------------ */
 
-/* Builds a JSON string of the next ring bytes into out; returns raw bytes used (0 = ring empty). */
-static int peekOutput(char *out, size_t outSize)
+/* Builds a JSON string from the start of raw; returns the raw bytes used. */
+static int escapeOutput(const char *raw, int rawLen, char *out, size_t outSize)
 {
     int used = 0;
     size_t n = 0;
 
-    U_CX_MUTEX_LOCK(gLock);
     out[n++] = '"';
-    while (used < gRingCount && n + 8 < outSize && n < OUT_CHUNK_ESC) {
-        unsigned char c = (unsigned char)gRing[(gRingHead + used) % RING_SIZE];
+    while (used < rawLen && n + 8 < outSize && n < OUT_CHUNK_ESC) {
+        unsigned char c = (unsigned char)raw[used];
         if (c == '"' || c == '\\') {
             out[n++] = '\\';
             out[n++] = (char)c;
@@ -180,68 +213,98 @@ static int peekOutput(char *out, size_t outSize)
         used++;
     }
     /* do not split a UTF-8 sequence */
-    while (used < gRingCount && ((unsigned char)gRing[(gRingHead + used) % RING_SIZE] & 0xC0) == 0x80 &&
-           n + 8 < outSize) {
-        out[n++] = gRing[(gRingHead + used) % RING_SIZE];
+    while (used < rawLen && ((unsigned char)raw[used] & 0xC0) == 0x80 && n + 8 < outSize) {
+        out[n++] = raw[used];
         used++;
     }
     out[n++] = '"';
     out[n] = '\0';
-    U_CX_MUTEX_UNLOCK(gLock);
     return used;
-}
-
-static void consumeOutput(int n)
-{
-    U_CX_MUTEX_LOCK(gLock);
-    gRingHead = (gRingHead + n) % RING_SIZE;
-    gRingCount -= n;
-    U_CX_MUTEX_UNLOCK(gLock);
 }
 
 static void flushOutput(void)
 {
-    char json[600];
+    char raw[256], json[600];
 
     if (uWebServerGetSSEClientCount(gServer) <= 0) {
         return;
     }
     for (int round = 0; round < 4; round++) {
-        int used = peekOutput(json, sizeof(json));
-        if (used == 0) {
+        int avail = (int)ucxapp_ui_log_peek(&gLogCur, raw, sizeof(raw));
+        if (avail == 0) {
             break;
         }
+        int used = escapeOutput(raw, avail, json, sizeof(json));
         if (uWebServerBroadcastSSEEvent(gServer, "out", json) <= 0) {
             return;   /* previous event still draining; retry next pass */
         }
-        consumeOutput(used);
+        gLogCur += (uint32_t)used;
+    }
+}
+
+static void flushEvents(void)
+{
+    char line[96], json[2 * sizeof(line) + 4];
+
+    if (uWebServerGetSSEClientCount(gServer) <= 0) {
+        return;
+    }
+    for (int round = 0; round < 4 && ucxapp_ui_event_peek(&gEvCur, line, sizeof(line)); round++) {
+        size_t n = 0;
+
+        json[n++] = '"';
+        for (const char *p = line; *p != '\0'; p++) {
+            if (*p == '"' || *p == '\\') {
+                json[n++] = '\\';
+                json[n++] = *p;
+            } else if ((unsigned char)*p >= 0x20) {
+                json[n++] = *p;
+            }
+        }
+        json[n++] = '"';
+        json[n] = '\0';
+        if (uWebServerBroadcastSSEEvent(gServer, "evt", json) <= 0) {
+            return;   /* previous event still draining; retry next pass */
+        }
+        gEvCur++;
+    }
+}
+
+/* Sent on change and every 5 s so a page that connects later gets the current state. */
+static void flushState(void)
+{
+    static uint32_t seen = UINT32_MAX;
+    static int32_t lastMs;
+    char text[200], json[210];
+    int32_t now = U_CX_PORT_GET_TIME_MS();
+    uint32_t version = ucxapp_ui_state(text, sizeof(text));
+
+    if ((version == seen && now - lastMs < 5000) || uWebServerGetSSEClientCount(gServer) <= 0) {
+        return;
+    }
+    snprintf(json, sizeof(json), "\"%s\"", text);
+    if (uWebServerBroadcastSSEEvent(gServer, "state", json) > 0) {
+        seen = version;
+        lastMs = now;
     }
 }
 
 static void flushDone(void)
 {
-    int rc = 0;
-    bool send = false;
-    bool ringEmpty;
+    int rc;
+    uint32_t seq = ucxapp_ui_done_seq(&rc);
+    uint32_t cur = gLogCur;
+    char probe[8];
 
-    U_CX_MUTEX_LOCK(gLock);
-    ringEmpty = gRingCount == 0;
-    if (gDonePending && ringEmpty) {
-        rc = gDoneRc;
-        send = true;
+    /* send "done" only after the command's output has been delivered */
+    if (seq == gDoneSeen || ucxapp_ui_log_peek(&cur, probe, sizeof(probe)) > 0 ||
+        uWebServerGetSSEClientCount(gServer) <= 0) {
+        return;
     }
-    U_CX_MUTEX_UNLOCK(gLock);
-    if (send && uWebServerGetSSEClientCount(gServer) > 0) {
-        char text[16];
-        snprintf(text, sizeof(text), "%d", rc);
-        if (uWebServerBroadcastSSEEvent(gServer, "done", text) <= 0) {
-            return;
-        }
-    }
-    if (send) {
-        U_CX_MUTEX_LOCK(gLock);
-        gDonePending = false;
-        U_CX_MUTEX_UNLOCK(gLock);
+    char text[16];
+    snprintf(text, sizeof(text), "%d", rc);
+    if (uWebServerBroadcastSSEEvent(gServer, "done", text) > 0) {
+        gDoneSeen = seq;
     }
 }
 
@@ -270,6 +333,8 @@ static void pumpLoop(void *arg)
             }
         }
         flushOutput();
+        flushEvents();
+        flushState();
         flushDone();
         if (U_CX_PORT_GET_TIME_MS() - lastKeepAlive > KEEPALIVE_MS) {
             uWebServerBroadcastSSEEvent(gServer, "ka", "");
@@ -277,37 +342,6 @@ static void pumpLoop(void *arg)
         }
         uWebServerProcess(gServer);
         U_CX_PORT_SLEEP_MS(20);
-    }
-}
-
-/* ---- worker thread: runs commands posted from the browser ----------------- */
-
-static void workerLoop(void *arg)
-{
-    char line[MAX_JOB];
-
-    (void)arg;
-    while (!gStop) {
-        bool have = false;
-
-        U_CX_MUTEX_LOCK(gLock);
-        if (gJobPending) {
-            memcpy(line, gJob, sizeof(line));
-            gJobPending = false;
-            gJobRunning = true;
-            have = true;
-        }
-        U_CX_MUTEX_UNLOCK(gLock);
-        if (!have) {
-            U_CX_PORT_SLEEP_MS(20);
-            continue;
-        }
-        int rc = ucxapp_cmd_exec(gApp, line);
-        U_CX_MUTEX_LOCK(gLock);
-        gJobRunning = false;
-        gDoneRc = rc;
-        gDonePending = true;
-        U_CX_MUTEX_UNLOCK(gLock);
     }
 }
 
@@ -375,8 +409,10 @@ static void routeEvents(const uHttpRequest_t *req, uHttpResponse_t *resp, void *
 
 static void routeExec(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
 {
-    char cmd[MAX_JOB];
-    bool busy;
+    char cmd[MAX_JOB], line[MAX_JOB], vals[UCXAPP_UI_MAX_FIELDS][96], tmp[8];
+    const char *ptrs[UCXAPP_UI_MAX_FIELDS];
+    int count = 0;
+    const char *name = cmd;
 
     (void)user;
     if (!tokenOk(req)) {
@@ -388,22 +424,120 @@ static void routeExec(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
         return;
     }
     urlDecode(cmd);
-    if (cmd[0] == '\0' || strncmp(cmd, "web.", 4) == 0) {
+    while (*name == ' ' || *name == '\t') {
+        name++;
+    }
+    if (*name == '\0' || strncmp(name, "web.", 4) == 0) {
         uWebServerSendError(resp, 400, "command not allowed");
         return;
     }
-    U_CX_MUTEX_LOCK(gLock);
-    busy = gJobPending || gJobRunning;
-    if (!busy) {
-        memcpy(gJob, cmd, sizeof(gJob));
-        gJobPending = true;
+    for (int i = 0; i < UCXAPP_UI_MAX_FIELDS; i++) {
+        char key[8];
+
+        snprintf(key, sizeof(key), "a%d", i);
+        ptrs[i] = "";
+        if (uWebServerGetQueryParam(req, key, vals[i], sizeof(vals[i])) == 0) {
+            urlDecode(vals[i]);
+            ptrs[i] = vals[i];
+            count = i + 1;
+        }
     }
-    U_CX_MUTEX_UNLOCK(gLock);
-    if (busy) {
-        uWebServerSendError(resp, 409, "busy");
+    if (count > 0) {
+        bool raw = uWebServerGetQueryParam(req, "r", tmp, sizeof(tmp)) == 0;
+        ucxapp_ui_compose(name, ptrs, count, raw, line, sizeof(line));
     } else {
-        uWebServerSendText(resp, "accepted");
+        snprintf(line, sizeof(line), "%s", name);
     }
+    if (ucxapp_ui_submit(line)) {
+        uWebServerSendText(resp, "accepted");
+    } else {
+        uWebServerSendError(resp, 409, "busy");
+    }
+}
+
+/* ---- generated command list for the page ------------------------------------- */
+
+#define API_BUF 16384
+
+static void jsonStr(char *buf, size_t *n, const char *s)
+{
+    for (; *s != '\0' && *n + 8 < API_BUF; s++) {
+        if (*s == '"' || *s == '\\') {
+            buf[(*n)++] = '\\';
+            buf[(*n)++] = *s;
+        } else if ((unsigned char)*s >= 0x20) {
+            buf[(*n)++] = *s;
+        }
+    }
+}
+
+/* The response body must outlive the handler, hence static storage; only the pump thread calls this. */
+static void routeList(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
+{
+    static char buf[API_BUF];
+    static char groups[UCXAPP_UI_MAX_GROUPS][UCXAPP_UI_GROUP_LEN];
+    static const ucxapp_cmd_t *cmds[UCXAPP_UI_MAX_GROUP_CMDS];
+    char group[16];
+    size_t n = 0;
+    bool first = true;
+
+    (void)user;
+    if (!tokenOk(req)) {
+        uWebServerSendError(resp, 403, "token required");
+        return;
+    }
+    buf[n++] = '[';
+    if (strcmp(req->path, "/api/groups") == 0) {
+        int count = ucxapp_ui_groups(groups, UCXAPP_UI_MAX_GROUPS);
+
+        for (int i = 0; i < count; i++) {
+            if (strcmp(groups[i], "web") != 0) {
+                n += (size_t)snprintf(buf + n, API_BUF - n, "%s\"%s\"", first ? "" : ",", groups[i]);
+                first = false;
+            }
+        }
+    } else {
+        if (uWebServerGetQueryParam(req, "g", group, sizeof(group)) != 0) {
+            uWebServerSendError(resp, 400, "missing g");
+            return;
+        }
+        int count = ucxapp_ui_group_cmds(group, cmds, UCXAPP_UI_MAX_GROUP_CMDS);
+
+        for (int i = 0; i < count && n + 700 < API_BUF; i++) {
+            ucxapp_ui_field_t fields[UCXAPP_UI_MAX_FIELDS];
+            int nf = ucxapp_ui_parse_usage(cmds[i]->usage, fields, UCXAPP_UI_MAX_FIELDS);
+
+            if (strncmp(cmds[i]->name, "web.", 4) == 0) {
+                continue;
+            }
+            buf[n++] = first ? ' ' : ',';
+            first = false;
+            n += (size_t)snprintf(buf + n, API_BUF - n, "{\"n\":\"");
+            jsonStr(buf, &n, cmds[i]->name);
+            n += (size_t)snprintf(buf + n, API_BUF - n, "\",\"h\":\"");
+            jsonStr(buf, &n, cmds[i]->help);
+            n += (size_t)snprintf(buf + n, API_BUF - n, "\",\"u\":\"");
+            jsonStr(buf, &n, cmds[i]->usage);
+            n += (size_t)snprintf(buf + n, API_BUF - n, "\",\"f\":");
+            if (nf < 0) {
+                n += (size_t)snprintf(buf + n, API_BUF - n, "null");
+            } else {
+                buf[n++] = '[';
+                for (int k = 0; k < nf; k++) {
+                    n += (size_t)snprintf(buf + n, API_BUF - n, "%s[\"", k > 0 ? "," : "");
+                    jsonStr(buf, &n, fields[k].name);
+                    n += (size_t)snprintf(buf + n, API_BUF - n, "\",%d,\"", fields[k].optional ? 1 : 0);
+                    jsonStr(buf, &n, fields[k].choices);
+                    n += (size_t)snprintf(buf + n, API_BUF - n, "\"]");
+                }
+                buf[n++] = ']';
+            }
+            buf[n++] = '}';
+        }
+    }
+    buf[n++] = ']';
+    buf[n] = '\0';
+    uWebServerSendJSON(resp, buf);
 }
 
 /* ---- commands --------------------------------------------------------------- */
@@ -422,10 +556,8 @@ static void webStop(void)
     gRunning = false;
     gStop = true;
     ucxapp_thread_join(gPumpThread);
-    ucxapp_thread_join(gWorkerThread);
     gPumpThread = NULL;
-    gWorkerThread = NULL;
-    ucxapp_io_remove_sink(outputSink);
+    ucxapp_ui_release();
     uWebServerFree(gServer);
     gServer = NULL;
     U_CX_MUTEX_DELETE(gLock);
@@ -456,37 +588,47 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
     gApp = app;
     gPort = (uint16_t)port;
     gStop = false;
-    gEvHead = gEvCount = gRingHead = gRingCount = 0;
-    gJobPending = gJobRunning = gDonePending = false;
+    gEvHead = gEvCount = 0;
     U_CX_MUTEX_CREATE(gLock);
+
+    if (!ucxapp_ui_acquire(app)) {
+        ucxapp_print("ERROR: cannot start the command runner\n");
+        U_CX_MUTEX_DELETE(gLock);
+        return UCXAPP_ERR_FAILED;
+    }
+    gLogCur = ucxapp_ui_log_start();
+    gEvCur = ucxapp_ui_event_start();
+    gDoneSeen = ucxapp_ui_done_seq(&(int){ 0 });
 
     (void)uCxSocketSetReadMode(app->ucx, U_READ_MODE_BUFFERED);
     gServer = uWebServerInit(app->ucx, gPort);
     if (gServer == NULL ||
         uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/", routePage, NULL) != 0 ||
         uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/events", routeEvents, NULL) != 0 ||
-        uWebServerAddRoute(gServer, U_HTTP_METHOD_POST, "/api/exec", routeExec, NULL) != 0) {
+        uWebServerAddRoute(gServer, U_HTTP_METHOD_POST, "/api/exec", routeExec, NULL) != 0 ||
+        uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/api/groups", routeList, NULL) != 0 ||
+        uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/api/commands", routeList, NULL) != 0) {
         ucxapp_print("ERROR: cannot create the web server\n");
         uWebServerFree(gServer);
         gServer = NULL;
+        ucxapp_ui_release();
         U_CX_MUTEX_DELETE(gLock);
         return UCXAPP_ERR_FAILED;
     }
     int32_t result = uWebServerStart(gServer);
     if (result < 0) {
-        ucxapp_print("ERROR: listen on port %d failed (%d)\n", (int)port, (int)result);
+        ucxapp_print("ERROR: listen on port %d failed (%d%s)\n", (int)port, (int)result, ucxapp_errname(result));
         uWebServerFree(gServer);
         gServer = NULL;
+        ucxapp_ui_release();
         U_CX_MUTEX_DELETE(gLock);
         return UCXAPP_ERR_FAILED;
     }
 
     gRunning = true;
-    ucxapp_io_add_sink(outputSink);
     gPumpThread = ucxapp_thread_start(pumpLoop, NULL);
-    gWorkerThread = ucxapp_thread_start(workerLoop, NULL);
-    if (gPumpThread == NULL || gWorkerThread == NULL) {
-        ucxapp_print("ERROR: cannot start the web threads\n");
+    if (gPumpThread == NULL) {
+        ucxapp_print("ERROR: cannot start the web thread\n");
         webStop();
         return UCXAPP_ERR_FAILED;
     }

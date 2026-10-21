@@ -113,9 +113,9 @@ static int cmdQrGeo(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gQrCmds[] = {
-    { "qr.text", "<text>",                                   "Print any text as a QR code",                    0, cmdQrText },
-    { "qr.wifi", "<ssid> [password] [WPA|WEP|nopass] [hidden]", "Print a Wi-Fi join QR code (WIFI: payload)",  0, cmdQrWifi },
-    { "qr.geo",  "<lat> <lon>",                              "Print a Google Maps location QR code",           0, cmdQrGeo },
+    { "utils.qr.text", "<text>",                                   "Print any text as a QR code",                    0, cmdQrText },
+    { "utils.qr.wifi", "<ssid> [password] [WPA|WEP|nopass] [hidden]", "Print a Wi-Fi join QR code (WIFI: payload)",  0, cmdQrWifi },
+    { "utils.qr.geo",  "<lat> <lon>",                              "Print a Google Maps location QR code",           0, cmdQrGeo },
 };
 
 void ucxapp_register_qr_cmds(void)

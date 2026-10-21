@@ -10,7 +10,9 @@
 #include <string.h>
 
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
+#include <iphlpapi.h>
 #include <conio.h>
 #include <winhttp.h>
 #include <setupapi.h>
@@ -21,6 +23,8 @@
 #include "u_cx_log.h"
 
 #pragma comment(lib, "winhttp.lib")
+#pragma comment(lib, "iphlpapi.lib")
+#pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "cfgmgr32.lib")
 
@@ -56,6 +60,11 @@ void ucxapp_platform_init(void)
     SetConsoleOutputCP(CP_UTF8);
 }
 
+void ucxapp_platform_sleep_ms(uint32_t ms)
+{
+    Sleep(ms);
+}
+
 uint32_t ucxapp_platform_tick_ms(void)
 {
     return (uint32_t)GetTickCount64();
@@ -69,6 +78,113 @@ bool ucxapp_platform_key_pressed(void)
 int ucxapp_platform_get_key(void)
 {
     return _getch();
+}
+
+bool ucxapp_platform_local_ip(char *out, size_t size)
+{
+    static const wchar_t *const skip[] = { L"Virtual", L"vEthernet", L"Hyper-V", L"VPN", L"VMware", L"VirtualBox", L"AnyConnect" };
+    DWORD flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_GATEWAYS;
+    ULONG len = 15000;
+    IP_ADAPTER_ADDRESSES *all = (IP_ADAPTER_ADDRESSES *)malloc(len);
+    bool found = false;
+
+    out[0] = '\0';
+    if (all != NULL && GetAdaptersAddresses(AF_INET, flags, NULL, all, &len) == ERROR_BUFFER_OVERFLOW) {
+        free(all);
+        all = (IP_ADAPTER_ADDRESSES *)malloc(len);
+    }
+    if (all == NULL || GetAdaptersAddresses(AF_INET, flags, NULL, all, &len) != NO_ERROR) {
+        free(all);
+        return false;
+    }
+    for (IP_ADAPTER_ADDRESSES *a = all; a != NULL && !found; a = a->Next) {
+        bool virt = false;
+
+        for (size_t i = 0; i < sizeof(skip) / sizeof(skip[0]); i++) {
+            virt = virt || wcsstr(a->FriendlyName, skip[i]) != NULL;
+        }
+        /* a real LAN or Wi-Fi link has a default gateway; virtual switches do not */
+        if (virt || a->OperStatus != IfOperStatusUp || a->FirstGatewayAddress == NULL) {
+            continue;
+        }
+        for (IP_ADAPTER_UNICAST_ADDRESS *u = a->FirstUnicastAddress; u != NULL && !found; u = u->Next) {
+            const struct sockaddr_in *sa = (const struct sockaddr_in *)u->Address.lpSockaddr;
+            char ip[INET_ADDRSTRLEN];
+
+            if (sa->sin_family == AF_INET && inet_ntop(AF_INET, (void *)&sa->sin_addr, ip, sizeof(ip)) != NULL &&
+                strncmp(ip, "127.", 4) != 0 && strncmp(ip, "169.254.", 8) != 0) {
+                snprintf(out, size, "%s", ip);
+                found = true;
+            }
+        }
+    }
+    free(all);
+    return found;
+}
+
+static DWORD gSavedInMode, gSavedOutMode;
+static bool gTermActive;
+
+bool ucxapp_platform_terminal_enter(void)
+{
+    HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    if (!GetConsoleMode(in, &gSavedInMode) || !GetConsoleMode(out, &gSavedOutMode)) {
+        return false;
+    }
+    if (!SetConsoleMode(out, gSavedOutMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | ENABLE_PROCESSED_OUTPUT)) {
+        return false;
+    }
+    SetConsoleMode(in, gSavedInMode & ~(DWORD)ENABLE_PROCESSED_INPUT);
+    gTermActive = true;
+    return true;
+}
+
+void ucxapp_platform_terminal_leave(void)
+{
+    if (gTermActive) {
+        SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), gSavedInMode);
+        SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), gSavedOutMode);
+        gTermActive = false;
+    }
+}
+
+void ucxapp_platform_terminal_size(int *cols, int *rows)
+{
+    CONSOLE_SCREEN_BUFFER_INFO info;
+
+    *cols = 80;
+    *rows = 24;
+    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info)) {
+        *cols = info.srWindow.Right - info.srWindow.Left + 1;
+        *rows = info.srWindow.Bottom - info.srWindow.Top + 1;
+    }
+}
+
+int ucxapp_platform_read_key(void)
+{
+    if (!_kbhit()) {
+        return -1;
+    }
+    int c = _getch();
+    if (c == 0 || c == 0xE0) {
+        switch (_getch()) {
+        case 72: return UCXAPP_KEY_UP;
+        case 80: return UCXAPP_KEY_DOWN;
+        case 75: return UCXAPP_KEY_LEFT;
+        case 77: return UCXAPP_KEY_RIGHT;
+        case 71: return UCXAPP_KEY_HOME;
+        case 79: return UCXAPP_KEY_END;
+        case 73: return UCXAPP_KEY_PGUP;
+        case 81: return UCXAPP_KEY_PGDN;
+        case 83: return UCXAPP_KEY_DEL;
+        case 59: return UCXAPP_KEY_F1;
+        case 68: return UCXAPP_KEY_F10;
+        default: return -1;
+        }
+    }
+    return c;
 }
 
 bool ucxapp_platform_extract_zip(const char *zipPath, const char *destDir)
@@ -111,6 +227,27 @@ bool ucxapp_platform_find_file(const char *dir, const char *ext, char *out, size
     return found;
 }
 
+int ucxapp_platform_list_files(const char *dir, void (*cb)(const char *name, uint64_t size, void *ctx), void *ctx)
+{
+    char pattern[MAX_PATH];
+    WIN32_FIND_DATAA fd;
+    int count = 0;
+
+    snprintf(pattern, sizeof(pattern), "%s\\*", dir);
+    HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    do {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            cb(fd.cFileName, ((uint64_t)fd.nFileSizeHigh << 32) | fd.nFileSizeLow, ctx);
+            count++;
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    return count;
+}
+
 void ucxapp_platform_exe_dir(char *buffer, size_t bufferSize)
 {
     GetModuleFileNameA(NULL, buffer, (DWORD)bufferSize);
@@ -136,7 +273,7 @@ static char *winHttpGet(const char *host, const char *path, bool binary, size_t 
         return NULL;
     }
 
-    hSession = WinHttpOpen(L"ucxclient/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+    hSession = WinHttpOpen(L"u-connectClientApp/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) goto cleanup;
 
@@ -154,6 +291,14 @@ static char *winHttpGet(const char *host, const char *path, bool binary, size_t 
     if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
                             WINHTTP_NO_REQUEST_DATA, 0, 0, 0)) goto cleanup;
     if (!WinHttpReceiveResponse(hRequest, NULL)) goto cleanup;
+    {
+        DWORD status = 0, len = sizeof(status);
+        if (!WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                                 WINHTTP_HEADER_NAME_BY_INDEX, &status, &len, WINHTTP_NO_HEADER_INDEX) ||
+            status != 200) {
+            goto cleanup;
+        }
+    }
 
     for (;;) {
         DWORD dwSize = 0;
@@ -482,8 +627,12 @@ static bool getDeviceInfoFromSetupAPI(const char *portName, char *deviceDesc, si
                     deviceDesc[deviceDescSize - 1] = '\0';
                     
                     // Try to extract port label from friendly name
-                    // Format can be: "USB Serial Port (COM25) - AT" or "EVK NORA-W36 - AT (COM25)"
-                    char *dashPos = strrchr(friendlyName, '-');
+                    // Format can be: "USB Serial Port (COM25) - AT" or "EVK NORA-W36 - AT (COM25)".
+                    // Only a spaced " - " starts a label; "USB-SERIAL CH340" has none.
+                    char *dashPos = NULL;
+                    for (char *p = strstr(friendlyName, " - "); p != NULL; p = strstr(p + 1, " - ")) {
+                        dashPos = p + 1;
+                    }
                     if (dashPos) {
                         // Skip whitespace after dash
                         dashPos++;
@@ -592,6 +741,45 @@ static bool getDeviceInfoFromSetupAPI(const char *portName, char *deviceDesc, si
 }
 
 
+static void readUsbIds(const char *portName, uint16_t *vid, uint16_t *pid)
+{
+    HDEVINFO set = SetupDiGetClassDevs(&GUID_DEVCLASS_PORTS, NULL, NULL, DIGCF_PRESENT);
+    SP_DEVINFO_DATA data;
+
+    if (set == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    data.cbSize = sizeof(data);
+    for (DWORD i = 0; SetupDiEnumDeviceInfo(set, i, &data); i++) {
+        HKEY key = SetupDiOpenDevRegKey(set, &data, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_QUERY_VALUE);
+        char name[64] = "";
+        DWORD size = sizeof(name);
+        bool match;
+
+        if (key == INVALID_HANDLE_VALUE) {
+            continue;
+        }
+        match = RegQueryValueEx(key, "PortName", NULL, NULL, (LPBYTE)name, &size) == ERROR_SUCCESS &&
+                _stricmp(name, portName) == 0;
+        RegCloseKey(key);
+        if (match) {
+            char hwId[512] = "";
+            unsigned v = 0, p = 0;
+            const char *s;
+            (void)SetupDiGetDeviceRegistryPropertyA(set, &data, SPDRP_HARDWAREID, NULL, (PBYTE)hwId,
+                                                    sizeof(hwId) - 1, NULL);
+            if ((s = strstr(hwId, "VID_")) != NULL && sscanf(s + 4, "%4x", &v) == 1) {
+                *vid = (uint16_t)v;
+            }
+            if ((s = strstr(hwId, "PID_")) != NULL && sscanf(s + 4, "%4x", &p) == 1) {
+                *pid = (uint16_t)p;
+            }
+            break;
+        }
+    }
+    SetupDiDestroyDeviceInfoList(set);
+}
+
 int ucxapp_platform_list_serial_ports(ucxapp_serial_port_t *ports, int maxPorts)
 {
     HKEY hKey;
@@ -630,6 +818,7 @@ int ucxapp_platform_list_serial_ports(ucxapp_serial_port_t *ports, int maxPorts)
                 !getDeviceInfoFromSetupAPI(port->name, port->desc, sizeof(port->desc), port->label, sizeof(port->label))) {
                 snprintf(port->desc, sizeof(port->desc), "%s", valueName);
             }
+            readUsbIds(port->name, &port->vid, &port->pid);
         }
         RegCloseKey(hKey);
         return count;

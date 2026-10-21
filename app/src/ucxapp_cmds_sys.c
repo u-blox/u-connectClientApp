@@ -1,6 +1,8 @@
 #include "ucxapp_cmd.h"
 #include "ucxapp_hash.h"
+#include "ucxapp_stats.h"
 #include "ucxapp_store.h"
+#include "u_port.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -9,6 +11,189 @@
 
 #define AT_MAX_LEN 256
 
+static bool gLogAt;
+static bool gLogWarn = true;
+static bool gLogEvents;
+static bool gWarnLocked, gWarnSaved;
+static ucxapp_store_writer_t *gSaveWriter;
+
+bool ucxappLogWarnEnabled(void)
+{
+    return gLogWarn;
+}
+
+void ucxappLogWarnSet(bool on)
+{
+    gLogWarn = on;
+}
+
+/* The text UI owns the screen: library warnings stay off until it releases the lock. */
+void ucxappLogWarnLock(bool locked)
+{
+    if (locked && !gWarnLocked) {
+        gWarnSaved = gLogWarn;
+        gLogWarn = false;
+    } else if (!locked && gWarnLocked) {
+        gLogWarn = gWarnSaved;
+    }
+    gWarnLocked = locked;
+}
+
+bool ucxappLogEventsEnabled(void)
+{
+    return gLogEvents;
+}
+
+bool ucxappLogAtEnabled(void)
+{
+    return gLogAt;
+}
+
+static int cmdLogAtOn(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app; (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    gLogAt = true;
+    ucxapp_print("AT log on\n");
+    return UCXAPP_OK;
+}
+
+static int cmdLogAtOff(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app; (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    gLogAt = false;
+    ucxapp_print("AT log off\n");
+    return UCXAPP_OK;
+}
+
+static int setWarn(bool on)
+{
+    if (on && gWarnLocked) {
+        ucxapp_print("warnings are muted while the text UI runs (they would garble the screen)\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    gLogWarn = on;
+    ucxapp_print("warning log %s\n", on ? "on" : "off");
+    return UCXAPP_OK;
+}
+
+static int cmdLogWarnOn(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app; (void)argv;
+    return argc != 1 ? UCXAPP_ERR_USAGE : setWarn(true);
+}
+
+static int cmdLogWarnOff(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app; (void)argv;
+    return argc != 1 ? UCXAPP_ERR_USAGE : setWarn(false);
+}
+
+static int cmdLogEventsOn(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app; (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    gLogEvents = true;
+    ucxapp_print("event log on\n");
+    return UCXAPP_OK;
+}
+
+static int cmdLogEventsOff(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app; (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    gLogEvents = false;
+    ucxapp_print("event log off\n");
+    return UCXAPP_OK;
+}
+
+static int cmdLogLevel(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    if (argc != 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    bool all = strcmp(argv[1], "all") == 0;
+    bool warn = all || strcmp(argv[1], "warn") == 0;
+
+    if (!all && !warn && strcmp(argv[1], "off") != 0) {
+        return UCXAPP_ERR_USAGE;
+    }
+    gLogAt = all;
+    gLogEvents = all;
+    gLogWarn = warn && !gWarnLocked;
+    ucxapp_print("log level %s (warnings %s, AT trace %s, events %s)\n", argv[1], gLogWarn ? "on" : "off",
+                 gLogAt ? "on" : "off", gLogEvents ? "on" : "off");
+    return UCXAPP_OK;
+}
+
+static void saveSink(const char *text, size_t len)
+{
+    if (gSaveWriter != NULL) {
+        ucxapp_store_append(gSaveWriter, text, len);
+    }
+}
+
+static int cmdLogSave(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    if (argc != 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (gSaveWriter != NULL) {
+        ucxapp_print("ERROR: already saving the log (log.stop ends it)\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    gSaveWriter = ucxapp_store_begin(argv[1]);
+    if (gSaveWriter == NULL || !ucxapp_io_add_sink(saveSink)) {
+        if (gSaveWriter != NULL) {
+            ucxapp_store_end(gSaveWriter, false);
+            gSaveWriter = NULL;
+        }
+        ucxapp_print("ERROR: cannot save the log to %s\n", argv[1]);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("saving the log to %s (the file appears when you run log.stop)\n", argv[1]);
+    return UCXAPP_OK;
+}
+
+static int cmdLogStop(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app; (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (gSaveWriter == NULL) {
+        ucxapp_print("not saving the log\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_io_remove_sink(saveSink);
+    bool ok = ucxapp_store_end(gSaveWriter, true);
+    gSaveWriter = NULL;
+    ucxapp_print(ok ? "log saved\n" : "ERROR: could not write the log file\n");
+    return ok ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+}
+
+/* The text UI clears its own Log pane before this runs. */
+static int cmdLogClear(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app; (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    ucxapp_print("\033[2J\033[H");
+    return UCXAPP_OK;
+}
+
 /* "ati9" -> "ATI9", "+GMI" -> "AT+GMI": the AT prefix is optional. */
 static int cmdAt(ucxapp_t *app, int argc, char *argv[])
 {
@@ -16,7 +201,9 @@ static int cmdAt(ucxapp_t *app, int argc, char *argv[])
     size_t len = 0;
 
     if (argc < 2) {
-        return UCXAPP_ERR_USAGE;
+        ucxapp_at_mode(true);
+        ucxapp_print("AT mode: each line is sent to the module as typed; 'back' returns to commands\n");
+        return UCXAPP_OK;
     }
     for (int i = 1; i < argc; i++) {
         size_t n = strlen(argv[i]);
@@ -31,15 +218,25 @@ static int cmdAt(ucxapp_t *app, int argc, char *argv[])
         len += n;
     }
     cmd[len] = '\0';
+    return ucxapp_at_send(app, cmd);
+}
 
+int ucxapp_at_send(ucxapp_t *app, const char *cmd)
+{
+    size_t len = strlen(cmd);
     char full[AT_MAX_LEN + 3];
     bool hasPrefix = len >= 2 && toupper((unsigned char)cmd[0]) == 'A' &&
                      toupper((unsigned char)cmd[1]) == 'T';
+
+    if (len >= AT_MAX_LEN) {
+        ucxapp_print("ERROR: command too long\n");
+        return UCXAPP_ERR_FAILED;
+    }
     snprintf(full, sizeof(full), "%s%s", hasPrefix ? "" : "AT", cmd);
 
     int32_t result = uCxAtClientExecSimpleCmd(app->ucx->pAtClient, full);
     if (result != 0) {
-        ucxapp_print("ERROR: %s failed (%d)\n", full, (int)result);
+        ucxapp_print("ERROR: %s failed (%d%s)\n", full, (int)result, ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("OK\n");
@@ -70,12 +267,176 @@ static int cmdFileHash(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+#define LISTED_MAX      64
+#define LISTED_NAME_LEN 128
+
+/* Names shown by the last file.list, so file.remove can take a number. */
+static char gListed[LISTED_MAX][LISTED_NAME_LEN];
+static int gListedCount;
+
+static void listOne(const char *name, uint64_t size, void *ctx)
+{
+    (void)ctx;
+    if (gListedCount >= LISTED_MAX || strlen(name) >= LISTED_NAME_LEN) {
+        return;
+    }
+    snprintf(gListed[gListedCount], LISTED_NAME_LEN, "%s", name);
+    gListedCount++;
+    ucxapp_print("%3d  %10lu  %s\n", gListedCount, (unsigned long)size, name);
+}
+
+static int cmdFileList(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    gListedCount = 0;
+    int n = ucxapp_store_list(listOne, NULL);
+    if (n < 0) {
+        ucxapp_print("ERROR: cannot list files\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (n > gListedCount) {
+        ucxapp_print("(%d more not shown)\n", n - gListedCount);
+    }
+    ucxapp_print("%d file(s)\n", n);
+    return UCXAPP_OK;
+}
+
+static int cmdFileRemove(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    const char *name = argc == 2 ? argv[1] : NULL;
+    char *end;
+
+    if (name == NULL) {
+        return UCXAPP_ERR_USAGE;
+    }
+    long index = strtol(name, &end, 10);
+    if (*end == '\0') {
+        if (index < 1 || index > gListedCount) {
+            ucxapp_print("ERROR: no file %ld; run file.list first\n", index);
+            return UCXAPP_ERR_FAILED;
+        }
+        name = gListed[index - 1];
+    }
+    if (strpbrk(name, "/\\:") != NULL || strcmp(name, "..") == 0 || strcmp(name, ".") == 0) {
+        ucxapp_print("ERROR: give a plain file name from file.list\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (!ucxapp_store_remove(name)) {
+        ucxapp_print("ERROR: cannot remove %s\n", name);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("Removed %s\n", name);
+    gListedCount = 0;
+    return UCXAPP_OK;
+}
+
+static const char *const kStatsNames[UCXAPP_STATS_COUNT] = { "tcp", "udp", "sps", "gatt", "http", "mqtt", "web" };
+static uint64_t gStatsTx[UCXAPP_STATS_COUNT];
+static uint64_t gStatsRx[UCXAPP_STATS_COUNT];
+static U_CX_MUTEX_HANDLE gStatsLock;
+
+void ucxapp_stats_add(ucxapp_stats_ch_t ch, size_t tx, size_t rx)
+{
+    U_CX_MUTEX_LOCK(gStatsLock);
+    gStatsTx[ch] += tx;
+    gStatsRx[ch] += rx;
+    U_CX_MUTEX_UNLOCK(gStatsLock);
+}
+
+/* printf on the STM32 newlib-nano has no %llu. */
+static const char *u64Text(uint64_t v, char *buf, size_t size)
+{
+    char *p = buf + size - 1;
+    *p = '\0';
+    do {
+        *--p = (char)('0' + v % 10);
+        v /= 10;
+    } while (v != 0 && p > buf);
+    return p;
+}
+
+static int statsChannel(const char *name)
+{
+    for (int i = 0; i < UCXAPP_STATS_COUNT; i++) {
+        if (strcmp(name, kStatsNames[i]) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int cmdStatsShow(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    int ch = argc > 1 ? statsChannel(argv[1]) : -1;
+    char a[24];
+    char b[24];
+
+    if (argc > 3 || (argc > 1 && ch < 0) || (argc == 3 && strcmp(argv[2], "rx") != 0 && strcmp(argv[2], "tx") != 0)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    U_CX_MUTEX_LOCK(gStatsLock);
+    if (argc == 3) {
+        ucxapp_print("%s\n", u64Text(argv[2][0] == 'r' ? gStatsRx[ch] : gStatsTx[ch], a, sizeof(a)));
+    } else {
+        ucxapp_print("%-5s %14s %14s\n", "", "tx", "rx");
+        for (int i = 0; i < UCXAPP_STATS_COUNT; i++) {
+            if (ch < 0 || ch == i) {
+                ucxapp_print("%-5s %14s %14s\n", kStatsNames[i], u64Text(gStatsTx[i], a, sizeof(a)),
+                             u64Text(gStatsRx[i], b, sizeof(b)));
+            }
+        }
+    }
+    U_CX_MUTEX_UNLOCK(gStatsLock);
+    return UCXAPP_OK;
+}
+
+static int cmdStatsClear(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    int ch = argc == 2 ? statsChannel(argv[1]) : -1;
+
+    if (argc > 2 || (argc == 2 && ch < 0)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    U_CX_MUTEX_LOCK(gStatsLock);
+    for (int i = 0; i < UCXAPP_STATS_COUNT; i++) {
+        if (ch < 0 || ch == i) {
+            gStatsTx[i] = 0;
+            gStatsRx[i] = 0;
+        }
+    }
+    U_CX_MUTEX_UNLOCK(gStatsLock);
+    ucxapp_print("OK\n");
+    return UCXAPP_OK;
+}
+
 static const ucxapp_cmd_t gSysCmds[] = {
-    { "at", "<command>", "Send a raw AT command (AT prefix optional)", UCXAPP_CMD_NEEDS_DEVICE, cmdAt },
+    { "at", "[command]", "Send a raw AT command (AT prefix optional); with no command, enter AT mode where every line is sent as typed", UCXAPP_CMD_NEEDS_DEVICE, cmdAt },
+    { "log.at.on", "", "Show the AT TX/RX trace", 0, cmdLogAtOn },
+    { "log.at.off", "", "Hide the AT TX/RX trace (default)", 0, cmdLogAtOff },
+    { "log.warn.on", "", "Show library warnings (not in the text UI)", 0, cmdLogWarnOn },
+    { "log.warn.off", "", "Hide library warnings", 0, cmdLogWarnOff },
+    { "log.events.on", "", "Also print module events in the log", 0, cmdLogEventsOn },
+    { "log.events.off", "", "Keep module events out of the log (default)", 0, cmdLogEventsOff },
+    { "log.level", "<off|warn|all>", "off: nothing extra; warn: warnings; all: warnings, AT trace and events", 0, cmdLogLevel },
+    { "log.save", "<file>", "Save everything the log shows to a file (written when log.stop runs)", 0, cmdLogSave },
+    { "log.stop", "", "Finish and write the log file started by log.save", 0, cmdLogStop },
+    { "log.clear", "", "Clear the log", 0, cmdLogClear },
     { "file.hash", "<md5|sha256> <file>", "Print the hash of a file", 0, cmdFileHash },
+    { "file.list", "", "List the files in the working folder with numbers and sizes", 0, cmdFileList },
+    { "file.remove", "<file|number>", "Delete a file, by name or by its number from file.list", 0, cmdFileRemove },
+    { "stats.show", "[tcp|udp|sps|gatt|http|mqtt|web] [rx|tx]", "Payload bytes sent and received per channel; with rx or tx, print just that number", 0, cmdStatsShow },
+    { "stats.clear", "[tcp|udp|sps|gatt|http|mqtt|web]", "Reset the counters of one channel, or all", 0, cmdStatsClear },
 };
 
 void ucxapp_register_sys_cmds(void)
 {
+    U_CX_MUTEX_CREATE(gStatsLock);
     ucxapp_cmd_register(gSysCmds, sizeof(gSysCmds) / sizeof(gSysCmds[0]));
 }

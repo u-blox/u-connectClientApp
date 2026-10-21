@@ -24,24 +24,31 @@ cd u-connectClientApp
 git submodule update --init u-connectClient
 ```
 
-## Launchers
+## Launcher
 
-| Target | Launcher |
+`ucxapp.py` builds, runs, tests and flashes every target. On Windows `ucxapp.cmd` calls it;
+the old `u-connectClientAppWin.cmd`, `u-connectClientAppSTM32.cmd` and `u-connectClientAppLinux.sh` forward to it.
+
+| Target | Command |
 |---|---|
-| Windows | `.\u-connectClientAppWin.cmd` |
-| Linux | `./u-connectClientAppLinux.sh` |
-| STM32 | `.\u-connectClientAppSTM32.cmd` |
+| Windows | `.\ucxapp` |
+| Linux | `./ucxapp.py` (from Windows: `.\ucxapp --linux` runs it in WSL) |
+| STM32 | `.\ucxapp --stm32` |
 
 ### Windows
 
 ```powershell
-.\u-connectClientAppWin.cmd            # build if needed and run (auto-detects a NORA EVK)
-.\u-connectClientAppWin.cmd debug      # debug build
-.\u-connectClientAppWin.cmd update     # update the u-connectClient submodule
-.\u-connectClientAppWin.cmd clean      # clean build artifacts
-.\u-connectClientAppWin.cmd rebuild    # rebuild from scratch
-.\u-connectClientAppWin.cmd sign YOUR_CERT_THUMBPRINT
-.\u-connectClientAppWin.cmd selftest   # workspace validation
+.\ucxapp                 # build if needed and run (auto-detects a NORA EVK)
+.\ucxapp COM13 --exec "device.info"   # arguments the launcher does not know go to the app
+.\ucxapp --debug         # debug build
+.\ucxapp --update        # update the u-connectClient submodule
+.\ucxapp --clean         # clean build artifacts
+.\ucxapp --rebuild       # rebuild from scratch
+.\ucxapp --clean --build --run   # clean, rebuild, then start the app
+.\ucxapp --sign YOUR_CERT_THUMBPRINT
+.\ucxapp --selftest      # workspace validation
+.\ucxapp --detect        # ports, NORA modules, GNSS receiver and IMU, with the UCX_* test variables
+.\ucxapp --detect --test tests/test_hardware.py   # hardware tests on the detected devices
 ```
 
 Manual build:
@@ -55,10 +62,10 @@ cmake --build build/windows --config Release
 
 ```powershell
 # Build, flash over the ST-Link and open the console on its virtual COM port (default board: H753)
-.\u-connectClientAppSTM32.cmd --build --flash --log
+.\ucxapp --stm32 --build --flash --log
 
-# Select another board: h753 (default), f767 or f439
-.\u-connectClientAppSTM32.cmd --board f767 --build --flash --log
+# Select another board: h753 (default), f767, f439, or all (parallel build, logs in build/all_*.log)
+.\ucxapp --stm32 --board f767 --build --flash --log
 
 # Other options: --rebuild, --clean, --erase, --recover, --log COMx, --help
 ```
@@ -73,9 +80,8 @@ Release builds of all three boards are published with each tag.
 
 ```
 u-connectClientApp/
-├── u-connectClientAppWin.cmd      # Windows launch script
-├── u-connectClientAppLinux.sh     # Linux launch script
-├── u-connectClientAppSTM32.cmd    # STM32 build/flash/log script
+├── ucxapp.py                       # Launcher for every target (build, run, test, detect, STM32 flash)
+├── ucxapp.cmd                      # Thin Windows caller of ucxapp.py
 ├── app/
 │   ├── src/                        # Command layer and entry point (ucxapp_main.c)
 │   ├── stm32/                      # STM32 firmware entry, platform and CMake
@@ -98,9 +104,8 @@ u-connectClientApp/
 ## Production deployment
 
 ```powershell
-.\u-connectClientAppWin.cmd                                  # release build
-.\u-connectClientAppWin.cmd sign YOUR_CERT_THUMBPRINT        # creates u-connectClientApp-signed.exe in release/
+.\ucxapp --rebuild --sign YOUR_CERT_THUMBPRINT   # creates ucxapp-signed.exe in release/
 ```
 
-`app/release/u-connectClientApp-signed.exe` is self-contained (~2.5 MB) with the FTDI DLL embedded.
-See [app/UCX_WIN_APP_RELEASE.md](app/UCX_WIN_APP_RELEASE.md) and `scripts/release.py` for the full release flow.
+`app/release/ucxapp-signed.exe` is self-contained (~2.5 MB) with the FTDI DLL embedded.
+See [docs/UCX_WIN_APP_RELEASE.md](docs/UCX_WIN_APP_RELEASE.md) and `scripts/release.py` for the full release flow.

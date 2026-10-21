@@ -3,7 +3,7 @@ project(u-connectClientApp-stm32 C ASM)
 
 # Cross build of the command layer for STM32 boards. Configure with
 #   -DCMAKE_TOOLCHAIN_FILE=<repo>/u-connectClient/cmake/arm-none-eabi-gcc.cmake -DSTM32_BOARD=nucleo_h753zi
-# (u-connectClientAppSTM32.cmd does this).
+# (ucxapp.py --stm32 does this).
 
 set(UCX_MODULE "NORA-W36X" CACHE STRING "Generated API variant in u-connectClient/ucx_api/generated")
 include(../../u-connectClient/u-connectClient.cmake)
@@ -35,8 +35,10 @@ set(UCXAPP_STM32_SOURCES
     ${APP_SRC}/ucxapp_cmds_sock.c
     ${APP_SRC}/ucxapp_cmds_net.c
     ${APP_SRC}/ucxapp_cmds_sys.c
+    ${APP_SRC}/ucxapp_cmds_app.c
     ${APP_SRC}/ucxapp_cmds_mqtt.c
     ${APP_SRC}/ucxapp_cmds_bt.c
+    ${APP_SRC}/ucxapp_adv.c
     ${APP_SRC}/ucxapp_cmds_cert.c
     ${APP_SRC}/ucxapp_cmds_gatt.c
 )
@@ -52,4 +54,5 @@ if(STM32_BOARD STREQUAL "nucleo_f439zi")
 else()
     set(UCXAPP_HEAP_SIZE 163840)
 endif()
-target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE configTOTAL_HEAP_SIZE=${UCXAPP_HEAP_SIZE})
+target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE configTOTAL_HEAP_SIZE=${UCXAPP_HEAP_SIZE}
+    U_CX_AT_CONFIG_FILE="ucxapp_logcfg.h")

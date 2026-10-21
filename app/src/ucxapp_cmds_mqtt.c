@@ -1,4 +1,5 @@
 #include "ucxapp_cmd.h"
+#include "ucxapp_stats.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -54,13 +55,13 @@ static int cmdMqttConnect(ucxapp_t *app, int argc, char *argv[])
 
     int32_t result = uCxMqttSetConnectionParams4(app->ucx, MQTT_ID, host, port, clientId);
     if (result != 0) {
-        ucxapp_print("ERROR: cannot set connection parameters (%d)\n", (int)result);
+        ucxapp_print("ERROR: cannot set connection parameters (%d%s)\n", (int)result, ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_events_clear(URC_FLAG_MQTT_CONNECTED);
     result = uCxMqttConnect(app->ucx, MQTT_ID);
     if (result != 0) {
-        ucxapp_print("ERROR: connect failed (%d)\n", (int)result);
+        ucxapp_print("ERROR: connect failed (%d%s)\n", (int)result, ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;
     }
     if (!ucxapp_events_wait(URC_FLAG_MQTT_CONNECTED, 10)) {
@@ -99,7 +100,7 @@ static int cmdMqttSubscribe(ucxapp_t *app, int argc, char *argv[])
         result = uCxMqttSubscribe4(app->ucx, MQTT_ID, U_MQTT_SUBSCRIBE_ACTION_SUBSCRIBE, argv[1], qos);
     }
     if (result != 0) {
-        ucxapp_print("ERROR: subscribe failed (%d)\n", (int)result);
+        ucxapp_print("ERROR: subscribe failed (%d%s)\n", (int)result, ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;
     }
     /* Publishing before the broker's subscribe ack gets ERROR:15. */
@@ -123,7 +124,7 @@ static int cmdMqttUnsubscribe(ucxapp_t *app, int argc, char *argv[])
         result = uCxMqttSubscribe3(app->ucx, MQTT_ID, U_MQTT_SUBSCRIBE_ACTION_UNSUBSCRIBE, argv[1]);
     }
     if (result != 0) {
-        ucxapp_print("ERROR: unsubscribe failed (%d)\n", (int)result);
+        ucxapp_print("ERROR: unsubscribe failed (%d%s)\n", (int)result, ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("unsubscribed from %s\n", argv[1]);
@@ -160,9 +161,10 @@ static int cmdMqttPublish(ucxapp_t *app, int argc, char *argv[])
                                 argv[1], (const uint8_t *)text, (int32_t)len);
     }
     if (result < 0) {
-        ucxapp_print("ERROR: publish failed (%d)\n", (int)result);
+        ucxapp_print("ERROR: publish failed (%d%s)\n", (int)result, ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;
     }
+    ucxapp_stats_add(UCXAPP_STATS_MQTT, len, 0);
     ucxapp_print("published %d bytes to %s\n", (int)len, argv[1]);
     return UCXAPP_OK;
 }
@@ -185,13 +187,14 @@ static int cmdMqttRead(ucxapp_t *app, int argc, char *argv[])
             break;   /* queue drained: the module answers ERROR:11 */
         }
         if (n < 0) {
-            ucxapp_print("ERROR: read failed (%d)\n", (int)n);
+            ucxapp_print("ERROR: read failed (%d%s)\n", (int)n, ucxapp_errname(n));
             return UCXAPP_ERR_FAILED;
         }
         if (n == 0) {
             uCxEnd(app->ucx);
             break;
         }
+        ucxapp_stats_add(UCXAPP_STATS_MQTT, 0, (size_t)n);
         for (int32_t i = 0; i < n; i++) {
             if (buf[i] < 0x20 || buf[i] > 0x7e) {
                 buf[i] = '.';

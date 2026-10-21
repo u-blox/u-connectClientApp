@@ -8,9 +8,12 @@ include(../u-connectClient/u-connectClient.cmake)
 # ============================================================================
 # Auto-versioning: Use timestamp-based build number
 # ============================================================================
-set(APP_VERSION_MAJOR 3)
-set(APP_VERSION_MINOR 4)
-set(APP_VERSION_PATCH 0)
+file(GLOB _ucx_ver_hdr "${CMAKE_CURRENT_SOURCE_DIR}/../u-connectClient/ucx_api/generated/${UCX_MODULE}/u_cx_version.h")
+file(READ "${_ucx_ver_hdr}" _ucx_ver_h)
+foreach(_p MAJOR MINOR PATCH)
+  string(REGEX MATCH "#define U_CX_VERSION_${_p} ([0-9]+)" _m "${_ucx_ver_h}")
+  set(APP_VERSION_${_p} ${CMAKE_MATCH_1})
+endforeach()
 set(APP_VERSION_BUILD 0)
 
 # Generate build number from current date: YYMMDD (e.g., 251204 = Dec 4, 2025)
@@ -45,6 +48,8 @@ if(NOT WIN32)
 
     src/ucxapp_events.c
     src/ucxapp_thread.c
+    src/ucxapp_ui.c
+    src/ucxapp_tui.c
     src/ucxapp_cmds_web.c
     src/u_webserver.c
 
@@ -68,14 +73,23 @@ if(NOT WIN32)
     src/ucxapp_cmds_net.c
 
     src/ucxapp_cmds_sys.c
+    src/ucxapp_cmds_app.c
 
     src/ucxapp_cmds_mqtt.c
 
     src/ucxapp_cmds_bt.c
+    src/ucxapp_adv.c
     src/ucxapp_cmds_cert.c
     src/ucxapp_cmds_fw.c
     src/ucxapp_cmds_gatt.c
     src/ucxapp_cmds_qr.c
+    src/ucxapp_cmds_utils.c
+    src/ucxapp_stream.c
+    src/ucxapp_cmds_gnss.c
+    src/ucxapp_cmds_imu.c
+    src/ucxapp_cmds_hw.c
+    src/ucxapp_hwcfg.c
+    src/ucxapp_cmds_cell.c
     src/ucxapp_cmds_hid.c
     third-party/qrcodegen/qrcodegen.c
 
@@ -100,6 +114,7 @@ if(NOT WIN32)
   endif()
 
   target_compile_definitions(ucxapp PRIVATE U_PORT_POSIX
+    U_CX_AT_CONFIG_FILE="ucxapp_logcfg.h"
     APP_VERSION_MAJOR=${APP_VERSION_MAJOR}
     APP_VERSION_MINOR=${APP_VERSION_MINOR}
     APP_VERSION_PATCH=${APP_VERSION_PATCH}
@@ -131,13 +146,15 @@ set(PORT_UART_SRC ../u-connectClient/ports/uart/u_port_uart_windows.c)
 
 # FTDI D2XX is loaded at run time from the DLL embedded by the .rc file
 
-# u-connectClientApp Application
-add_executable(u-connectClientApp
+# u-connectClientApp Application (ucxapp.exe)
+add_executable(ucxapp
   src/ucxapp_main.c
   src/ucxapp_urc.c
   src/ucx_obfuscate.c
   src/ucxapp_events.c
   src/ucxapp_thread.c
+  src/ucxapp_ui.c
+  src/ucxapp_tui.c
   src/ucxapp_cmds_web.c
   src/u_webserver.c
   src/ucxapp_io.c
@@ -151,12 +168,21 @@ add_executable(u-connectClientApp
   src/ucxapp_cmds_sock.c
   src/ucxapp_cmds_net.c
   src/ucxapp_cmds_sys.c
+  src/ucxapp_cmds_app.c
   src/ucxapp_cmds_mqtt.c
   src/ucxapp_cmds_bt.c
+  src/ucxapp_adv.c
   src/ucxapp_cmds_cert.c
   src/ucxapp_cmds_fw.c
   src/ucxapp_cmds_gatt.c
   src/ucxapp_cmds_qr.c
+  src/ucxapp_cmds_utils.c
+  src/ucxapp_stream.c
+  src/ucxapp_cmds_gnss.c
+  src/ucxapp_cmds_imu.c
+  src/ucxapp_cmds_hw.c
+  src/ucxapp_hwcfg.c
+  src/ucxapp_cmds_cell.c
   src/ucxapp_cmds_hid.c
   ${PORT_OS_SRC}
   ${PORT_UART_SRC}
@@ -166,12 +192,13 @@ add_executable(u-connectClientApp
   ${U_CONNECT_CLIENT_AT_API_SRC}
 )
 
-target_compile_options(u-connectClientApp PRIVATE /W4 /FS /wd4200)
+target_compile_options(ucxapp PRIVATE /W4 /FS /wd4200)
 
-target_compile_definitions(u-connectClientApp PRIVATE
+target_compile_definitions(ucxapp PRIVATE
   U_PORT_WINDOWS
   U_CX_PORT_HEADER_FILE="os/u_port_windows.h"
   U_CX_XMODEM_FILE_SUPPORT=1
+  U_CX_AT_CONFIG_FILE="ucxapp_logcfg.h"
   _CRT_SECURE_NO_WARNINGS
   U_EXAMPLE_UART="${U_EXAMPLE_UART}"
   APP_VERSION_MAJOR=${APP_VERSION_MAJOR}
@@ -180,7 +207,7 @@ target_compile_definitions(u-connectClientApp PRIVATE
   APP_VERSION_BUILD=${APP_VERSION_BUILD}
 )
 
-target_include_directories(u-connectClientApp PUBLIC 
+target_include_directories(ucxapp PUBLIC 
   ${U_CONNECT_CLIENT_INC} 
   ${U_CONNECT_CLIENT_PORT_DIR} 
   ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -189,10 +216,10 @@ target_include_directories(u-connectClientApp PUBLIC
   ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_link_libraries(u-connectClientApp PRIVATE setupapi)
+target_link_libraries(ucxapp PRIVATE setupapi)
 
 # Set different output names for Debug and Release builds
-set_target_properties(u-connectClientApp PROPERTIES
-  OUTPUT_NAME_DEBUG "u-connectClientApp-debug"
-  OUTPUT_NAME_RELEASE "u-connectClientApp"
+set_target_properties(ucxapp PROPERTIES
+  OUTPUT_NAME_DEBUG "ucxapp-debug"
+  OUTPUT_NAME_RELEASE "ucxapp"
 )

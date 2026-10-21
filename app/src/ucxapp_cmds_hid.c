@@ -99,7 +99,7 @@ static int32_t defineChar(ucxapp_t *app, uint16_t uuid, uint8_t props, uGattServ
     int32_t r = uCxGattServerCharDefine6(app->ucx, u, 2, &props, 1, U_GATT_SERVER_READ_SECURITY_NONE, wsec,
                                          init, initLen, initLen, &rsp);
     if (r != 0) {
-        ucxapp_print("ERROR: cannot add characteristic 0x%04X (%d)\n", (unsigned)uuid, (int)r);
+        ucxapp_print("ERROR: cannot add characteristic 0x%04X (%d%s)\n", (unsigned)uuid, (int)r, ucxapp_errname(r));
         return -1;
     }
     if (cccd != NULL) {
@@ -123,7 +123,7 @@ static bool defineDescriptor(ucxapp_t *app, uint16_t uuid, const uint8_t *value,
     int32_t r = uCxGattServerDescriptorDefine4(app->ucx, u, 2, U_GATT_SERVER_READ_SECURITY_NONE,
                                                U_GATT_SERVER_WRITE_SECURITY_NONE, value, len, &handle);
     if (r != 0) {
-        ucxapp_print("WARNING: cannot add descriptor 0x%04X (%d)\n", (unsigned)uuid, (int)r);
+        ucxapp_print("WARNING: cannot add descriptor 0x%04X (%d%s)\n", (unsigned)uuid, (int)r, ucxapp_errname(r));
     }
     return r == 0;
 }
@@ -160,7 +160,7 @@ static int cmdHidSetup(ucxapp_t *app, int argc, char *argv[])
 
     r = uCxGattServerServiceDefine(app->ucx, kSvcUuid, 2, &gService);
     if (r != 0) {
-        ucxapp_print("ERROR: cannot define HID service (%d)\n", (int)r);
+        ucxapp_print("ERROR: cannot define HID service (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
 
@@ -180,7 +180,7 @@ static int cmdHidSetup(ucxapp_t *app, int argc, char *argv[])
                                  U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                  kReportMap, sizeof(kReportMap), sizeof(kReportMap), &rsp);
     if (r != 0) {
-        ucxapp_print("ERROR: cannot add report map (%d)\n", (int)r);
+        ucxapp_print("ERROR: cannot add report map (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     defineDescriptor(app, 0x2907, kExtRef, 2);
@@ -203,7 +203,7 @@ static int cmdHidSetup(ucxapp_t *app, int argc, char *argv[])
 
     r = uCxGattServerServiceActivate(app->ucx);
     if (r != 0) {
-        ucxapp_print("ERROR: cannot activate HID service (%d)\n", (int)r);
+        ucxapp_print("ERROR: cannot activate HID service (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     gDefined = true;

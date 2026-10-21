@@ -75,15 +75,15 @@ def build_and_sign(thumbprint):
     signtool = find_signtool()
     step("Building Windows Release")
     run("cmake", "-S", "app", "-B", "build/windows", "-A", "x64")
-    run("cmake", "--build", "build/windows", "--config", "Release", "--target", "u-connectClientApp", "--clean-first")
-    built = ROOT / "app" / "bin" / "u-connectClientApp.exe"
+    run("cmake", "--build", "build/windows", "--config", "Release", "--target", "ucxapp", "--clean-first")
+    built = ROOT / "app" / "bin" / "ucxapp.exe"
     if not built.exists():
         fail(f"{built} not found")
 
     step("Signing")
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
-    exe = dist / "u-connectClientApp-windows-x64.exe"
+    exe = dist / "ucxapp-windows-x64.exe"
     shutil.copy2(built, exe)
     run(signtool, "sign", "/sha1", thumbprint, "/tr", "http://timestamp.digicert.com",
         "/td", "sha256", "/fd", "sha256", exe)

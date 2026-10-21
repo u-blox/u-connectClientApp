@@ -13,7 +13,7 @@ Download ready-made builds from the [Releases page](https://github.com/u-blox/u-
 ## Try it in 30 seconds
 
 ```powershell
-u-connectClientApp.exe COM13 --exec "device.info"
+ucxapp COM13 --exec "device.info"
 ```
 
 Leave out the port and the app finds your EVK by itself. Type `help` in the shell to list every command.
@@ -22,33 +22,33 @@ Leave out the port and the app finds your EVK by itself. Type `help` in the shel
 
 **Get online and fetch a web page**
 ```powershell
-u-connectClientApp.exe COM13 --exec "wifi.connect MySsid MyPassword" --exec "net.ping u-blox.com" --exec "http.get https://example.com"
+ucxapp COM13 --exec "wifi.connect MySsid MyPassword" --exec "net.ping u-blox.com" --exec "http.get https://example.com"
 ```
 
 **Scan the air for networks**
 ```powershell
-u-connectClientApp.exe COM13 --exec "wifi.scan"
+ucxapp COM13 --exec "wifi.scan"
 ```
 
 **Update the module firmware over XMODEM, with SHA256 verification**
 ```powershell
-u-connectClientApp.exe COM13 --exec "fw.flash module.bin"
+ucxapp COM13 --exec "fw.flash module.bin"
 ```
 
 **Always the newest firmware**: look up the latest GitHub release for the connected module and flash it
 ```powershell
-u-connectClientApp.exe COM13 --exec "fw.download latest module.zip" --exec "fw.flash module.zip"
+ucxapp COM13 --exec "fw.download latest module.zip" --exec "fw.flash module.zip"
 ```
 
 **Download firmware straight from GitHub and flash it**: the module fetches the release asset over Wi-Fi (redirects followed), the app verifies the SHA256 and flashes it
 ```powershell
-u-connectClientApp.exe COM13 --exec "wifi.connect MySsid MyPassword" --exec "fw.download https://github.com/<owner>/<repo>/releases/download/<tag>/module.bin module.bin <sha256>" --exec "fw.flash module.bin"
+ucxapp COM13 --exec "wifi.connect MySsid MyPassword" --exec "fw.download https://github.com/<owner>/<repo>/releases/download/<tag>/module.bin module.bin <sha256>" --exec "fw.flash module.bin"
 ```
 `fw.download` deletes the file if the SHA256 does not match, so a bad download is never flashed. Without Wi-Fi, download the file in a browser and use `fw.flash` directly.
 
 **Remote control from any browser**: the module serves its own web UI over Wi-Fi
 ```powershell
-u-connectClientApp.exe COM13 --exec "wifi.connect MySsid MyPassword" --exec "web.start" --shell
+ucxapp COM13 --exec "wifi.connect MySsid MyPassword" --exec "web.start" --shell
 ```
 It prints `http://<module-ip>:<port>/?t=<token>`. Open it on your phone or laptop for a command box with live output.
 
@@ -70,7 +70,7 @@ Type `help` in the shell, or `help wifi` to filter by prefix. Full list with arg
 
 | Area | Commands |
 |---|---|
-| Device | `device.info`, `device.reboot`, `at <raw AT command>` |
+| Device | `device.info`, `device.reboot`, `device.factory confirm`, `at <raw AT command>` |
 | Wi-Fi | `wifi.scan`, `wifi.connect <ssid> [pw]`, `wifi.status`, `wifi.disconnect`, `wifi.ip`, `wifi.rssi`, `wifi.profile.*`, `wifi.ap.*` |
 | Network | `net.ping <host>`, `net.dns <host>`, `http.get <url>`, `http.download <url> <file>` |
 | Sockets | `sock.open`, `sock.connect`, `sock.send`, `sock.read`, `sock.listen`, `sock.accept`, `sock.sendto`, `sock.recvfrom`, `sock.close` |
@@ -78,9 +78,10 @@ Type `help` in the shell, or `help wifi` to filter by prefix. Full list with arg
 | Bluetooth | `bt.scan`, `bt.connect`, `bt.pairing`, `bt.bonds`, `bt.profile.*`, `bt.list` |
 | GATT | `gatt.services`, `gatt.read`, `gatt.write`, `gatt.subscribe`, `gatt.client.example.*`, `gatt.server.example.*` (heart rate, battery, NUS, SPS, Wi-Fi provisioning and more) |
 | HID | `hid.setup`, `hid.text`, `hid.key` (act as a Bluetooth keyboard) |
-| QR codes | `qr.text`, `qr.wifi`, `qr.geo` |
+| Utilities | `utils.qr.text`, `utils.qr.wifi`, `utils.qr.geo`, `utils.zip`, `utils.unzip` |
+| Sensors | `gnss.detect`, `gnss.open`, `gnss.status`, `gnss.sats`, `gnss.bridge`, `imu.detect`, `imu.open`, `imu.status`, `imu.bridge` (PC serial sensors, bridged over TCP, UDP or BLE) |
 | Certificates | `cert.list`, `cert.upload`, `cert.info`, `cert.remove` |
-| Firmware | `fw.download <url> <file> [sha256]`, `fw.flash <file> [baud]` |
+| Firmware | `fw.download [latest [file]]` or `fw.download <url> <file> [sha256]`, `fw.flash <file> [baud]` |
 | Web UI | `web.start`, `web.stop`, `web.status` |
 
 ## Quick start from source
@@ -89,10 +90,11 @@ Type `help` in the shell, or `help wifi` to filter by prefix. Full list with arg
 git clone https://github.com/u-blox/u-connectClientApp.git
 cd u-connectClientApp
 git submodule update --init u-connectClient
-.\u-connectClientAppWin.cmd          # builds on first run, then starts the shell
+.\ucxapp             # builds on first run, then starts the shell
 ```
 
-Linux: `./u-connectClientAppLinux.sh`. STM32: `.\u-connectClientAppSTM32.cmd --build --flash --log`.
+Linux: `./ucxapp.py`. STM32: `.\ucxapp --stm32 --build --flash --log`.
+Find attached modules, GNSS receivers and IMUs: `.\ucxapp --detect`.
 
 ## Documentation
 

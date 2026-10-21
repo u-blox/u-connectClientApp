@@ -11,9 +11,9 @@ description: Build, flash and use u-connectClientApp as firmware on NUCLEO-H753Z
 
 ## Build, flash, log
 ```powershell
-.\u-connectClientAppSTM32.cmd --board h753 --build --flash --log   # h753 (default), f767 or f439
+.\ucxapp --stm32 --board h753 --build --flash --log   # h753 (default), f767, f439 or all
 ```
-Other options: `--rebuild`, `--clean`, `--erase`, `--recover`, `--log COMx`, `--help`. Prebuilt `.bin/.hex/.elf` images for each board are attached to every GitHub release; flash a `.bin` at `0x08000000` with STM32CubeProgrammer.
+On Linux: `./ucxapp.py --stm32 ...`. Other options: `--rebuild`, `--clean`, `--erase`, `--recover`, `--log COMx`, `--help`. Prebuilt `.bin/.hex/.elf` images for each board are attached to every GitHub release; flash a `.bin` at `0x08000000` with STM32CubeProgrammer.
 
 ## Wiring
 NORA-W36 on the Arduino header CN10, 115200 baud:

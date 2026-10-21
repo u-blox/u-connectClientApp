@@ -1,6 +1,6 @@
 """Tests against real NORA-W36 modules (a second module is the peer; the PC is never a counterpart).
 
-Run with e.g.:  set UCX_PORT_A=COM5 & set UCX_PORT_B=COM7 & pytest tests/test_hardware.py
+The tests adapt to what is attached (see conftest.py); `ucxapp --detect --test tests/test_hardware.py` finds it.
 """
 
 import os
@@ -39,6 +39,19 @@ def test_connects_and_reports_model(app_exe, port_a):
     assert "NORA-W36" in out.stdout
 
 
+@pytest.mark.app
+def test_imu_detect_probes_usb_uart_adapters(app_exe):
+    # "USB-SERIAL CH340" was once parsed as an EVK port with a label and silently skipped.
+    ports = subprocess.run([str(app_exe), "--list-ports"], capture_output=True, text=True, timeout=30,
+                           errors="replace").stdout
+    adapters = re.findall(r"^(COM\d+)\s+available\s+.*USB-SERIAL", ports, re.MULTILINE)
+    if not adapters:
+        pytest.skip("no USB-SERIAL adapter attached")
+    out = _run(app_exe, "COM255", "imu.detect", timeout=300)
+    for port in adapters:
+        assert f"  {port} (" in out.stdout, out.stdout
+
+
 @pytest.mark.hardware
 def test_wifi_scan_finds_networks(app_exe, port_a):
     out = _run(app_exe, port_a, "wifi.scan")
@@ -50,14 +63,14 @@ def test_wifi_profile_auto_falls_back_to_scan(app_exe, port_a, tmp_path):
     ssid, password = os.environ.get("UCX_WIFI_SSID"), os.environ.get("UCX_WIFI_PASS", "")
     if not ssid:
         pytest.skip("set UCX_WIFI_SSID (and UCX_WIFI_PASS) to run the Wi-Fi profile test")
-    (tmp_path / "u-connectClientApp.wifilast").write_text("bogus")
+    (tmp_path / "ucxapp.wifilast").write_text("bogus")
     out = subprocess.run(
         _args(app_exe, port_a, "wifi.profile.add bogus no-such-network-xyz pw12345678",
               f"wifi.profile.add real {ssid} {password}", "wifi.profile.auto", "wifi.status"),
         capture_output=True, text=True, timeout=180, errors="replace", cwd=tmp_path)
     assert out.returncode == 0, out.stdout
     assert "Strongest known network: 'real'" in out.stdout, out.stdout
-    assert (tmp_path / "u-connectClientApp.wifilast").read_text() == "real"
+    assert (tmp_path / "ucxapp.wifilast").read_text() == "real"
 
 
 @pytest.mark.hardware
@@ -68,7 +81,7 @@ def test_ble_scan_completes(app_exe, port_a):
 
 @pytest.mark.hardware
 def test_ble_profile_auto_falls_back_to_scan(app_exe, port_a, tmp_path):
-    (tmp_path / "u-connectClientApp.blelast").write_text("ghost")
+    (tmp_path / "ucxapp.blelast").write_text("ghost")
     out = subprocess.run(
         _args(app_exe, port_a, "bt.profile.add ghost 11:22:33:44:55:66", "bt.profile.list", "bt.profile.auto"),
         capture_output=True, text=True, timeout=180, errors="replace", cwd=tmp_path)
@@ -94,7 +107,7 @@ def test_wifi_regdomain_set_and_read_back(app_exe, port_a, tmp_path):
                          timeout=60, errors="replace", cwd=tmp_path)
     assert out.returncode == 0, out.stdout
     assert out.stdout.count("regdomain=fcc") == 2, out.stdout
-    assert (tmp_path / "u-connectClientApp.regdomain").read_text() == "fcc"
+    assert (tmp_path / "ucxapp.regdomain").read_text() == "fcc"
     restore = subprocess.run(_args(app_exe, port_a, "wifi.regdomain etsi"), capture_output=True, text=True, timeout=60,
                              errors="replace", cwd=tmp_path)
     assert "regdomain=etsi" in restore.stdout, restore.stdout
@@ -141,6 +154,12 @@ def test_network_commands_over_wifi(app_exe, port_a):
     assert out.returncode == 0, out.stdout
     assert "wifi: connected" in out.stdout, out.stdout
     assert "200" in out.stdout, out.stdout
+
+
+def _wifi_connect_command():
+    """UCX_WIFI_SSID/_PASS when set, else the strongest saved profile (wifi.profile.auto) from the repo ini."""
+    ssid = os.environ.get("UCX_WIFI_SSID")
+    return f"wifi.connect {ssid} {os.environ.get('UCX_WIFI_PASS', '')}" if ssid else "wifi.profile.auto"
 
 
 def _wifi_credentials():
@@ -267,3 +286,110 @@ def test_ble_module_b_discovers_module_a(app_exe, port_a, port_b):
     finally:
         server.terminate()
         server.wait(timeout=30)
+
+
+@pytest.mark.gnss
+def test_gnss_reads_live_data(app_exe, gnss):
+    port, baud = gnss
+    proc = subprocess.Popen([str(app_exe), "COM255"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            text=True, errors="replace")
+    try:
+        for command, wait in ((f"gnss.open {port} {baud}", 4), ("gnss.status", 1), ("gnss.sats", 1),
+                              ("gnss.close", 1), ("exit", 0)):
+            proc.stdin.write(command + "\n")
+            proc.stdin.flush()
+            time.sleep(wait)
+        out, _ = proc.communicate(timeout=10)
+    finally:
+        proc.kill()
+    assert "NMEA" in out and "0 NMEA" not in out, out
+    assert "Fix:" in out and "satellite(s)" in out
+
+
+def _close_listeners(exe, port):
+    """Close TCP listeners left on the module by an earlier run, they keep the bridge port bound."""
+    handles = re.findall(r"socket (\d+): TCP, listening", _run(exe, port, "sock.list").stdout)
+    if handles:
+        _run(exe, port, *[f"sock.close {handle}" for handle in handles])
+
+
+def _start_bridge(exe, port, source, found, setup, bridge):
+    """Module A runs the source bridge in a shell; returns (process, line queue)."""
+    _close_listeners(exe, port)
+    args = _args(exe, port, *setup, f"{source}.open {found[0]} {found[1]}".strip(), bridge) + ["--shell"]
+    proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                            errors="replace")
+    lines = queue.Queue()
+    threading.Thread(target=lambda: [lines.put(line) for line in proc.stdout], daemon=True).start()
+    seen = []
+    deadline = time.time() + 90
+    while time.time() < deadline:
+        try:
+            line = lines.get(timeout=1)
+        except queue.Empty:
+            continue
+        seen.append(line)
+        if "bridge:" in line:
+            return proc, seen
+        if line.startswith("ERROR:"):
+            _stop(proc)
+            pytest.fail(f"{source} bridge failed to start: {''.join(seen)[-400:]}")
+        if f"no {source.upper()} found" in line or "no receiver" in line or "no IMU" in line:
+            break
+    _stop(proc)
+    pytest.skip(f"{source} not available for the bridge: {''.join(seen)[-400:]}")
+
+
+def _stop(proc):
+    try:
+        proc.stdin.write("exit\n")
+        proc.stdin.flush()
+        proc.wait(timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        proc.kill()
+
+
+def _check_stream(source, text):
+    if source == "gnss":
+        assert "$G" in text, text
+    else:
+        assert re.search(r"received [1-9]\d* bytes|\[NUS RX\]", text), text
+
+
+SOURCES = [pytest.param("gnss", marks=pytest.mark.gnss), pytest.param("imu", marks=pytest.mark.imu)]
+
+
+@pytest.mark.two_devices
+@pytest.mark.parametrize("source", SOURCES)
+def test_bridge_over_wifi_between_two_modules(app_exe, port_a, port_b, source, request):
+    """A bridges the source over TCP on Wi-Fi; B connects a socket and reads the stream."""
+    wifi = _wifi_connect_command()
+    proc, seen = _start_bridge(app_exe, port_a, source, request.getfixturevalue(source), [wifi],
+                               f"{source}.bridge tcp 2947")
+    try:
+        match = re.search(r"connect a TCP client to ([\d.]+):2947", "".join(seen))
+        assert match, "".join(seen)
+        out = _run(app_exe, port_b, wifi, "sock.open tcp", f"sock.connect 0 {match.group(1)} 2947",
+                   "sock.read 0 400 10", "sock.close 0", timeout=240)
+    finally:
+        _stop(proc)
+    assert out.returncode == 0, out.stdout
+    _check_stream(source, out.stdout)
+
+
+@pytest.mark.two_devices
+@pytest.mark.parametrize("source", SOURCES)
+def test_bridge_over_ble_between_two_modules(app_exe, port_a, port_b, source, request):
+    """A bridges the source over Nordic UART; B scans, connects by name and listens for notifications."""
+    name = "ucxbridge"
+    proc, _ = _start_bridge(app_exe, port_a, source, request.getfixturevalue(source), [f'at +UBTLN="{name}"'],
+                            f"{source}.bridge ble nus")
+    try:
+        out = _run(app_exe, port_b, "bt.scan", f"bt.connect {name}", "gatt.client.example.nus", "gatt.listen 15",
+                   "bt.disconnect", timeout=240)
+    finally:
+        _stop(proc)
+    assert out.returncode == 0, out.stdout
+    assert "[NUS RX]" in out.stdout, out.stdout
+    if source == "gnss":
+        assert "$G" in out.stdout, out.stdout

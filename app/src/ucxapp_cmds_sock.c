@@ -1,4 +1,5 @@
 #include "ucxapp_cmd.h"
+#include "ucxapp_stats.h"
 
 #include <string.h>
 
@@ -37,7 +38,8 @@ static int cmdSockOpen(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: failed to create socket\n");
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("socket %d\n", (int)handle);
+    ucxapp_handle_add(UCXAPP_HANDLE_SOCK, handle);
+    ucxapp_print("socket %d (current)\n", (int)handle);
     return UCXAPP_OK;
 }
 
@@ -53,7 +55,7 @@ static int cmdSockConnect(ucxapp_t *app, int argc, char *argv[])
     ucxapp_events_clear(URC_FLAG_SOCK_CONNECTED);
     int32_t result = uCxSocketConnect(app->ucx, handle, argv[2], port);
     if (result != 0) {
-        ucxapp_print("ERROR: connect failed (%d)\n", (int)result);
+        ucxapp_print("ERROR: connect failed (%d%s)\n", (int)result, ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;
     }
     if (!ucxapp_events_wait(URC_FLAG_SOCK_CONNECTED, 10)) {
@@ -130,9 +132,10 @@ static int cmdSockSend(ucxapp_t *app, int argc, char *argv[])
     }
     int32_t result = uCxSocketWrite(app->ucx, handle, (const uint8_t *)text, (int32_t)len);
     if (result < 0) {
-        ucxapp_print("ERROR: send failed (%d)\n", (int)result);
+        ucxapp_print("ERROR: send failed (%d%s)\n", (int)result, ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;
     }
+    ucxapp_stats_add(UCXAPP_STATS_TCP, len, 0);
     ucxapp_print("sent %d bytes\n", (int)len);
     return UCXAPP_OK;
 }
@@ -152,9 +155,10 @@ static int cmdSockRead(ucxapp_t *app, int argc, char *argv[])
     ucxapp_events_wait(URC_FLAG_SOCK_DATA, (uint32_t)timeoutS);   /* a read below tells if data arrived */
     int32_t n = uCxSocketRead(app->ucx, handle, maxLen, buf);
     if (n < 0) {
-        ucxapp_print("ERROR: read failed (%d)\n", (int)n);
+        ucxapp_print("ERROR: read failed (%d%s)\n", (int)n, ucxapp_errname(n));
         return UCXAPP_ERR_FAILED;
     }
+    ucxapp_stats_add(UCXAPP_STATS_TCP, 0, (size_t)n);
     printable(buf, n);
     ucxapp_print("received %d bytes: %s\n", (int)n, (const char *)buf);
     return UCXAPP_OK;
@@ -255,7 +259,8 @@ static int cmdSockAccept(ucxapp_t *app, int argc, char *argv[])
             return UCXAPP_ERR_FAILED;
         }
     }
-    ucxapp_print("accepted socket %d (listener %d)\n", (int)sock, (int)listenSock);
+    ucxapp_handle_add(UCXAPP_HANDLE_SOCK, sock);
+    ucxapp_print("accepted socket %d (listener %d, current)\n", (int)sock, (int)listenSock);
     return UCXAPP_OK;
 }
 
@@ -275,9 +280,10 @@ static int cmdSockSendTo(ucxapp_t *app, int argc, char *argv[])
     }
     int32_t result = uCxSocketSendTo(app->ucx, handle, &addr, port, (const uint8_t *)text, (int32_t)len);
     if (result < 0) {
-        ucxapp_print("ERROR: sendto failed (%d)\n", (int)result);
+        ucxapp_print("ERROR: sendto failed (%d%s)\n", (int)result, ucxapp_errname(result));
         return UCXAPP_ERR_FAILED;
     }
+    ucxapp_stats_add(UCXAPP_STATS_UDP, len, 0);
     ucxapp_print("sent %d bytes to %s:%d\n", (int)len, argv[2], (int)port);
     return UCXAPP_OK;
 }
@@ -299,9 +305,10 @@ static int cmdSockRecvFrom(ucxapp_t *app, int argc, char *argv[])
     ucxapp_events_wait(URC_FLAG_SOCK_DATA, (uint32_t)timeoutS);
     int32_t n = uCxSocketReceiveFrom(app->ucx, handle, maxLen, buf, &from);
     if (n < 0) {
-        ucxapp_print("ERROR: receive failed (%d)\n", (int)n);
+        ucxapp_print("ERROR: receive failed (%d%s)\n", (int)n, ucxapp_errname(n));
         return UCXAPP_ERR_FAILED;
     }
+    ucxapp_stats_add(UCXAPP_STATS_UDP, 0, (size_t)n);
     if (uCxIpAddressToString(&from.remote_ip, ip, sizeof(ip)) <= 0) {
         ip[0] = '\0';
     }
@@ -321,6 +328,7 @@ static int cmdSockClose(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: failed to close socket %d\n", (int)handle);
         return UCXAPP_ERR_FAILED;
     }
+    ucxapp_handle_remove(UCXAPP_HANDLE_SOCK, handle);
     ucxapp_print("socket %d closed\n", (int)handle);
     return UCXAPP_OK;
 }
@@ -329,13 +337,14 @@ static int cmdSockList(ucxapp_t *app, int argc, char *argv[])
 {
     uCxSocketListStatus_t status;
     int count = 0;
+    int32_t cur = ucxapp_handle_current(UCXAPP_HANDLE_SOCK);
     (void)argc;
     (void)argv;
 
     uCxSocketListStatusBegin(app->ucx);
     while (uCxSocketListStatusGetNext(app->ucx, &status)) {
         count++;
-        ucxapp_print("socket %d: %s, %s\n", (int)status.socket_handle,
+        ucxapp_print("%csocket %d: %s, %s\n", status.socket_handle == cur ? '*' : ' ', (int)status.socket_handle,
                      status.protocol == U_SOCKET_PROTOCOL_TCP ? "TCP" : "UDP",
                      status.status == 0 ? "not connected" :
                      status.status == 1 ? "listening" : "connected");
@@ -347,15 +356,15 @@ static int cmdSockList(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gSockCmds[] = {
     { "sock.open",    "<tcp|udp>",                "Create a socket, prints its handle",   UCXAPP_CMD_NEEDS_DEVICE, cmdSockOpen },
-    { "sock.connect", "<handle> <host> <port>",   "Connect a socket",                     UCXAPP_CMD_NEEDS_DEVICE, cmdSockConnect },
-    { "sock.send",    "<handle> <text>",          "Send text on a connected socket",      UCXAPP_CMD_NEEDS_DEVICE, cmdSockSend },
-    { "sock.read",    "<handle> [max] [wait_s]",  "Wait for data (default 5 s) and read", UCXAPP_CMD_NEEDS_DEVICE, cmdSockRead },
-    { "sock.bind",    "<handle> <port>",          "Bind a socket to a local port (UDP receive)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockBind },
-    { "sock.listen",  "<handle> [port]",          "Listen for TCP connections",           UCXAPP_CMD_NEEDS_DEVICE, cmdSockListen },
+    { "sock.connect", "[handle] <host> <port>",   "Connect a socket",                     UCXAPP_CMD_NEEDS_DEVICE, cmdSockConnect },
+    { "sock.send",    "[handle] <text>",          "Send text on a connected socket",      UCXAPP_CMD_NEEDS_DEVICE, cmdSockSend },
+    { "sock.read",    "[handle] [max] [wait_s]",  "Wait for data (default 5 s) and read", UCXAPP_CMD_NEEDS_DEVICE, cmdSockRead },
+    { "sock.bind",    "[handle] <port>",          "Bind a socket to a local port (UDP receive)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockBind },
+    { "sock.listen",  "[handle] [port]",          "Listen for TCP connections",           UCXAPP_CMD_NEEDS_DEVICE, cmdSockListen },
     { "sock.accept",  "[wait_s]",                 "Wait for an incoming TCP connection (default 30 s)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockAccept },
-    { "sock.sendto",  "<handle> <host> <port> <text>", "Send a UDP datagram",           UCXAPP_CMD_NEEDS_DEVICE, cmdSockSendTo },
-    { "sock.recvfrom", "<handle> [max] [wait_s]", "Receive a UDP datagram and show its sender", UCXAPP_CMD_NEEDS_DEVICE, cmdSockRecvFrom },
-    { "sock.close",   "<handle>",                 "Close a socket",                       UCXAPP_CMD_NEEDS_DEVICE, cmdSockClose },
+    { "sock.sendto",  "[handle] <host> <port> <text>", "Send a UDP datagram",           UCXAPP_CMD_NEEDS_DEVICE, cmdSockSendTo },
+    { "sock.recvfrom", "[handle] [max] [wait_s]", "Receive a UDP datagram and show its sender", UCXAPP_CMD_NEEDS_DEVICE, cmdSockRecvFrom },
+    { "sock.close",   "[handle]",                 "Close a socket",                       UCXAPP_CMD_NEEDS_DEVICE, cmdSockClose },
     { "sock.list",    "",                         "List open sockets",                    UCXAPP_CMD_NEEDS_DEVICE, cmdSockList },
 };
 

@@ -17,7 +17,12 @@ ENTRY = re.compile(
 NEW_COMMANDS = (
     "web.start", "web.stop", "web.status",
     "hid.setup", "hid.status", "hid.key", "hid.text",
-    "qr.text", "qr.wifi", "qr.geo",
+    "utils.qr.text", "utils.qr.wifi", "utils.qr.geo", "utils.zip", "utils.unzip",
+    "gnss.detect", "gnss.open", "gnss.close", "gnss.status", "gnss.sats", "gnss.log", "gnss.send",
+    "gnss.restart", "gnss.rate", "gnss.bridge",
+    "cell.detect", "cell.open", "cell.close", "cell.status", "cell.at", "cell.apn", "cell.attach",
+    "cell.ping", "cell.bridge", "cell.connect", "cell.disconnect",
+    "imu.detect", "imu.open", "imu.close", "imu.status", "imu.log", "imu.send", "imu.rate", "imu.bridge",
     "wifi.ap.enable", "wifi.ap.disable", "wifi.ap.status",
     "wifi.profile.add", "wifi.profile.list", "wifi.profile.remove", "wifi.profile.connect",
     "wifi.profile.auto", "wifi.regdomain",

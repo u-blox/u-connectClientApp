@@ -69,5 +69,5 @@ jobs:
           python -m pytest tests/test_app_smoke.py -q
       - uses: actions/upload-artifact@v4
         with:
-          name: u-connectClientApp
-          path: app/bin/u-connectClientApp.exe
+          name: ucxapp-windows
+          path: app/bin/ucxapp.exe

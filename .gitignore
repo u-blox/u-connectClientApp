@@ -8,7 +8,9 @@ bin/*.ilk
 bin/*.dll
 !bin/.gitkeep
 
-# u-connectClientApp build outputs
+# ucxapp build outputs
+app/bin/ucxapp.exe
+app/bin/ucxapp-debug.exe
 app/bin/u-connectClientApp.exe
 app/bin/u-connectClientApp-debug.exe
 
@@ -25,8 +27,19 @@ __pycache__/
 # IDE
 .vscode/
 
-# User settings (contains credentials)
+# User settings and saved profiles (contain credentials)
+ucxapp.ini
 u-connectClientApp.ini
+ucxapp.wifi
+ucxapp.wifilast
+ucxapp.regdomain
+ucxapp.ble
+ucxapp.blelast
+u-connectClientApp.wifi
+u-connectClientApp.wifilast
+u-connectClientApp.regdomain
+u-connectClientApp.ble
+u-connectClientApp.blelast
 
 # OS
 .DS_Store

@@ -1,4 +1,7 @@
 #include "ucxapp_cmd.h"
+#include "ucxapp_stats.h"
+#include "ucxapp_stream.h"
+#include "ucxapp_ui.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,6 +50,10 @@ static const uint8_t kWpsSvc[16]  = {0x14,0x38,0x78,0x00,0x13,0x0C,0x49,0xE7,0xB
 static const uint8_t kWpsInfo[16] = {0x14,0x38,0x78,0x01,0x13,0x0C,0x49,0xE7,0xB8,0x77,0x28,0x81,0xC8,0x9C,0xB2,0x58};
 static const uint8_t kWpsCtrl[16] = {0x14,0x38,0x78,0x02,0x13,0x0C,0x49,0xE7,0xB8,0x77,0x28,0x81,0xC8,0x9C,0xB2,0x58};
 static const uint8_t kWpsData[16] = {0x14,0x38,0x78,0x03,0x13,0x0C,0x49,0xE7,0xB8,0x77,0x28,0x81,0xC8,0x9C,0xB2,0x58};
+
+/* WitMotion BLE 5.0 IMU (WT901BLE and similar): service 0xFFE5, notify 0xFFE4, write 0xFFE9. */
+static const uint8_t kWitSvc[16]    = {0x00,0x00,0xFF,0xE5,0x00,0x00,0x10,0x00,0x80,0x00,0x00,0x80,0x5F,0x9B,0x34,0xFB};
+static const uint8_t kWitNotify[16] = {0x00,0x00,0xFF,0xE4,0x00,0x00,0x10,0x00,0x80,0x00,0x00,0x80,0x5F,0x9B,0x34,0xFB};
 
 /* ---- helpers --------------------------------------------------------- */
 
@@ -216,6 +223,13 @@ static int32_t gCacheConn = -1;
 
 /* SPS flow control state shared between the credits parser and gatt.send. */
 static bool gSpsFlow;
+
+/* Subscriptions made by the client examples; notifications print until gatt.listen off. */
+#define LISTEN_MAX 16
+static bool gListen;
+static int32_t gListenConn;
+static int32_t gListenHandles[LISTEN_MAX];
+static int gListenCount;
 static int gSpsRemoteCredits;
 
 static int discover(ucxapp_t *app, int32_t conn)
@@ -240,7 +254,7 @@ static int discover(ucxapp_t *app, int32_t conn)
     }
     r = uCxEnd(app->ucx);
     if (r != 0) {
-        ucxapp_print("ERROR: service discovery failed (%d)\n", (int)r);
+        ucxapp_print("ERROR: service discovery failed (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
 
@@ -258,7 +272,7 @@ static int discover(ucxapp_t *app, int32_t conn)
         }
         r = uCxEnd(app->ucx);
         if (r != 0) {
-            ucxapp_print("ERROR: characteristic discovery failed for service %d (%d)\n", i, (int)r);
+            ucxapp_print("ERROR: characteristic discovery failed for service %d (%d%s)\n", i, (int)r, ucxapp_errname(r));
         }
     }
     gCacheConn = conn;
@@ -444,8 +458,35 @@ static void parseWps(const uint8_t *d, size_t n)
     gWpsResponses++;
 }
 
+/* Last parsed notification text, mirrored to the Events pane while listening. */
+static char gParsed[200];
+
+/* 20-byte packet: 0x55 0x61, then accel, gyro and angle as nine little-endian int16 (x, y, z each). */
+static bool parseWit(const uint8_t *d, size_t n)
+{
+    int16_t w[9];
+
+    if (n < 20 || d[0] != 0x55 || d[1] != 0x61) {
+        return false;
+    }
+    for (int i = 0; i < 9; i++) {
+        w[i] = (int16_t)(d[2 + 2 * i] | (d[3 + 2 * i] << 8));
+    }
+    snprintf(gParsed, sizeof(gParsed),
+             "[WIT] acc %7.3f %7.3f %7.3f g  gyro %8.2f %8.2f %8.2f dps  roll %7.2f pitch %7.2f yaw %7.2f deg",
+             w[0] * 16.0 / 32768.0, w[1] * 16.0 / 32768.0, w[2] * 16.0 / 32768.0,
+             w[3] * 2000.0 / 32768.0, w[4] * 2000.0 / 32768.0, w[5] * 2000.0 / 32768.0,
+             w[6] * 180.0 / 32768.0, w[7] * 180.0 / 32768.0, w[8] * 180.0 / 32768.0);
+    ucxapp_print("%s\n", gParsed);
+    return true;
+}
+
 static void printValue(const chr_t *c, const uint8_t *d, size_t n)
 {
+    if (c != NULL && (isUuid16(c->uuid, c->uuidLen, 0xFFE4) || isUuid128(c->uuid, c->uuidLen, kWitNotify)) &&
+        parseWit(d, n)) {
+        return;
+    }
     if (c != NULL && isUuid128(c->uuid, c->uuidLen, kWpsData)) {
         parseWps(d, n);
         return;
@@ -505,7 +546,21 @@ void ucxapp_gatt_notification(int32_t conn, int32_t handle, const uint8_t *data,
     if (c == NULL) {
         ucxapp_print("[notify conn=%d handle=0x%04X] ", (int)conn, (unsigned)handle);
     }
+    gParsed[0] = '\0';
     printValue(c, data, len);
+    if (gListen) {
+        char ev[220];
+        if (gParsed[0] != '\0') {
+            snprintf(ev, sizeof(ev), "%s", gParsed);
+        } else {
+            const char *name = c ? charName(c->uuid, c->uuidLen) : NULL;
+            int n = snprintf(ev, sizeof(ev), "[GATT] %s 0x%04X:", name ? name : "handle", (unsigned)handle);
+            for (size_t i = 0; i < len && i < 16 && n < (int)sizeof(ev) - 4; i++) {
+                n += snprintf(ev + n, sizeof(ev) - (size_t)n, " %02X", (unsigned)data[i]);
+            }
+        }
+        ucxapp_ui_event(ev);
+    }
 }
 
 /* ---- client: raw operations ----------------------------------------- */
@@ -623,9 +678,10 @@ static int cmdGattWrite(ucxapp_t *app, int argc, char *argv[])
     int32_t r = argc == 5 ? uCxGattClientWriteNoRsp(app->ucx, conn, handle, data, (int32_t)len)
                           : uCxGattClientWrite(app->ucx, conn, handle, data, (int32_t)len);
     if (r != 0) {
-        ucxapp_print("ERROR: write failed (%d)\n", (int)r);
+        ucxapp_print("ERROR: write failed (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
+    ucxapp_stats_add(UCXAPP_STATS_GATT, len, 0);
     ucxapp_print("wrote %u byte(s)\n", (unsigned)len);
     return UCXAPP_OK;
 }
@@ -659,12 +715,37 @@ static int cmdGattSubscribe(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+/* Dashboard text; empty unless a client example is listening. */
+size_t ucxapp_gatt_summary(char *out, size_t size)
+{
+    out[0] = '\0';
+    if (!gListen) {
+        return 0;
+    }
+    int n = snprintf(out, size, "GATT listening %d", gListenCount);
+    return n > 0 ? (size_t)n : 0;
+}
+
 static int cmdGattListen(ucxapp_t *app, int argc, char *argv[])
 {
-    int32_t seconds = LISTEN_DEFAULT_S;
+    int32_t seconds = 0;
 
+    if (argc == 2 && strcmp(argv[1], "off") == 0) {
+        for (int i = 0; i < gListenCount; i++) {
+            setCccd(app, gListenConn, gListenHandles[i], 0);
+        }
+        gListenCount = 0;
+        gListen = false;
+        ucxapp_print("stopped listening\n");
+        return UCXAPP_OK;
+    }
     if (argc > 2 || (argc == 2 && (!ucxapp_parse_int(argv[1], &seconds) || seconds < 0))) {
         return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 1) {
+        wpsPoll(app);
+        ucxapp_print(gListen ? "listening on %d subscription(s) (gatt.listen off to stop)\n" : "not listening\n",
+                     gListenCount);
     }
     for (int32_t i = 0; i < seconds; i++) {
         U_CX_PORT_SLEEP_MS(1000);
@@ -693,6 +774,7 @@ static const example_t kExamples[] = {
     { "nus", "Nordic UART",              0,      kNusSvc },
     { "sps", "u-blox Serial Port",       0,      kSpsSvc },
     { "wps", "Wi-Fi Provisioning",        0,      kWpsSvc },
+    { "wit", "WitMotion IMU",            0xFFE5, NULL },
 };
 
 #define EXAMPLE_COUNT (sizeof(kExamples) / sizeof(kExamples[0]))
@@ -733,12 +815,17 @@ static int cmdGattExample(ucxapp_t *app, int argc, char *argv[])
         return rc;
     }
     int svc = ex->u128 ? findService128(ex->u128) : findService16(ex->u16);
+    if (svc < 0 && strcmp(ex->key, "wit") == 0) {
+        svc = findService128(kWitSvc);
+    }
     if (svc < 0) {
         ucxapp_print("ERROR: %s service not found on connection %d\n", ex->title, (int)conn);
         return UCXAPP_ERR_FAILED;
     }
 
     int subscribed = 0;
+    gListenCount = 0;
+    gListenConn = conn;
     for (int i = 0; i < gChrCount; i++) {
         const chr_t *c = &gChr[i];
         uint8_t buf[MAX_VALUE];
@@ -762,6 +849,9 @@ static int cmdGattExample(ucxapp_t *app, int argc, char *argv[])
         }
         if (c->props & (PROP_NOTIFY | PROP_INDICATE)) {
             if (setCccd(app, conn, c->handle, (c->props & PROP_NOTIFY) ? 1 : 2)) {
+                if (gListenCount < LISTEN_MAX) {
+                    gListenHandles[gListenCount++] = c->handle;
+                }
                 subscribed++;
             } else {
                 ucxapp_print("  subscribe failed\n");
@@ -780,7 +870,9 @@ static int cmdGattExample(ucxapp_t *app, int argc, char *argv[])
             }
         }
     }
-    ucxapp_print("%d subscription(s); use gatt.listen <seconds> to watch updates\n", subscribed);
+    gListen = subscribed > 0;
+    ucxapp_print("%d subscription(s); listening, updates also go to the Events pane (gatt.listen off to stop)\n",
+                 subscribed);
     return UCXAPP_OK;
 }
 
@@ -824,7 +916,7 @@ static int cmdGattSend(ucxapp_t *app, int argc, char *argv[])
         if (sps && gSpsFlow) {
             gSpsRemoteCredits++;
         }
-        ucxapp_print("ERROR: send failed (%d)\n", (int)r);
+        ucxapp_print("ERROR: send failed (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("sent %u byte(s)\n", (unsigned)pos);
@@ -1053,7 +1145,7 @@ static int cmdServerSetup(ucxapp_t *app, int argc, char *argv[])
     int32_t r = p->u128 ? uCxGattServerServiceDefine(app->ucx, p->u128, 16, &svcHandle)
                         : uCxGattServerServiceDefine(app->ucx, svcUuid16, 2, &svcHandle);
     if (r != 0) {
-        ucxapp_print("ERROR: cannot define %s service (%d)\n", p->title, (int)r);
+        ucxapp_print("ERROR: cannot define %s service (%d%s)\n", p->title, (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("%s service defined (handle %d)\n", p->title, (int)svcHandle);
@@ -1086,7 +1178,7 @@ static int cmdServerSetup(ucxapp_t *app, int argc, char *argv[])
                                                     : U_GATT_SERVER_WRITE_SECURITY_NONE,
                                      init, (int32_t)initLen, c->maxLen, &rsp);
         if (r != 0) {
-            ucxapp_print("ERROR: cannot add %s (%d)\n", c->name, (int)r);
+            ucxapp_print("ERROR: cannot add %s (%d%s)\n", c->name, (int)r, ucxapp_errname(r));
             return UCXAPP_ERR_FAILED;
         }
         gSrv[gSrvCount].name = c->name;
@@ -1099,7 +1191,7 @@ static int cmdServerSetup(ucxapp_t *app, int argc, char *argv[])
     r = uCxGattServerServiceActivate(app->ucx);
     if (r != 0) {
         gSrvCount = first;
-        ucxapp_print("ERROR: cannot activate %s service (%d)\n", p->title, (int)r);
+        ucxapp_print("ERROR: cannot activate %s service (%d%s)\n", p->title, (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     gSrvDone |= 1u << idx;
@@ -1138,7 +1230,7 @@ static int cmdServerSet(ucxapp_t *app, int argc, char *argv[])
     }
     int32_t r = uCxGattServerSetAttrValue(app->ucx, handle, data, (int32_t)len);
     if (r != 0) {
-        ucxapp_print("ERROR: set value failed (%d)\n", (int)r);
+        ucxapp_print("ERROR: set value failed (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("value set (%u byte(s))\n", (unsigned)len);
@@ -1169,6 +1261,7 @@ static int serverSend(ucxapp_t *app, int argc, char *argv[], bool indicate)
                      indicate ? "indication" : "notification", (int)r);
         return UCXAPP_ERR_FAILED;
     }
+    ucxapp_stats_add(UCXAPP_STATS_GATT, len, 0);
     ucxapp_print("%s sent (%u byte(s))\n", indicate ? "indication" : "notification", (unsigned)len);
     return UCXAPP_OK;
 }
@@ -1187,6 +1280,20 @@ static bool notifyNamed(ucxapp_t *app, int32_t conn, const char *name, const uin
 {
     const srvRec_t *s = findSrv(name);
     return s != NULL && uCxGattServerSendNotification(app->ucx, conn, s->value, d, n) == 0;
+}
+
+bool ucxapp_gatt_notify_nus(ucxapp_t *app, const uint8_t *data, size_t len)
+{
+    int32_t conn = ucxapp_handle_current(UCXAPP_HANDLE_CONN);
+
+    return conn >= 0 && notifyNamed(app, conn, "nus.tx", data, (int32_t)len);
+}
+
+bool ucxapp_gatt_notify_custom(ucxapp_t *app, const uint8_t *data, size_t len)
+{
+    int32_t conn = ucxapp_handle_current(UCXAPP_HANDLE_CONN);
+
+    return conn >= 0 && notifyNamed(app, conn, "custom.tx", data, (int32_t)len);
 }
 
 /* Sends one second's worth of simulated values; false if a notification failed. */
@@ -1273,10 +1380,21 @@ static volatile int gWpsTail;
 /* Called from the URC task when a remote client writes to a local characteristic. */
 void ucxapp_gatt_server_write(int32_t conn, int32_t handle, const uint8_t *data, size_t len)
 {
+    ucxapp_stats_add(UCXAPP_STATS_GATT, 0, len);
     if (ucxapp_hid_server_write(conn, handle, data, len)) {
         return;
     }
     const srvRec_t *ctrl = findSrv("wps.ctrl");
+    const srvRec_t *nusRx = findSrv("nus.rx");
+    if (nusRx != NULL && nusRx->value == handle) {
+        ucxapp_stream_on_ble_rx(data, len);
+        return;
+    }
+    const srvRec_t *customRx = findSrv("custom.rx");
+    if (customRx != NULL && customRx->value == handle) {
+        ucxapp_stream_on_ble_rx(data, len);
+        return;
+    }
     if (ctrl != NULL && ctrl->value == handle) {
         int next = (gWpsHead + 1) % WPS_QUEUE;
         if (next == gWpsTail) {
@@ -1433,6 +1551,66 @@ int ucxapp_gatt_server_ensure(ucxapp_t *app, const char *key)
     return (gSrvDone & (1u << idx)) ? UCXAPP_OK : cmdServerSetup(app, 2, av);
 }
 
+static bool gCustomDone;
+static uint8_t gCustomUuid[3][16];   /* service, rx, tx */
+
+int ucxapp_gatt_server_custom(ucxapp_t *app, const uint8_t svc[16], const uint8_t rx[16], const uint8_t tx[16])
+{
+    int32_t svcHandle;
+    int32_t r;
+    size_t first = gSrvCount;
+
+    if (gCustomDone) {
+        if (memcmp(gCustomUuid[0], svc, 16) == 0 && memcmp(gCustomUuid[1], rx, 16) == 0 &&
+            memcmp(gCustomUuid[2], tx, 16) == 0) {
+            return UCXAPP_OK;
+        }
+        ucxapp_print("ERROR: a custom service is already defined; restart the module to define another\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (gSrvCount + 2 > MAX_SRV_CHARS) {
+        ucxapp_print("ERROR: too many characteristics defined\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_bt_security_defaults(app);
+    ensureAdvertising(app);
+    r = uCxGattServerServiceDefine(app->ucx, svc, 16, &svcHandle);
+    if (r != 0) {
+        ucxapp_print("ERROR: cannot define the custom service (%d%s)\n", (int)r, ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    for (int i = 0; i < 2; i++) {
+        uint8_t props = i == 0 ? PROP_NOTIFY : (PROP_WRITE | PROP_WRITE_NR);
+        uint8_t init = 0;
+        uCxGattServerCharDefine_t rsp;
+
+        r = uCxGattServerCharDefine6(app->ucx, i == 0 ? tx : rx, 16, &props, 1, U_GATT_SERVER_READ_SECURITY_NONE,
+                                     i == 0 ? U_GATT_SERVER_WRITE_SECURITY_NONE
+                                            : U_GATT_SERVER_WRITE_SECURITY_UNAUTHENTICATED,
+                                     &init, 1, 244, &rsp);
+        if (r != 0) {
+            gSrvCount = first;
+            ucxapp_print("ERROR: cannot add a custom characteristic (%d%s)\n", (int)r, ucxapp_errname(r));
+            return UCXAPP_ERR_FAILED;
+        }
+        gSrv[gSrvCount].name = i == 0 ? "custom.tx" : "custom.rx";
+        gSrv[gSrvCount].value = rsp.value_handle;
+        gSrv[gSrvCount].cccd = rsp.cccd_handle;
+        gSrvCount++;
+    }
+    r = uCxGattServerServiceActivate(app->ucx);
+    if (r != 0) {
+        gSrvCount = first;
+        ucxapp_print("ERROR: cannot activate the custom service (%d%s)\n", (int)r, ucxapp_errname(r));
+        return UCXAPP_ERR_FAILED;
+    }
+    memcpy(gCustomUuid[0], svc, 16);
+    memcpy(gCustomUuid[1], rx, 16);
+    memcpy(gCustomUuid[2], tx, 16);
+    gCustomDone = true;
+    return UCXAPP_OK;
+}
+
 /* ---- per-service example commands --------------------------------------- */
 
 /* gatt.client.example.<svc> <conn> [flow] */
@@ -1516,6 +1694,11 @@ EXAMPLE_CMDS(nus)
 EXAMPLE_CMDS(sps)
 EXAMPLE_CMDS(wps)
 
+static int cmdClientEx_wit(ucxapp_t *app, int argc, char *argv[])
+{
+    return clientExample(app, argc, argv, "wit");
+}
+
 static int cmdClientEx_dis(ucxapp_t *app, int argc, char *argv[])
 {
     return clientExample(app, argc, argv, "dis");
@@ -1566,7 +1749,7 @@ static int cmdGattWps(ucxapp_t *app, int argc, char *argv[])
     int before = gWpsResponses;
     int32_t r = uCxGattClientWrite(app->ucx, conn, ctrl->handle, (const uint8_t *)text, (int32_t)strlen(text));
     if (r != 0) {
-        ucxapp_print("ERROR: write failed (%d)\n", (int)r);
+        ucxapp_print("ERROR: write failed (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("sent: %s\n", argc > 2 && strcmp(argv[2], "config") == 0 ? "SET_CONFIG:..." : text);
@@ -1628,7 +1811,7 @@ static int cmdGattWriteLong(ucxapp_t *app, int argc, char *argv[])
                                        reliable ? U_GATT_CLIENT_RELIABLE_YES : U_GATT_CLIENT_RELIABLE_NO,
                                        more ? U_GATT_CLIENT_FLAG_MORE_DATA : U_GATT_CLIENT_FLAG_FINAL_DATA, offset);
     if (r != 0) {
-        ucxapp_print("ERROR: write long failed (%d)\n", (int)r);
+        ucxapp_print("ERROR: write long failed (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("wrote %u byte(s) at offset %d%s\n", (unsigned)len, (int)offset, more ? " (more data follows)" : "");
@@ -1648,7 +1831,7 @@ static int cmdServerServiceChanged(ucxapp_t *app, int argc, char *argv[])
     }
     int32_t r = uCxGattServerSendServiceChangedInd(app->ucx, conn, start, end);
     if (r != 0) {
-        ucxapp_print("ERROR: service changed indication failed (%d); the client must be connected and bonded\n", (int)r);
+        ucxapp_print("ERROR: service changed indication failed (%d%s); the client must be connected and bonded\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("service changed indication sent for handles 0x%04X-0x%04X\n", (unsigned)start, (unsigned)end);
@@ -1675,7 +1858,7 @@ static int cmdServerError(ucxapp_t *app, int argc, char *argv[])
     uint8_t b = (uint8_t)code;
     int32_t r = isRead ? uCxGattServerReadReqError(app->ucx, conn, &b, 1) : uCxGattServerWriteReqError(app->ucx, conn, &b, 1);
     if (r != 0) {
-        ucxapp_print("ERROR: error response failed (%d)\n", (int)r);
+        ucxapp_print("ERROR: error response failed (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("%s error 0x%02X sent\n", isRead ? "read" : "write", (unsigned)b);
@@ -1694,7 +1877,7 @@ static int cmdServerReadResp(ucxapp_t *app, int argc, char *argv[])
     }
     int32_t r = uCxGattServerReadReqResponse(app->ucx, conn, data, (int32_t)len);
     if (r != 0) {
-        ucxapp_print("ERROR: read response failed (%d)\n", (int)r);
+        ucxapp_print("ERROR: read response failed (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("read response sent (%u byte(s))\n", (unsigned)len);
@@ -1751,17 +1934,17 @@ static int cmdServerHostChar(ucxapp_t *app, int argc, char *argv[])
     ucxapp_gatt_ensure_advertising(app);
     int32_t r = uCxGattServerServiceDefine(app->ucx, svcUuid, 2, &svcHandle);
     if (r != 0) {
-        ucxapp_print("ERROR: cannot define service (%d)\n", (int)r);
+        ucxapp_print("ERROR: cannot define service (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     r = uCxGattServerHostCharDefine(app->ucx, chrUuid, 2, &p, 1, kRead[rsec], kWrite[wsec], &rsp);
     if (r != 0) {
-        ucxapp_print("ERROR: cannot define host characteristic (%d)\n", (int)r);
+        ucxapp_print("ERROR: cannot define host characteristic (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     r = uCxGattServerServiceActivate(app->ucx);
     if (r != 0) {
-        ucxapp_print("ERROR: cannot activate service (%d)\n", (int)r);
+        ucxapp_print("ERROR: cannot activate service (%d%s)\n", (int)r, ucxapp_errname(r));
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("host characteristic: value handle %d, CCCD %d\n", (int)rsp.value_handle, (int)rsp.cccd_handle);
@@ -1772,23 +1955,24 @@ static int cmdServerHostChar(ucxapp_t *app, int argc, char *argv[])
 /* ---- registration ------------------------------------------------------ */
 
 static const ucxapp_cmd_t gGattCmds[] = {
-    { "gatt.services",   "<conn>",                               "Discover and list the remote GATT services and characteristics", UCXAPP_CMD_NEEDS_DEVICE, cmdGattServices },
-    { "gatt.chars",      "<conn> [service-index]",               "List the remote characteristics (discovers if needed)",         UCXAPP_CMD_NEEDS_DEVICE, cmdGattChars },
-    { "gatt.read",       "<conn> <handle>",                      "Read a remote characteristic and decode known types",           UCXAPP_CMD_NEEDS_DEVICE, cmdGattRead },
-    { "gatt.write",      "<conn> <handle> <hex|text:abc> [norsp]", "Write a remote characteristic",                            UCXAPP_CMD_NEEDS_DEVICE, cmdGattWrite },
-    { "gatt.subscribe",  "<conn> <handle> [notify|indicate|off]", "Set the CCCD (assumed at value handle + 1)",                  UCXAPP_CMD_NEEDS_DEVICE, cmdGattSubscribe },
-    { "gatt.client.example.hrs", "<conn>", "Heart Rate client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_hrs },
-    { "gatt.client.example.cts", "<conn>", "Current Time client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_cts },
-    { "gatt.client.example.ess", "<conn>", "Environmental Sensing client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_ess },
-    { "gatt.client.example.lns", "<conn>", "Location and Navigation client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_lns },
-    { "gatt.client.example.aio", "<conn>", "Automation IO client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_aio },
-    { "gatt.client.example.bas", "<conn>", "Battery client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_bas },
-    { "gatt.client.example.dis", "<conn>", "Device Information client: discover and read", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_dis },
-    { "gatt.client.example.nus", "<conn>", "Nordic UART client: discover and subscribe (send with gatt.send)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_nus },
-    { "gatt.client.example.sps", "<conn> [flow]", "u-blox Serial Port client: discover and subscribe (flow: SPS credits)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_sps },
-    { "gatt.client.example.wps", "<conn>", "Wi-Fi Provisioning client: discover, read info and subscribe (control with gatt.wps)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_wps },
-    { "gatt.wps", "<conn> <status|scan|connect|forget|config <ssid> <pw> [OPEN|WPA2|WPA3]|raw <text>>", "Send a Wi-Fi provisioning command and wait for the response", UCXAPP_CMD_NEEDS_DEVICE, cmdGattWps },
-    { "gatt.writelong", "<conn> <handle> <hex|text:abc> [offset] [reliable] [more]", "Write a long characteristic value (prepare/execute write)", UCXAPP_CMD_NEEDS_DEVICE, cmdGattWriteLong },
+    { "gatt.services",   "[conn]",                               "Discover and list the remote GATT services and characteristics", UCXAPP_CMD_NEEDS_DEVICE, cmdGattServices },
+    { "gatt.chars",      "[conn] [service-index]",               "List the remote characteristics (discovers if needed)",         UCXAPP_CMD_NEEDS_DEVICE, cmdGattChars },
+    { "gatt.read",       "[conn] <handle>",                      "Read a remote characteristic and decode known types",           UCXAPP_CMD_NEEDS_DEVICE, cmdGattRead },
+    { "gatt.write",      "[conn] <handle> <hex|text:abc> [norsp]", "Write a remote characteristic",                            UCXAPP_CMD_NEEDS_DEVICE, cmdGattWrite },
+    { "gatt.subscribe",  "[conn] <handle> [notify|indicate|off]", "Set the CCCD (assumed at value handle + 1)",                  UCXAPP_CMD_NEEDS_DEVICE, cmdGattSubscribe },
+    { "gatt.client.example.hrs", "[conn]", "Heart Rate client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_hrs },
+    { "gatt.client.example.cts", "[conn]", "Current Time client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_cts },
+    { "gatt.client.example.ess", "[conn]", "Environmental Sensing client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_ess },
+    { "gatt.client.example.lns", "[conn]", "Location and Navigation client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_lns },
+    { "gatt.client.example.aio", "[conn]", "Automation IO client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_aio },
+    { "gatt.client.example.bas", "[conn]", "Battery client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_bas },
+    { "gatt.client.example.dis", "[conn]", "Device Information client: discover and read", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_dis },
+    { "gatt.client.example.nus", "[conn]", "Nordic UART client: discover and subscribe (send with gatt.send)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_nus },
+    { "gatt.client.example.sps", "[conn] [flow]", "u-blox Serial Port client: discover and subscribe (flow: SPS credits)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_sps },
+    { "gatt.client.example.wit", "[conn]", "WitMotion IMU client: subscribe and print acceleration, gyro and angles", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_wit },
+    { "gatt.client.example.wps", "[conn]", "Wi-Fi Provisioning client: discover, read info and subscribe (control with gatt.wps)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_wps },
+    { "gatt.wps", "[conn] <status|scan|connect|forget|config <ssid> <pw> [OPEN|WPA2|WPA3]|raw <text>>", "Send a Wi-Fi provisioning command and wait for the response", UCXAPP_CMD_NEEDS_DEVICE, cmdGattWps },
+    { "gatt.writelong", "[conn] <handle> <hex|text:abc> [offset] [reliable] [more]", "Write a long characteristic value (prepare/execute write)", UCXAPP_CMD_NEEDS_DEVICE, cmdGattWriteLong },
     { "gatt.server.example.hrs", "[seconds]", "Heart Rate server; with seconds, simulate values for a connected client", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_hrs },
     { "gatt.server.example.cts", "[seconds]", "Current Time server; with seconds, simulate values for a connected client", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_cts },
     { "gatt.server.example.ess", "[seconds]", "Environmental Sensing server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_ess },
@@ -1798,19 +1982,19 @@ static const ucxapp_cmd_t gGattCmds[] = {
     { "gatt.server.example.nus", "[seconds]", "Nordic UART server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_nus },
     { "gatt.server.example.sps", "[seconds]", "u-blox Serial Port server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_sps },
     { "gatt.server.example.wps", "[seconds]", "Wi-Fi Provisioning server; with seconds, run client commands for that long", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_wps },
-    { "gatt.server.servicechanged", "<conn> <start> <end>", "Send a Service Changed indication for a handle range", UCXAPP_CMD_NEEDS_DEVICE, cmdServerServiceChanged },
-    { "gatt.server.error", "<conn> <read|write> <att-code>", "Answer a pending read or write request with an ATT error", UCXAPP_CMD_NEEDS_DEVICE, cmdServerError },
-    { "gatt.server.readresp", "<conn> <hex|text:abc>", "Answer a pending host-characteristic read request", UCXAPP_CMD_NEEDS_DEVICE, cmdServerReadResp },
-    { "gatt.server.writeresp", "<conn>", "Acknowledge a pending host-characteristic write request", UCXAPP_CMD_NEEDS_DEVICE, cmdServerWriteResp },
+    { "gatt.server.servicechanged", "[conn] <start> <end>", "Send a Service Changed indication for a handle range", UCXAPP_CMD_NEEDS_DEVICE, cmdServerServiceChanged },
+    { "gatt.server.error", "[conn] <read|write> <att-code>", "Answer a pending read or write request with an ATT error", UCXAPP_CMD_NEEDS_DEVICE, cmdServerError },
+    { "gatt.server.readresp", "[conn] <hex|text:abc>", "Answer a pending host-characteristic read request", UCXAPP_CMD_NEEDS_DEVICE, cmdServerReadResp },
+    { "gatt.server.writeresp", "[conn]", "Acknowledge a pending host-characteristic write request", UCXAPP_CMD_NEEDS_DEVICE, cmdServerWriteResp },
     { "gatt.server.hostchar", "<svc-uuid> <char-uuid> <props-hex> [rsec] [wsec]", "Define a service with a host-managed characteristic", UCXAPP_CMD_NEEDS_DEVICE, cmdServerHostChar },
-    { "gatt.send",       "<conn> <nus|sps> <text>",              "Send text to the remote NUS or SPS service",                    UCXAPP_CMD_NEEDS_DEVICE, cmdGattSend },
-    { "gatt.credits",    "<conn> <1-127>",                       "Send SPS credits to the remote device",                         UCXAPP_CMD_NEEDS_DEVICE, cmdGattCredits },
-    { "gatt.listen",     "[seconds]",                            "Wait and print incoming notifications (default 10 s)",          UCXAPP_CMD_NEEDS_DEVICE, cmdGattListen },
+    { "gatt.send",       "[conn] <nus|sps> <text>",              "Send text to the remote NUS or SPS service",                    UCXAPP_CMD_NEEDS_DEVICE, cmdGattSend },
+    { "gatt.credits",    "[conn] <1-127>",                       "Send SPS credits to the remote device",                         UCXAPP_CMD_NEEDS_DEVICE, cmdGattCredits },
+    { "gatt.listen",     "[seconds|off]",                        "Show listen state; with seconds wait for notifications; off unsubscribes", UCXAPP_CMD_NEEDS_DEVICE, cmdGattListen },
     { "gatt.server.list",     "",                                "List the local characteristics defined by the server examples", UCXAPP_CMD_NEEDS_DEVICE, cmdServerList },
     { "gatt.server.set",      "<name|handle> <hex|text:abc>",    "Set a local characteristic value",                              UCXAPP_CMD_NEEDS_DEVICE, cmdServerSet },
-    { "gatt.server.notify",   "<conn> <name|handle> <hex|text:abc>", "Send a notification to a connected client",                UCXAPP_CMD_NEEDS_DEVICE, cmdServerNotify },
-    { "gatt.server.indicate", "<conn> <name|handle> <hex|text:abc>", "Send an indication to a connected client",                 UCXAPP_CMD_NEEDS_DEVICE, cmdServerIndicate },
-    { "gatt.server.demo",     "<conn> <hrs|bas|ess|aio|lns|cts> [seconds]", "Send simulated values once per second",           UCXAPP_CMD_NEEDS_DEVICE, cmdServerDemo },
+    { "gatt.server.notify",   "[conn] <name|handle> <hex|text:abc>", "Send a notification to a connected client",                UCXAPP_CMD_NEEDS_DEVICE, cmdServerNotify },
+    { "gatt.server.indicate", "[conn] <name|handle> <hex|text:abc>", "Send an indication to a connected client",                 UCXAPP_CMD_NEEDS_DEVICE, cmdServerIndicate },
+    { "gatt.server.demo",     "[conn] <hrs|bas|ess|aio|lns|cts> [seconds]", "Send simulated values once per second",           UCXAPP_CMD_NEEDS_DEVICE, cmdServerDemo },
 };
 
 void ucxapp_register_gatt_cmds(void)

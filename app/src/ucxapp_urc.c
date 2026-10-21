@@ -1,48 +1,70 @@
 #include "ucxapp.h"
 
+#include <stdarg.h>
+#include <stdio.h>
+
 #include "u_cx_bluetooth.h"
 #include "u_cx_diagnostics.h"
 #include "u_cx_gatt_client.h"
 #include "u_cx_gatt_server.h"
 #include "ucxapp_cmd.h"
+#include "ucxapp_ui.h"
 #include "u_cx_http.h"
 #include "u_cx_mqtt.h"
 #include "u_cx_socket.h"
 #include "u_cx_sps.h"
 #include "u_cx_wifi.h"
 
-/* Handlers only raise event flags; they are the minimum the command packs wait on. */
+/* Handlers raise event flags for the command packs and mirror key URCs to the web Events pane. */
 
-static void startupUrc(struct uCxHandle *h)                                            { (void)h; ucxapp_events_signal(URC_FLAG_STARTUP); }
-static void networkUpUrc(struct uCxHandle *h)                                          { (void)h; ucxapp_events_signal(URC_FLAG_NETWORK_UP); }
-static void networkDownUrc(struct uCxHandle *h)                                        { (void)h; ucxapp_events_signal(URC_FLAG_NETWORK_DOWN); }
+static void evt(const char *fmt, ...)
+{
+    char text[96];
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(text, sizeof(text), fmt, ap);
+    va_end(ap);
+    if (ucxappLogEventsEnabled()) {
+        ucxapp_print("[event] %s\n", text);
+    }
+    ucxapp_ui_event(text);
+}
+
+static void startupUrc(struct uCxHandle *h)                                            { (void)h; evt("device: startup"); ucxapp_events_signal(URC_FLAG_STARTUP); }
+static void networkUpUrc(struct uCxHandle *h)                                          { (void)h; evt("net: network up"); ucxapp_events_signal(URC_FLAG_NETWORK_UP); }
+static void networkDownUrc(struct uCxHandle *h)                                        { (void)h; evt("net: network down"); ucxapp_events_signal(URC_FLAG_NETWORK_DOWN); }
 static void linkUpUrc(struct uCxHandle *h, int32_t wlan, uMacAddress_t *bssid, int32_t ch)
 {
-    (void)h; (void)wlan; (void)bssid; (void)ch;
+    (void)h; (void)wlan; (void)bssid;
+    ucxapp_ui_wifi_set(true);
+    evt("wifi: link up, channel %d", (int)ch);
     ucxapp_events_signal(URC_FLAG_WIFI_LINK_UP);
 }
 static void linkDownUrc(struct uCxHandle *h, int32_t wlan, int32_t reason)
 {
-    (void)h; (void)wlan; (void)reason;
+    (void)h; (void)wlan;
+    ucxapp_ui_wifi_set(false);
+    evt("wifi: link down, reason %d", (int)reason);
     ucxapp_events_signal(URC_FLAG_WIFI_LINK_DOWN);
 }
-static void sockConnectedUrc(struct uCxHandle *h, int32_t s)                           { (void)h; (void)s; ucxapp_events_signal(URC_FLAG_SOCK_CONNECTED); }
-static void sockClosedUrc(struct uCxHandle *h, int32_t s)                              { (void)h; ucxapp_web_on_closed(s); ucxapp_events_signal(URC_FLAG_SOCK_CLOSED); }
-static void sockDataUrc(struct uCxHandle *h, int32_t s, int32_t n)                     { (void)h; ucxapp_web_on_data(s, n); ucxapp_events_signal(URC_FLAG_SOCK_DATA); }
-static void sockIncomingUrc(struct uCxHandle *h, int32_t s, uSockIpAddress_t *ip, int32_t listenSock) { (void)h; (void)ip; ucxapp_web_on_incoming(s, listenSock); ucxapp_sock_on_incoming(s, listenSock); }
-static void spsConnectedUrc(struct uCxHandle *h, int32_t c)                            { (void)h; (void)c; ucxapp_events_signal(URC_FLAG_SPS_CONNECTED); }
-static void spsDisconnectedUrc(struct uCxHandle *h, int32_t c)                         { (void)h; (void)c; ucxapp_events_signal(URC_FLAG_SPS_DISCONNECTED); }
-static void spsDataUrc(struct uCxHandle *h, int32_t c, int32_t n)                      { (void)h; (void)c; (void)n; ucxapp_events_signal(URC_FLAG_SPS_DATA); }
-static void httpStatusUrc(struct uCxHandle *h, int32_t id, int32_t code, const char *d){ (void)h; (void)id; (void)code; (void)d; ucxapp_events_signal(URC_FLAG_HTTP_RESPONSE_READY); }
-static void httpDisconnectUrc(struct uCxHandle *h, int32_t id)                         { (void)h; (void)id; ucxapp_events_signal(URC_FLAG_HTTP_DISCONNECTED); }
-static void mqttConnectedUrc(struct uCxHandle *h, int32_t id)                          { (void)h; (void)id; ucxapp_events_signal(URC_FLAG_MQTT_CONNECTED); }
-static void mqttDataUrc(struct uCxHandle *h, int32_t id, int32_t n)                    { (void)h; (void)id; (void)n; ucxapp_events_signal(URC_FLAG_MQTT_DATA); }
-static void mqttDisconnectedUrc(struct uCxHandle *h, int32_t id, int32_t reason)       { (void)h; (void)id; (void)reason; ucxapp_events_signal(URC_FLAG_MQTT_DISCONNECTED); }
-static void mqttSubscribedUrc(struct uCxHandle *h, int32_t id, uMqttSubscribeAction_t a)  { (void)h; (void)id; (void)a; ucxapp_events_signal(URC_FLAG_MQTT_SUBSCRIBED); }
-static void btConnectedUrc(struct uCxHandle *h, int32_t c, uBtLeAddress_t *a)          { (void)h; (void)c; (void)a; ucxapp_events_signal(URC_FLAG_BT_CONNECTED); }
-static void btDisconnectedUrc(struct uCxHandle *h, int32_t c)                          { (void)h; (void)c; ucxapp_events_signal(URC_FLAG_BT_DISCONNECTED); }
+static void sockConnectedUrc(struct uCxHandle *h, int32_t s)                           { (void)h; evt("sock: %d connected", (int)s); ucxapp_events_signal(URC_FLAG_SOCK_CONNECTED); }
+static void sockClosedUrc(struct uCxHandle *h, int32_t s)                              { (void)h; ucxapp_handle_remove(UCXAPP_HANDLE_SOCK, s); evt("sock: %d closed", (int)s); ucxapp_web_on_closed(s); ucxapp_stream_on_closed(s); ucxapp_events_signal(URC_FLAG_SOCK_CLOSED); }
+static void sockDataUrc(struct uCxHandle *h, int32_t s, int32_t n)                     { (void)h; ucxapp_web_on_data(s, n); ucxapp_stream_on_data(s); ucxapp_events_signal(URC_FLAG_SOCK_DATA); }
+static void sockIncomingUrc(struct uCxHandle *h, int32_t s, uSockIpAddress_t *ip, int32_t listenSock) { (void)h; (void)ip; ucxapp_web_on_incoming(s, listenSock); ucxapp_stream_on_incoming(s, listenSock); ucxapp_sock_on_incoming(s, listenSock); }
+static void spsConnectedUrc(struct uCxHandle *h, int32_t c)                            { (void)h; evt("sps: connected, conn %d", (int)c); ucxapp_events_signal(URC_FLAG_SPS_CONNECTED); }
+static void spsDisconnectedUrc(struct uCxHandle *h, int32_t c)                         { (void)h; evt("sps: disconnected, conn %d", (int)c); ucxapp_events_signal(URC_FLAG_SPS_DISCONNECTED); }
+static void spsDataUrc(struct uCxHandle *h, int32_t c, int32_t n)                      { (void)h; evt("sps: %d bytes on conn %d", (int)n, (int)c); ucxapp_stream_on_sps_data(); ucxapp_events_signal(URC_FLAG_SPS_DATA); }
+static void httpStatusUrc(struct uCxHandle *h, int32_t id, int32_t code, const char *d){ (void)h; (void)d; evt("http: request %d status %d", (int)id, (int)code); ucxapp_events_signal(URC_FLAG_HTTP_RESPONSE_READY); }
+static void httpDisconnectUrc(struct uCxHandle *h, int32_t id)                         { (void)h; evt("http: disconnected, id %d", (int)id); ucxapp_events_signal(URC_FLAG_HTTP_DISCONNECTED); }
+static void mqttConnectedUrc(struct uCxHandle *h, int32_t id)                          { (void)h; (void)id; evt("mqtt: connected"); ucxapp_events_signal(URC_FLAG_MQTT_CONNECTED); }
+static void mqttDataUrc(struct uCxHandle *h, int32_t id, int32_t n)                    { (void)h; (void)id; evt("mqtt: %d bytes available", (int)n); ucxapp_events_signal(URC_FLAG_MQTT_DATA); }
+static void mqttDisconnectedUrc(struct uCxHandle *h, int32_t id, int32_t reason)       { (void)h; (void)id; evt("mqtt: disconnected, reason %d", (int)reason); ucxapp_events_signal(URC_FLAG_MQTT_DISCONNECTED); }
+static void mqttSubscribedUrc(struct uCxHandle *h, int32_t id, uMqttSubscribeAction_t a)  { (void)h; (void)id; (void)a; evt("mqtt: subscribe completed"); ucxapp_events_signal(URC_FLAG_MQTT_SUBSCRIBED); }
+static void btConnectedUrc(struct uCxHandle *h, int32_t c, uBtLeAddress_t *a)          { (void)h; (void)a; ucxapp_handle_add(UCXAPP_HANDLE_CONN, c); evt("bt: connected, conn %d", (int)c); ucxapp_events_signal(URC_FLAG_BT_CONNECTED); }
+static void btDisconnectedUrc(struct uCxHandle *h, int32_t c)                          { (void)h; ucxapp_handle_remove(UCXAPP_HANDLE_CONN, c); evt("bt: disconnected, conn %d", (int)c); ucxapp_events_signal(URC_FLAG_BT_DISCONNECTED); }
 
-static void btBondUrc(struct uCxHandle *h, uBtLeAddress_t *a, uBtBondStatus_t s)       { (void)h; ucxapp_bt_bond_status(a, (int32_t)s); }
+static void btBondUrc(struct uCxHandle *h, uBtLeAddress_t *a, uBtBondStatus_t s)       { (void)h; evt("bt: bond status %d", (int)s); ucxapp_bt_bond_status(a, (int32_t)s); }
 static void btConfirmUrc(struct uCxHandle *h, uBtLeAddress_t *a, int32_t v)            { (void)h; ucxapp_bt_user_confirmation(h, a, v); }
 static void btPasskeyShowUrc(struct uCxHandle *h, uBtLeAddress_t *a, int32_t v)        { (void)h; ucxapp_bt_passkey_display(a, v); }
 static void btPasskeyAskUrc(struct uCxHandle *h, uBtLeAddress_t *a)                    { (void)h; ucxapp_bt_passkey_request(a); }
@@ -50,12 +72,14 @@ static void btPasskeyAskUrc(struct uCxHandle *h, uBtLeAddress_t *a)             
 static void gattNotifyUrc(struct uCxHandle *h, int32_t conn, int32_t handle, uByteArray_t *data)
 {
     (void)h;
+    evt("gatt: notification conn %d handle %d, %d bytes", (int)conn, (int)handle, (int)data->length);
     ucxapp_gatt_notification(conn, handle, data->pData, data->length);
 }
 
 static void gattWriteUrc(struct uCxHandle *h, int32_t conn, int32_t handle, uByteArray_t *data, uGattServerOptions_t options)
 {
     (void)h; (void)options;
+    evt("gatt: write on conn %d handle %d, %d bytes", (int)conn, (int)handle, (int)data->length);
     ucxapp_gatt_server_write(conn, handle, data->pData, data->length);
 }
 
@@ -69,6 +93,7 @@ static void pingCompleteUrc(struct uCxHandle *h, int32_t sent, int32_t received,
 {
     (void)h;
     (void)lossRate;
+    evt("ping: %d/%d replies, avg %d ms", (int)received, (int)sent, (int)avgMs);
     gUcxappPingSent = sent;
     gUcxappPingReceived = received;
     gUcxappPingAvgMs = avgMs;

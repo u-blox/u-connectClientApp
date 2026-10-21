@@ -1,7 +1,7 @@
 /*
  * u_webserver.h
  * 
- * Pure C HTTP server implementation for ucxclient - EVENT-DRIVEN ARCHITECTURE
+ * Pure C HTTP server implementation for u-connectClient - EVENT-DRIVEN ARCHITECTURE
  * Platform-independent (Windows/Linux/FreeRTOS) via u_port.h abstraction
  * 
  * Uses NORA-W36's u_cx_socket API with async callbacks (not blocking BSD sockets)

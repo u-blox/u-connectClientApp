@@ -176,10 +176,76 @@ static int cmdFwFlash(ucxapp_t *app, int argc, char *argv[])
     return rc;
 }
 
+/* A module in bootloader mode has no AT interface: wait for its '>' prompt, send 'x', then XMODEM. */
+static int cmdFwBootloader(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t baud = AT_BAUD;
+    char binPath[512];
+    size_t len = 0;
+    uint8_t rx[128];
+    bool prompt = false;
+    uCxXmodemConfig_t xm;
+
+    if (argc < 3 || argc > 4 || (argc == 4 && (!ucxapp_parse_int(argv[3], &baud) || baud <= 0))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (app->ucx != NULL) {
+        ucxapp_print("ERROR: disconnect first (device.disconnect); the port is in use\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (!resolveImage(argv[2], binPath, sizeof(binPath))) {
+        return UCXAPP_ERR_FAILED;
+    }
+    uint8_t *data = ucxapp_store_load(binPath, &len);
+    if (data == NULL || len == 0) {
+        ucxapp_print("ERROR: cannot read %s\n", binPath);
+        free(data);
+        return UCXAPP_ERR_FAILED;
+    }
+    uCxXmodemInit(argv[1], &xm);
+    xm.use1K = true;
+    int32_t err = uCxXmodemOpen(&xm, baud, false);
+    if (err != 0) {
+        ucxapp_print("ERROR: cannot open %s (%d)\n", argv[1], (int)err);
+        free(data);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("waiting up to 30 s for the bootloader prompt '>' on %s at %d baud (put the module in bootloader mode)\n",
+                 argv[1], (int)baud);
+    uPortUartWrite(xm.uartHandle, "\r", 1);
+    for (int32_t start = U_CX_PORT_GET_TIME_MS(); !prompt && U_CX_PORT_GET_TIME_MS() - start < 30000;) {
+        int32_t n = uPortUartRead(xm.uartHandle, rx, sizeof(rx), 500);
+
+        for (int32_t i = 0; i < n; i++) {
+            prompt = prompt || rx[i] == '>';
+        }
+    }
+    int rc = UCXAPP_ERR_FAILED;
+
+    if (!prompt) {
+        ucxapp_print("ERROR: no bootloader prompt\n");
+    } else {
+        image_t img = { data, len };
+
+        uPortUartWrite(xm.uartHandle, "x\r\n", 3);
+        U_CX_PORT_SLEEP_MS(500);
+        err = uCxXmodemSend(&xm, len, readImage, showProgress, &img);
+        if (err != 0) {
+            ucxapp_print("\nERROR: transfer failed (%d)\n", (int)err);
+        } else {
+            ucxapp_print("transfer complete; the module reboots with the new firmware\n");
+            rc = UCXAPP_OK;
+        }
+    }
+    uCxXmodemClose(&xm);
+    free(data);
+    return rc;
+}
+
 #define FW_GITHUB_HOST    "github.com"
 #define FW_API_HOST       "api.github.com"
 #define FW_RELEASES_PATH  "/repos/u-blox/u-connectXpress/releases?per_page=30"
-#define FW_URL_KEY        "\"browser_download_url\":\""
+#define FW_URL_KEY        "\"browser_download_url\""
 #define FW_URL_PREFIX     "https://github.com"
 
 /* Newest release asset "<family>-x.y.z.zip" (no EVAL or special builds); the API lists newest first. */
@@ -190,6 +256,14 @@ static bool findLatestAsset(const char *json, const char *family, char *path, si
 
     while ((p = strstr(p, FW_URL_KEY)) != NULL) {
         p += strlen(FW_URL_KEY);
+        /* GitHub pretty-prints with a space (and sometimes a newline) around the colon. */
+        while (*p == ' ' || *p == ':' || *p == '\n' || *p == '\r' || *p == '\t') {
+            p++;
+        }
+        if (*p != '"') {
+            continue;
+        }
+        p++;
         const char *end = strchr(p, '"');
         if (end == NULL) {
             break;
@@ -204,7 +278,8 @@ static bool findLatestAsset(const char *json, const char *family, char *path, si
         size_t baseLen = (size_t)(end - base);
         if (n > strlen(FW_URL_PREFIX) && strncmp(p, FW_URL_PREFIX, strlen(FW_URL_PREFIX)) == 0 &&
             baseLen > famLen + 1 && strncmp(base, family, famLen) == 0 && base[famLen] == '-' &&
-            base[famLen + 1] >= '0' && base[famLen + 1] <= '9' && endsWithNoCase(base, ".zip")) {
+            base[famLen + 1] >= '0' && base[famLen + 1] <= '9' && baseLen < nameSize &&
+            (memcpy(name, base, baseLen), name[baseLen] = '\0', endsWithNoCase(name, ".zip"))) {
             size_t pLen = n - strlen(FW_URL_PREFIX);
             if (pLen < pathSize && baseLen < nameSize) {
                 memcpy(path, p + strlen(FW_URL_PREFIX), pLen);
@@ -271,7 +346,7 @@ static int cmdFwDownload(ucxapp_t *app, int argc, char *argv[])
 {
     static char line[2300];
 
-    if (argc >= 2 && argc <= 3 && strcmp(argv[1], "latest") == 0) {
+    if (argc == 1 || (argc >= 2 && argc <= 3 && strcmp(argv[1], "latest") == 0)) {
         return fwDownloadLatest(app, argc, argv);
     }
     if (argc < 3 || argc > 4 || strchr(argv[1], '"') != NULL || strchr(argv[2], '"') != NULL ||
@@ -303,7 +378,8 @@ static int cmdFwDownload(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gFwCmds[] = {
-    { "fw.download", "<url> <file> [sha256] | latest [file]", "Download a firmware file via the module and verify its SHA-256, or the newest GitHub release for this module (Windows)", UCXAPP_CMD_NEEDS_DEVICE, cmdFwDownload },
+    { "fw.download", "[latest [file]] | <url> <file> [sha256]", "Download the newest GitHub firmware for this module (default), or a file via the module with SHA-256 check (latest needs Windows)", UCXAPP_CMD_NEEDS_DEVICE, cmdFwDownload },
+    { "fw.bootloader", "<port> <file.bin|file.zip> [baud]", "Flash a module that is in bootloader mode (no AT interface); disconnect first", 0, cmdFwBootloader },
     { "fw.flash",    "<file.bin|file.zip> [baud]", "Update the module firmware over XMODEM (default 921600 baud)", UCXAPP_CMD_NEEDS_DEVICE, cmdFwFlash },
 };
 

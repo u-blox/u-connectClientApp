@@ -1,10 +1,10 @@
 # XMODEM Firmware Update Support
 
-This directory contains XMODEM protocol implementation for firmware updates on u-connectXpress modules.
+This describes the XMODEM API of the u-connectClient library (`u-connectClient/inc/u_cx_xmodem.h`, `src/u_cx_xmodem.c`) that the app's `fw.flash` and `fw.bootloader` commands use. From the app, use those commands instead of the code below.
 
 ## Files
 
-- **inc/u_cx_xmodem.h** / **src/u_cx_xmodem.c**: XMODEM protocol implementation
+- **u-connectClient/inc/u_cx_xmodem.h** / **u-connectClient/src/u_cx_xmodem.c**: XMODEM protocol implementation
 
 ## Features
 
