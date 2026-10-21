@@ -13,7 +13,6 @@ Download ready-made builds from the [Releases page](https://github.com/u-blox/u-
 ## Try it in 30 seconds
 
 ```powershell
-ucxapp COM13 --exec "device.info"
 ucxapp device.info
 ```
 

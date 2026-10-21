@@ -428,7 +428,7 @@ static void drawCommandCell(int row, int bodyRows, int width)
     char text[64];
 
     if (e.isQuit) {
-        outCell("  Quit (exit)", width, 91, idx == gSel && gListFocus);
+        outCell("  exit", width, 97, idx == gSel && gListFocus);
         return;
     }
     if (e.isGroup) {
