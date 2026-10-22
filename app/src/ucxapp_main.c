@@ -118,8 +118,24 @@ static void printUsage(const char *prog)
     ucxapp_print("  --offline skips the module auto-detection (commands that need no device)\n");
 }
 
+static bool looksLikePort(const char *name)
+{
+    if (toupper((unsigned char)name[0]) == 'C' && toupper((unsigned char)name[1]) == 'O' &&
+        toupper((unsigned char)name[2]) == 'M' && name[3] != '\0') {
+        const char *d = name + 3;
+        while (*d >= '0' && *d <= '9') {
+            d++;
+        }
+        return *d == '\0';
+    }
+    return strncmp(name, "/dev/", 5) == 0;
+}
+
 static bool isPort(const char *name)
 {
+    if (looksLikePort(name)) {
+        return true;
+    }
     ucxapp_serial_port_t ports[32];
     int count = ucxapp_platform_list_serial_ports(ports, 32);
     for (int i = 0; i < count; i++) {

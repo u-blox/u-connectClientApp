@@ -136,7 +136,7 @@ if(NOT WIN32)
 
   )
 
-  target_link_libraries(ucxapp PRIVATE Threads::Threads ${UCXAPP_MBEDTLS_LIBS})
+  target_link_libraries(ucxapp PRIVATE Threads::Threads m ${UCXAPP_MBEDTLS_LIBS})
 
   return()
 
