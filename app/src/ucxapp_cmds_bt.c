@@ -18,7 +18,9 @@
 #pragma warning(pop)
 #endif
 
+#ifndef BT_SCAN_MAX_DEVICES
 #define BT_SCAN_MAX_DEVICES 32
+#endif
 #define BT_SCAN_TIMEOUT_MS  30000
 
 #define BT_ADV_MAX          64

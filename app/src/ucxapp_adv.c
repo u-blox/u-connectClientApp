@@ -5,8 +5,13 @@
 
 #include "ucxapp_cmd.h"
 #include "../third-party/bluetooth-sig/bt_service_uuids.h"
+#ifdef UCXAPP_LITE   /* the company and appearance tables are ~120 KB of flash */
+static const char *btGetCompanyName(uint16_t id) { (void)id; return NULL; }
+static const char *btGetAppearanceName(uint16_t id) { (void)id; return NULL; }
+#else
 #include "../third-party/bluetooth-sig/bt_company_identifiers.h"
 #include "../third-party/bluetooth-sig/bt_appearance_values.h"
+#endif
 
 #define AD_FLAGS         0x01
 #define AD_UUID16_MORE   0x02

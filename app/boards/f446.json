@@ -1,0 +1,19 @@
+{
+  "board": "NUCLEO-F446RE",
+  "gpio": ["PB0", "PA5", "PC13", "PA8", "PB10", "PB4", "PB5"],
+  "adc": ["PA0", "PA1", "PA4", "PC1"],
+  "pwm": [
+    { "pin": "PB6", "timer": "TIM4_CH1" },
+    { "pin": "PB3", "timer": "TIM2_CH2" }
+  ],
+  "i2c": { "scl": "PB8", "sda": "PB9" },
+  "spi": { "sck": "PB13", "miso": "PB14", "mosi": "PB15", "cs": "PB12" },
+  "reserved": ["PA2", "PA3", "PA9", "PA10", "PA11", "PA12", "PA13", "PA14"],
+  "emu": {
+    "i2c": [
+      { "addr": "0x48", "regs": { "0": "0x19" } },
+      { "addr": "0x68", "regs": { "0x75": "0x68" } },
+      { "addr": "0x76", "regs": { "0xD0": "0x60" } }
+    ]
+  }
+}

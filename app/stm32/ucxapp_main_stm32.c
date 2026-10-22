@@ -23,6 +23,13 @@
 #ifndef UCXAPP_STACK_WORDS
 #define UCXAPP_STACK_WORDS 6144
 #endif
+/* UCXAPP_LITE (Blue Pill, 20 KB RAM): no net or cert packs and small AT buffers. */
+#ifndef UCXAPP_RX_BUFFER_SIZE
+#define UCXAPP_RX_BUFFER_SIZE 8192
+#endif
+#ifndef UCXAPP_URC_BUFFER_SIZE
+#define UCXAPP_URC_BUFFER_SIZE 4096
+#endif
 
 /* Provided by main_stm32.c (ST-Link VCP, interrupt-fed RX ring). */
 extern int32_t exampleConsoleUartRead(uint8_t *pByte, int32_t timeoutMs);
@@ -227,8 +234,8 @@ static const ucxapp_store_ops_t gRamStore = { ramOpen, ramRead, ramWrite, ramClo
 static uCxAtClient_t gAtClient;
 static uCxAtClientConfig_t gAtConfig;
 static uCxHandle_t gUcxHandle;
-static char gRxBuffer[8192];
-static char gUrcBuffer[4096];
+static char gRxBuffer[UCXAPP_RX_BUFFER_SIZE];
+static char gUrcBuffer[UCXAPP_URC_BUFFER_SIZE];
 static bool gConnected;
 static int32_t gModuleBaud = UCXAPP_MODULE_BAUD;
 
@@ -390,13 +397,15 @@ static void appTask(void *arg)
     ucxapp_register_device_cmds();
     ucxapp_register_wifi_cmds();
     ucxapp_register_sock_cmds();
-    ucxapp_register_net_cmds();
     ucxapp_register_sys_cmds();
     ucxapp_register_app_cmds();
     ucxapp_register_mqtt_cmds();
     ucxapp_register_bt_cmds();
-    ucxapp_register_cert_cmds();
     ucxapp_register_gatt_cmds();
+#ifndef UCXAPP_LITE
+    ucxapp_register_net_cmds();
+    ucxapp_register_cert_cmds();
+#endif
 
     if (ucxapp_cmd_exec(&app, line) != UCXAPP_OK) {
         ucxapp_print("continuing without a device\n");

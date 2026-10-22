@@ -315,8 +315,12 @@ static int cmdFileView(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+#ifndef LISTED_MAX
 #define LISTED_MAX      64
+#endif
+#ifndef LISTED_NAME_LEN
 #define LISTED_NAME_LEN 128
+#endif
 
 /* Names shown by the last file.list, so file.remove can take a number. */
 static char gListed[LISTED_MAX][LISTED_NAME_LEN];

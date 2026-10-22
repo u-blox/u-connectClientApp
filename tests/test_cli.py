@@ -1,5 +1,6 @@
 """Command-layer CLI tests: ucxapp <port> --exec "<command>" ..."""
 
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -355,11 +356,11 @@ def test_hw_exec_speaks_the_bridge_protocol(app_exe, tmp_path):
 BOARDS = Path(__file__).resolve().parents[1] / "app" / "boards"
 
 
-@pytest.mark.parametrize("board", ["h753", "f767", "f439"])
+@pytest.mark.parametrize("board", ["h753", "f767", "f439", "f407", "f401", "f446", "bluepill"])
 def test_hw_load_board_profiles(app_exe, tmp_path, board):
     out = _run(app_exe, tmp_path, "COM255", f"hw.load {BOARDS / (board + '.json')}", "hw.board", "hw.gpio.mode PB0 out",
                "hw.gpio.write PB0 1", "hw.gpio.read pb0", "hw.i2c.scan", "hw.adc.read 3", "hw.adc.read 4")
-    assert "loaded NUCLEO-" in out.stdout
+    assert "loaded " + json.loads((BOARDS / (board + ".json")).read_text(encoding="utf-8"))["board"] in out.stdout
     assert "i2c scl PB8 sda PB9" in out.stdout
     assert "pin 0 = 1" in out.stdout
     assert "found 0x48 0x68 0x76" in out.stdout

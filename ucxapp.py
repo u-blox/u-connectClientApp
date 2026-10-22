@@ -29,12 +29,17 @@ ROOT = Path(__file__).resolve().parent
 BIN = ROOT / "app" / "bin"
 SIGNED = ROOT / "app" / "release" / "ucxapp-signed.exe"
 IS_WINDOWS = platform.system() == "Windows"
-SUBMODULE_BRANCH = "cmag_matter_support"
+SUBMODULE_BRANCH = "master"
 
 BOARDS = {
     "h753": ("nucleo_h753zi", "NUCLEO-H753ZI", "H7", "STM32CubeH7", "stm32h7"),
     "f767": ("nucleo_f767zi", "NUCLEO-F767ZI", "F7", "STM32CubeF7", "stm32f7"),
     "f439": ("nucleo_f439zi", "NUCLEO-F439ZI", "F4", "STM32CubeF4", "stm32f4"),
+    "f407": ("f407_disc", "STM32F4DISCOVERY", "F4", "STM32CubeF4", "stm32f4"),
+    "f401": ("nucleo_f401re", "NUCLEO-F401RE", "F4", "STM32CubeF4", "stm32f4"),
+    "f446": ("nucleo_f446re", "NUCLEO-F446RE", "F4", "STM32CubeF4", "stm32f4"),
+    # Lite build (Wi-Fi + BT/GATT, no net/cert); ST-Link V2 clones report no board name.
+    "bluepill": ("bluepill_f103c8", "BLUEPILL", "F1", "STM32CubeF1", "stm32f1"),
 }
 
 UBLOX_VID = 0x1546
@@ -383,7 +388,8 @@ def stm32_tools():
         if os.environ.get(var):
             continue
         candidates = [ROOT / "u-connectClient" / "ports" / "extra" / portdir / hal_dir,
-                      ROOT.parent / "u-connectMatter" / "u-connectClient" / "ports" / "extra" / portdir / hal_dir]
+                      ROOT.parent / "u-connectMatter" / "u-connectClient" / "ports" / "extra" / portdir / hal_dir,
+                      ROOT.parent / hal_dir]
         hal = next((c for c in candidates if (c / "Drivers").is_dir()), None)
         if hal is not None:
             os.environ[var] = str(hal)
@@ -401,14 +407,17 @@ def find_stlink(prog, board_name):
     """ST-Link serial number of the probe whose board name matches; the list has an SN line before each name."""
     out = subprocess.run([prog, "-l", "st"], capture_output=True, text=True, errors="replace").stdout
     last = None
+    serials = []
     for line in out.splitlines():
         key, _, value = line.partition(":")
         value = value.replace(" ", "")
         if "ST-LINK SN" in key:
             last = value
+            serials.append(value)
         elif "Board Name" in key and value == board_name:
             return last
-    return None
+    # Older ST-Link/V2 probes (e.g. on the STM32F4DISCOVERY) report no board name.
+    return serials[0] if len(serials) == 1 else None
 
 
 def stm32_build(board, family, hal_dir, portdir, bd):

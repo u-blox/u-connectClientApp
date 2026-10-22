@@ -35,11 +35,16 @@ jobs:
           git submodule update --init --recursive third-party/mbedtls
       - run: cmake -S app -B build/linux -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build/linux
-      - run: cp app/bin/ucxapp ucxapp-linux-x64
+      - name: Package
+        run: |
+          mkdir -p pkg/ucxapp-linux-x64
+          cp app/bin/ucxapp pkg/ucxapp-linux-x64/
+          (cd pkg/ucxapp-linux-x64 && sha256sum ucxapp > ucxapp.sha256)
+          tar -czf ucxapp-linux-x64.tar.gz -C pkg ucxapp-linux-x64
       - uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: ucxapp-linux-x64
+          path: ucxapp-linux-x64.tar.gz
 
   stm32:
     runs-on: ubuntu-latest
@@ -55,6 +60,18 @@ jobs:
             ref: master
           - board: nucleo_f439zi
             repo: STM32CubeF4
+            ref: master
+          - board: f407_disc
+            repo: STM32CubeF4
+            ref: master
+          - board: nucleo_f401re
+            repo: STM32CubeF4
+            ref: master
+          - board: nucleo_f446re
+            repo: STM32CubeF4
+            ref: master
+          - board: bluepill_f103c8
+            repo: STM32CubeF1
             ref: master
     steps:
       - uses: actions/checkout@v4
@@ -75,19 +92,24 @@ jobs:
             -DSTM32_BOARD=${{ matrix.board }} -DSTM32_HAL_PATH="$RUNNER_TEMP/hal" \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build/stm32
+      - name: Package
+        run: |
+          d=ucxapp-stm32-${{ matrix.board }}
+          mkdir -p pkg/$d
+          cp build/bin/ucxapp_${{ matrix.board }}.{bin,hex,elf} pkg/$d/
+          (cd pkg/$d && sha256sum * > SHA256SUMS)
+          (cd pkg && zip -r ../$d.zip $d)
       - uses: actions/upload-artifact@v4
         with:
           name: stm32-${{ matrix.board }}
-          path: |
-            build/bin/ucxapp_${{ matrix.board }}.bin
-            build/bin/ucxapp_${{ matrix.board }}.hex
-            build/bin/ucxapp_${{ matrix.board }}.elf
+          path: ucxapp-stm32-${{ matrix.board }}.zip
 
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [windows, linux, stm32]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4   # for body_path
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -96,6 +118,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          draft: true   # signed Windows exe is added by hand, then the draft is published
+          draft: true   # signed Windows zip is added by release.py, then the draft is published
           body_path: .github/release-notes.md
           generate_release_notes: true

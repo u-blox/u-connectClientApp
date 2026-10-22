@@ -118,7 +118,7 @@ int ucxapp_find_modules(char names[][UCXAPP_PLATFORM_PORT_NAME_LEN], int maxName
         const ucxapp_serial_port_t *p = &ports[i];
         bool nora = strstr(p->desc, "NORA-W36") != NULL || strstr(p->desc, "NORA-B26") != NULL;
         if (nora && p->available && (p->label[0] == '\0' || strcmp(p->label, "AT") == 0)) {
-            snprintf(names[found++], UCXAPP_PLATFORM_PORT_NAME_LEN, "%s", p->name);
+            snprintf(names[found++], UCXAPP_PLATFORM_PORT_NAME_LEN, "%.*s", UCXAPP_PLATFORM_PORT_NAME_LEN - 1, p->name);
         }
     }
     return found;

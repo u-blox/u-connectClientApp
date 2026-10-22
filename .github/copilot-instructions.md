@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-u-connectXpressApp is a command shell for testing u-connectXpress devices (NORA-W36, NORA-B26). It runs on Windows, Linux and as FreeRTOS firmware on STM32 Nucleo boards (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI). It uses the u-connectClient library as a git submodule (branch `cmag_matter_support`).
+u-connectXpressApp is a command shell for testing u-connectXpress devices (NORA-W36, NORA-B26). It runs on Windows, Linux and as FreeRTOS firmware on STM32 boards (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI, NUCLEO-F401RE, NUCLEO-F446RE, STM32F4DISCOVERY, Blue Pill STM32F103C8 as a lite build). It uses the u-connectClient library as a git submodule (branch `master`).
 
 ## Documentation
 
@@ -16,7 +16,7 @@ Always use the `u-blox-docs` MCP server (`.vscode/mcp.json`) to look up u-connec
 |---|---|---|
 | Windows | `.\ucxapp` | Visual Studio 2022 + CMake |
 | Linux | `./ucxapp.py` (or `.\ucxapp --linux` for WSL) | CMake + gcc, binary `app/bin/ucxapp` (Windows exe: `app/bin/ucxapp.exe`) |
-| STM32 | `.\ucxapp --stm32 [--board h753\|f767\|f439\|all] --build --flash --log` | H753 is the default; needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH`, `STM32CUBEF4_PATH`) |
+| STM32 | `.\ucxapp --stm32 [--board h753\|f767\|f439\|f407\|f401\|f446\|bluepill\|all] --build --flash --log` | H753 is the default; f407 is the STM32F4DISCOVERY; f401/f446 are NUCLEO-64 boards (module on USART1 D8/D2); bluepill is a lite build (`UCXAPP_LITE`: Wi-Fi + BT/GATT, no net/cert, no BT company/appearance/characteristic names, small buffers) for 20 KB RAM / 128 KB flash; needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH`, `STM32CUBEF4_PATH`, `STM32CUBEF1_PATH`) |
 
 The command layer in `app/src/ucxapp_*.c` is portable; platform code lives in `ucxapp_platform_*.c` and `app/stm32/`.
 
@@ -79,6 +79,7 @@ git submodule update --init u-connectClient
 
 ## Code Style
 
+- **Zero warnings**: every target (Windows, Linux, all STM32 boards) must build with no compiler warnings. Fix the code; only vendor HAL/FreeRTOS/CubeMX sources may be silenced (in `cmake/stm32.cmake`).
 - C11 standard
 - MSVC compiler with /W4 warning level
 - Functions prefixed with module name (e.g., `uCxAtClient_`)

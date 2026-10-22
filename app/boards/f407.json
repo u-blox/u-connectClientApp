@@ -1,0 +1,22 @@
+{
+  "board": "STM32F4DISCOVERY",
+  "gpio": ["PB0", "PA0", "PC13", "PE7", "PE8", "PE9", "PE10", "PE11", "PE12"],
+  "adc": ["PA1", "PB1", "PC1", "PC2"],
+  "pwm": [
+    { "pin": "PD12", "timer": "TIM4_CH1" },
+    { "pin": "PD13", "timer": "TIM4_CH2" },
+    { "pin": "PD14", "timer": "TIM4_CH3" },
+    { "pin": "PD15", "timer": "TIM4_CH4" }
+  ],
+  "i2c": { "scl": "PB8", "sda": "PB9" },
+  "spi": { "sck": "PA5", "miso": "PA6", "mosi": "PA7", "cs": "PE3" },
+  "can": { "rx": "PD0", "tx": "PD1" },
+  "reserved": ["PA2", "PA3", "PB10", "PB11", "PB13", "PB14", "PA13", "PA14"],
+  "emu": {
+    "i2c": [
+      { "addr": "0x48", "regs": { "0": "0x19" } },
+      { "addr": "0x68", "regs": { "0x75": "0x68" } },
+      { "addr": "0x76", "regs": { "0xD0": "0x60" } }
+    ]
+  }
+}

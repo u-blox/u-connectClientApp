@@ -1,0 +1,20 @@
+{
+  "board": "BLUEPILL",
+  "gpio": ["PB0", "PC13", "PA15", "PB3", "PB4", "PB5"],
+  "adc": ["PA4", "PA5", "PA6", "PA7"],
+  "pwm": [
+    { "pin": "PB6", "timer": "TIM4_CH1" },
+    { "pin": "PB7", "timer": "TIM4_CH2" }
+  ],
+  "i2c": { "scl": "PB8", "sda": "PB9" },
+  "spi": { "sck": "PB13", "miso": "PB14", "mosi": "PB15", "cs": "PB12" },
+  "can": { "rx": "PA11", "tx": "PA12" },
+  "reserved": ["PA0", "PA1", "PA2", "PA3", "PA9", "PA10", "PA13", "PA14"],
+  "emu": {
+    "i2c": [
+      { "addr": "0x48", "regs": { "0": "0x19" } },
+      { "addr": "0x68", "regs": { "0x75": "0x68" } },
+      { "addr": "0x76", "regs": { "0xD0": "0x60" } }
+    ]
+  }
+}

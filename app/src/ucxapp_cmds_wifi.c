@@ -347,7 +347,9 @@ static int connectProfile(ucxapp_t *app, profile_t *list, int count, int idx, ui
 
 /* ---- scan results, kept so wifi.connect can take a number ---- */
 
+#ifndef SCAN_MAX
 #define SCAN_MAX 64
+#endif
 
 typedef struct {
     char ssid[SSID_LEN];

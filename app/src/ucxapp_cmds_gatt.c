@@ -22,12 +22,22 @@
 #endif
 
 #include "../third-party/bluetooth-sig/bt_service_uuids.h"
+#ifdef UCXAPP_LITE   /* saves the characteristic name table */
+static const char *btGetCharacteristicName(uint16_t uuid) { (void)uuid; return NULL; }
+#else
 #include "../third-party/bluetooth-sig/bt_characteristic_uuids.h"
+#endif
 
+#ifndef MAX_SVC
 #define MAX_SVC          32
+#endif
+#ifndef MAX_CHR
 #define MAX_CHR          96
+#endif
 #define MAX_VALUE        512
+#ifndef MAX_SRV_CHARS
 #define MAX_SRV_CHARS    24
+#endif
 #define MAX_INIT         32
 #define LISTEN_DEFAULT_S 10
 
@@ -514,11 +524,14 @@ static void printValue(const chr_t *c, const uint8_t *d, size_t n)
             }
             ucxapp_print("\n");
             return;
-        case 0x2A24: case 0x2A25: case 0x2A26: case 0x2A27: case 0x2A28: case 0x2A29:
-            ucxapp_print("[DIS] %s: ", btGetCharacteristicName(uuid16Of(c->uuid)));
+        case 0x2A24: case 0x2A25: case 0x2A26: case 0x2A27: case 0x2A28: case 0x2A29: {
+            const char *dis = btGetCharacteristicName(uuid16Of(c->uuid));
+
+            ucxapp_print("[DIS] %s: ", dis != NULL ? dis : "?");
             printText(d, n);
             ucxapp_print("\n");
             return;
+        }
         default:
             break;
         }
@@ -1363,7 +1376,9 @@ static int cmdServerDemo(ucxapp_t *app, int argc, char *argv[])
 
 /* ---- server: write events, Wi-Fi provisioning ---------------------------- */
 
+#ifndef WPS_QUEUE
 #define WPS_QUEUE   4
+#endif
 #define WPS_CMD_MAX 257
 #define WPS_SCANS   8
 

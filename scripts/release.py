@@ -28,7 +28,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_THUMBPRINT = "EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E"
-EXPECTED_ASSETS = 10  # Linux + 3 STM32 boards
+STM32_BOARDS = ("nucleo_h753zi", "nucleo_f767zi", "nucleo_f439zi", "f407_disc", "nucleo_f401re",
+                "nucleo_f446re", "bluepill_f103c8")
+EXPECTED_ASSETS = 1 + len(STM32_BOARDS)  # one archive for Linux and one per STM32 board
 IS_WINDOWS = platform.system() == "Windows"
 
 
@@ -83,8 +85,10 @@ def build_and_sign(thumbprint):
 
     step("Signing")
     dist = ROOT / "dist"
-    dist.mkdir(exist_ok=True)
-    exe = dist / "ucxapp-windows-x64.exe"
+    folder = dist / "ucxapp-windows-x64"
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir(parents=True)
+    exe = folder / "ucxapp.exe"
     shutil.copy2(built, exe)
     run(signtool, "sign", "/sha1", thumbprint, "/tr", "http://timestamp.digicert.com",
         "/td", "sha256", "/fd", "sha256", exe)
@@ -92,11 +96,13 @@ def build_and_sign(thumbprint):
     digest = hashlib.sha256(exe.read_bytes()).hexdigest()
     Path(f"{exe}.sha256").write_text(f"{digest}  {exe.name}\n", encoding="ascii")
     print(f"SHA-256: {digest}")
-    return exe
+    archive = shutil.make_archive(str(folder), "zip", root_dir=dist, base_dir=folder.name)
+    print(f"Packaged: {archive}")
+    return Path(archive)
 
 
 def wait_for_draft(tag, minutes):
-    step(f"Waiting for CI to create the draft release (Linux + 3 STM32 boards = {EXPECTED_ASSETS} files)")
+    step(f"Waiting for CI to create the draft release ({EXPECTED_ASSETS} archives: Linux and the STM32 boards)")
     deadline = time.time() + minutes * 60
     while time.time() < deadline:
         time.sleep(20)
@@ -153,12 +159,12 @@ def main():
     run("git", "push", "origin", tag)
 
     if not wait_for_draft(tag, args.wait_minutes):
-        upload = f' gh release upload {tag} "{exe}" "{exe}.sha256"' if exe else ""
+        upload = f' gh release upload {tag} "{exe}"' if exe else ""
         fail(f"CI did not finish in {args.wait_minutes} min; check the Actions tab, then run:{upload}")
 
     if exe:
-        step("Uploading signed Windows exe")
-        run("gh", "release", "upload", tag, exe, f"{exe}.sha256", "--clobber")
+        step("Uploading signed Windows zip")
+        run("gh", "release", "upload", tag, exe, "--clobber")
 
     if args.publish:
         step("Publishing")

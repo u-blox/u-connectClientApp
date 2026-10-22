@@ -1,7 +1,7 @@
 [submodule "u-connectClient"]
 	path = u-connectClient
 	url = https://github.com/u-blox/u-connectClient.git
-	branch = cmag_matter_support
+	branch = master
 [submodule "u-connectXpress"]
 	path = u-connectXpress
 	url = https://github.com/u-blox/u-connectXpress
