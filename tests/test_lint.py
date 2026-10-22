@@ -16,7 +16,7 @@ def _files(pattern):
 
 
 def _run(cmd):
-    return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, check=False)
+    return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
 
 
 def _bash_steps():

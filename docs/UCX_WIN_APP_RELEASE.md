@@ -136,7 +136,7 @@ u-connectXpressApp/
 │   │   ├── ucxapp.exe                     (Release, unsigned, gitignored)
 │   │   └── ucxapp-debug.exe               (Debug, gitignored)
 │   └── release/
-│       └── ucxapp-signed.exe              (Signed release, tracked in git)
+│       └── ucxapp-signed.exe              (Signed release, local only; published on the Releases page)
 ├── u-connectClient/                              (Git submodule)
 │   ├── src/                            (UCX client library source)
 │   ├── inc/                            (UCX client library headers)

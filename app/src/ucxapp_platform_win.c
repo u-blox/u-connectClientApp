@@ -374,7 +374,7 @@ static bool initFtd2xxLibrary(void)
                     dllPath[0] = '\0';
                     goto loadExternal;
                 }
-                strcat(dllPath, "ftd2xx64_embedded.dll");
+                snprintf(dllPath + tmpLen, sizeof(dllPath) - tmpLen, "ftd2xx64_embedded.dll");
                 
                 // Check if already extracted and correct size
                 WIN32_FILE_ATTRIBUTE_DATA fileAttr;
@@ -436,7 +436,7 @@ loadExternal:
         char *lastSlash = (modLen > 0 && modLen < sizeof(dllPath)) ? strrchr(dllPath, '\\') : NULL;
         if (lastSlash && (size_t)(lastSlash + 1 - dllPath) + sizeof("ftd2xx64.dll") <= sizeof(dllPath)) {
             *(lastSlash + 1) = '\0';
-            strcat(dllPath, "ftd2xx64.dll");
+            snprintf(lastSlash + 1, sizeof(dllPath) - (size_t)(lastSlash + 1 - dllPath), "ftd2xx64.dll");
         }
         
         gFtd2xxModule = LoadLibrary(dllPath);

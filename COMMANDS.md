@@ -295,7 +295,7 @@ app store as `tls-<name>.crt` / `tls-<name>.key` (PEM, ECDSA P-256, SHA-256). No
 ucxapp COM13 --shell
 > tls.ca.create
 > tls.server.create server 192.168.1.42 nora.local
-> web.start https                 # https://192.168.1.42/?t=<token>
+> web.start https                 # https://192.168.1.42/#t=<token>
 > tls.client.create laptop
 > gnss.bridge tls 2947 server clientauth
 ```
@@ -435,7 +435,7 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 | `app.uptime` | | Time since the app started (`days hh:mm:ss`) |
 | `app.sbom` | | Software bill of materials: components, versions, licences and sources |
 | `app.license` | `[name]` | Licence of each component; with a name (e.g. `qrcodegen`), the full notice |
-| `web.start` | `[port] [token] [https [cert]]` | Serve a web UI from the module's TCP listener (needs Wi-Fi; default port 80); prints `http://<ip>:<port>/?t=<token>`. `https` serves over TLS (default port 443, certificate `tls-server`, see App TLS) |
+| `web.start` | `[port] [token] [https [cert]]` | Serve a web UI from the module's TCP listener (needs Wi-Fi; default port 80); prints `http://<ip>:<port>/#t=<token>` (random 128-bit token unless one is given). `https` serves over TLS (default port 443, certificate `tls-server`, see App TLS) |
 | `web.stop` |  | Stop the web server |
 | `web.status` |  | Show whether the web server is running, its port and SSE client count |
 
@@ -452,7 +452,8 @@ without touching the page), a **Log** pane that mirrors everything the app print
 same text as the console), an **Events** pane that shows module events as they arrive (Wi-Fi link and
 network up/down, MQTT, Bluetooth, GATT, SPS, HTTP and ping results), and a command line with history
 (up/down arrows) and quick buttons. Commands run one at a time; the `web.*` commands are not allowed
-from the page. Open the printed URL, including the `?t=` token.
+from the page. Open the printed URL, including the `#t=` token. The token sits in the URL fragment, so it is not
+sent with the page request; the page removes it from the address bar and keeps it for the tab only.
 
 #### Text UI
 

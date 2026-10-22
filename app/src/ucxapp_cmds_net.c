@@ -136,7 +136,7 @@ static int cmdHttpGet(ucxapp_t *app, int argc, char *argv[])
         (argc > 2 && (!ucxapp_parse_int(argv[2], &show) || show < 0))) {
         return UCXAPP_ERR_USAGE;
     }
-    strcpy(url, argv[1]);
+    snprintf(url, sizeof(url), "%s", argv[1]);
     if (!splitUrl(url, &https, &host, &path)) {
         return UCXAPP_ERR_USAGE;
     }
@@ -370,7 +370,7 @@ static int cmdHttpDownload(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: cannot create %s\n", argv[2]);
         return UCXAPP_ERR_FAILED;
     }
-    strcpy(url, argv[1]);
+    snprintf(url, sizeof(url), "%s", argv[1]);
 
     int rc = UCXAPP_ERR_FAILED;
     for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {

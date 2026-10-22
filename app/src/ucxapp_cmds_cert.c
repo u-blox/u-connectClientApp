@@ -92,7 +92,7 @@ static uint8_t *pemToDer(const char *pem, size_t *derLen)
 static void toHexUpper(const uint8_t *data, size_t len, char *out)
 {
     for (size_t i = 0; i < len; i++) {
-        sprintf(out + i * 2, "%02X", data[i]);
+        snprintf(out + i * 2, 3, "%02X", data[i]);
     }
 }
 

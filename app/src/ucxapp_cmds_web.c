@@ -24,7 +24,7 @@
 #endif
 
 #define DEFAULT_PORT   80
-#define TOKEN_LEN      12
+#define TOKEN_LEN      32
 #define MAX_EVENTS     64
 #define OUT_CHUNK_ESC  380      /* escaped bytes per SSE event; the engine caps an event at 512 */
 #define KEEPALIVE_MS   15000
@@ -78,7 +78,9 @@ static const char kPage[] =
     "<footer><input id=\"cmd\" placeholder=\"command, e.g. wifi.scan (up/down for history)\" autofocus>"
     "<button id=\"run\">Run</button></footer><div id=\"keys\"></div><script>"
     "const $=i=>document.getElementById(i),out=$('out'),ev=$('ev'),st=$('st'),cmd=$('cmd'),"
-    "T=new URLSearchParams(location.search).get('t')||'',H=[];let hi=0;"
+    "T=new URLSearchParams(location.hash.slice(1)).get('t')||new URLSearchParams(location.search).get('t')"
+    "||sessionStorage.getItem('t')||'',H=[];let hi=0;sessionStorage.setItem('t',T);"
+    "history.replaceState(null,'',location.pathname);"
     "const stick=el=>el.scrollTop+el.clientHeight>=el.scrollHeight-20;"
     "function add(t){const s=stick(out);out.textContent+=t.replace(/\\x1b\\[[0-9;]*m/g,'');"
     "if(out.textContent.length>60000)out.textContent=out.textContent.slice(-40000);if(s)out.scrollTop=out.scrollHeight}"
@@ -406,11 +408,10 @@ static void urlDecode(char *s)
 
 static void routePage(const uHttpRequest_t *req, uHttpResponse_t *resp, void *user)
 {
+    /* The page holds no data; the token travels in the URL fragment (never sent to the server)
+     * and every API call checks it. */
+    (void)req;
     (void)user;
-    if (!tokenOk(req)) {
-        uWebServerSendError(resp, 403, "token required");
-        return;
-    }
     uWebServerSendHTML(resp, kPage);
 }
 
@@ -561,13 +562,18 @@ static void routeList(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
 
 /* ---- commands --------------------------------------------------------------- */
 
-static void makeToken(char *out)
+static bool makeToken(char *out)
 {
-    srand((unsigned)time(NULL) ^ (unsigned)U_CX_PORT_GET_TIME_MS());
-    for (int i = 0; i < TOKEN_LEN; i += 2) {
-        snprintf(out + i, 3, "%02x", (unsigned)(rand() & 0xff));
+    uint8_t rnd[TOKEN_LEN / 2];
+
+    if (!ucxapp_tls_random(rnd, sizeof(rnd))) {
+        return false;
+    }
+    for (size_t i = 0; i < sizeof(rnd); i++) {
+        snprintf(out + i * 2, 3, "%02x", rnd[i]);
     }
     out[TOKEN_LEN] = '\0';
+    return true;
 }
 
 static void webStop(void)
@@ -621,8 +627,10 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
     }
     if (argc == 3) {
         snprintf(gToken, sizeof(gToken), "%s", argv[2]);
-    } else {
-        makeToken(gToken);
+    } else if (!makeToken(gToken)) {
+        ucxapp_print("ERROR: no random source for the access token\n");
+        ucxapp_tls_server_free(tls);
+        return UCXAPP_ERR_FAILED;
     }
 
     gApp = app;
@@ -678,7 +686,7 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
         webStop();
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("web server on %s: %s://%s:%d/?t=%s\n", ssid, gHttps ? "https" : "http", ip, (int)port, gToken);
+    ucxapp_print("web server on %s: %s://%s:%d/#t=%s\n", ssid, gHttps ? "https" : "http", ip, (int)port, gToken);
     if (gHttps) {
         ucxapp_print("trust tls-ca.crt in the browser (tls.pem ca) to avoid the certificate warning\n");
     }

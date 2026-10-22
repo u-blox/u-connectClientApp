@@ -100,7 +100,7 @@ ucxapp_store_writer_t *ucxapp_store_begin(const char *name)
     if (w == NULL) {
         return NULL;
     }
-    strcpy(w->name, name);
+    snprintf(w->name, sizeof(w->name), "%s", name);
     snprintf(w->tmp, sizeof(w->tmp), "%s%s", name, TMP_SUFFIX);
     w->handle = gOps->open(w->tmp, true);
     if (w->handle == NULL) {

@@ -14,7 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Init u-connectClient (not its nested submodules)
-        run: git submodule update --init u-connectClient
+        run: |
+          git submodule update --init u-connectClient
+          git submodule update --init --recursive third-party/mbedtls
       - run: cmake -S app -B build/windows -A x64
       - run: cmake --build build/windows --config Release
       - run: Copy-Item app/bin/ucxapp.exe ucxapp-windows-x64.exe
@@ -28,7 +30,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Init u-connectClient (not its nested submodules)
-        run: git submodule update --init u-connectClient
+        run: |
+          git submodule update --init u-connectClient
+          git submodule update --init --recursive third-party/mbedtls
       - run: cmake -S app -B build/linux -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build/linux
       - run: cp app/bin/ucxapp ucxapp-linux-x64
@@ -55,7 +59,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Init u-connectClient (not its nested submodules)
-        run: git submodule update --init u-connectClient
+        run: |
+          git submodule update --init u-connectClient
+          git submodule update --init --recursive third-party/mbedtls
       - name: Install toolchain
         run: |
           sudo apt-get update

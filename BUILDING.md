@@ -107,5 +107,6 @@ u-connectXpressApp/
 .\ucxapp --rebuild --sign YOUR_CERT_THUMBPRINT   # creates ucxapp-signed.exe in release/
 ```
 
-`app/release/ucxapp-signed.exe` is self-contained (~2.5 MB) with the FTDI DLL embedded.
+`app/release/ucxapp-signed.exe` is self-contained (~2.5 MB) with the FTDI DLL embedded. It is not
+committed; `scripts/release.py` uploads it to the GitHub Releases page.
 See [docs/UCX_WIN_APP_RELEASE.md](docs/UCX_WIN_APP_RELEASE.md) and `scripts/release.py` for the full release flow.

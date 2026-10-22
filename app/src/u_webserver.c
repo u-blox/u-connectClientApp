@@ -337,7 +337,7 @@ static void handle_client_request(uWebServer_t *server, uWebServerClient_t *clie
     memset(&response, 0, sizeof(response));
     response.status_code = 404;
     response.body_length = -1;  // -1 means "use strlen(body)" - IMPORTANT!
-    strcpy(response.content_type, "text/plain");
+    snprintf(response.content_type, sizeof(response.content_type), "text/plain");
     response.body = "Not Found";
     
     bool parsed = parse_request(client->rx_buffer, &request);
@@ -792,7 +792,7 @@ void uWebServerFree(uWebServer_t *server)
 void uWebServerSendJSON(uHttpResponse_t *response, const char *json_string)
 {
     response->status_code = 200;
-    strcpy(response->content_type, "application/json");
+    snprintf(response->content_type, sizeof(response->content_type), "application/json");
     response->body = json_string;
     response->body_length = -1;  // Use strlen
 }
@@ -800,7 +800,7 @@ void uWebServerSendJSON(uHttpResponse_t *response, const char *json_string)
 void uWebServerSendText(uHttpResponse_t *response, const char *text)
 {
     response->status_code = 200;
-    strcpy(response->content_type, "text/plain");
+    snprintf(response->content_type, sizeof(response->content_type), "text/plain");
     response->body = text;
     response->body_length = -1;
 }
@@ -808,7 +808,7 @@ void uWebServerSendText(uHttpResponse_t *response, const char *text)
 void uWebServerSendHTML(uHttpResponse_t *response, const char *html)
 {
     response->status_code = 200;
-    strcpy(response->content_type, "text/html");
+    snprintf(response->content_type, sizeof(response->content_type), "text/html");
     response->body = html;
     response->body_length = -1;
 }
@@ -816,7 +816,7 @@ void uWebServerSendHTML(uHttpResponse_t *response, const char *html)
 void uWebServerSendError(uHttpResponse_t *response, int32_t status_code, const char *message)
 {
     response->status_code = status_code;
-    strcpy(response->content_type, "text/plain");
+    snprintf(response->content_type, sizeof(response->content_type), "text/plain");
     response->body = message;
     response->body_length = -1;
 }
@@ -867,10 +867,9 @@ uSseClient_t uWebServerRegisterSSE(uWebServer_t *server, const uHttpRequest_t *r
     
     // Configure SSE response
     response->status_code = 200;
-    strcpy(response->content_type, "text/event-stream");
+    snprintf(response->content_type, sizeof(response->content_type), "text/event-stream");
     snprintf(response->custom_headers, sizeof(response->custom_headers),
-             "Cache-Control: no-cache\r\n"
-             "Access-Control-Allow-Origin: *\r\n");
+             "Cache-Control: no-cache\r\n");
     
     // Build initial event as the body (sent with headers)
     // Format: "event: connected\ndata: {\"message\":\"Event stream ready\"}\n\n"

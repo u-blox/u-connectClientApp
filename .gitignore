@@ -14,9 +14,14 @@ app/bin/ucxapp-debug.exe
 app/bin/u-connectClientApp.exe
 app/bin/u-connectClientApp-debug.exe
 
-# Release binaries (tracked in git for distribution)
-!app/release/
-!app/release/*.exe
+# Release binaries are published on the GitHub Releases page, not in git
+app/release/*.exe
+
+# GPL tool, not redistributed with the app
+app/third-party/iperf/
+
+# Local notes
+TODO.md
 
 # Python
 __pycache__/

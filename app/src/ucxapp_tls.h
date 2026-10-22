@@ -16,6 +16,9 @@ extern "C" {
 
 #define UCXAPP_TLS_CA_NAME "ca"
 
+/** Fills buf from the cryptographic random generator (OS entropy). */
+bool ucxapp_tls_random(void *buf, size_t len);
+
 /** Creates the local CA (tls-ca.crt/.key). Fails if it exists unless force. */
 bool ucxapp_tls_create_ca(const char *commonName, bool force, char *err, size_t errLen);
 

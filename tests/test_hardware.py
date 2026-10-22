@@ -233,11 +233,11 @@ def test_tcp_socket_between_two_modules(app_exe, port_a, port_b):
                 continue
             host = match.group(1) if match else None
         assert host, "module A did not print its web URL"
-        request = "sock.send 0 {} HTTP/1.0\\r\\n\\r\\n"
+        request = "sock.send 0 GET /api/groups?t={} HTTP/1.0\\r\\n\\r\\n"
         out = _run(app_exe, port_b, f"wifi.connect {ssid} {password}",
-                   "sock.open tcp", f"sock.connect 0 {host} 80", request.format("GET /?t=abc123"), "sock.read 0 120 10",
+                   "sock.open tcp", f"sock.connect 0 {host} 80", request.format("abc123"), "sock.read 0 120 10",
                    "sock.close 0",
-                   "sock.open tcp", f"sock.connect 0 {host} 80", request.format("GET /?t=wrong"), "sock.read 0 120 10",
+                   "sock.open tcp", f"sock.connect 0 {host} 80", request.format("wrong"), "sock.read 0 120 10",
                    "sock.close 0", timeout=240)
     finally:
         server.stdin.write("web.stop\nexit\n")

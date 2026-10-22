@@ -2,7 +2,7 @@
 
 **Talk to your u-connectXpress module in one line.** Scan Wi-Fi, join a network, open sockets, publish over MQTT, fetch HTTPS pages, pair Bluetooth devices and update firmware, from an interactive shell, a script or a web page. The same commands run on Windows, Linux and on an STM32 board.
 
-Supported modules: **NORA-W36** (Wi-Fi + Bluetooth LE) and **NORA-B26** (Bluetooth LE).
+Supported modules: **NORA-W36** (Wi-Fi + Bluetooth LE) and **NORA-B26** (Bluetooth LE). NORA-W40 is not supported yet.
 
 | Windows | Linux | STM32 firmware |
 |---|---|---|
@@ -50,7 +50,7 @@ ucxapp --exec "wifi.connect MySsid MyPassword" --exec "fw.download https://githu
 ```powershell
 ucxapp COM13 --exec "wifi.connect MySsid MyPassword" --exec "web.start" --shell
 ```
-It prints `http://<module-ip>:<port>/?t=<token>`. Open it on your phone or laptop for a command box with live output.
+It prints `http://<module-ip>:<port>/#t=<token>`. Open it on your phone or laptop for a command box with live output.
 
 **Secure GNSS data bridge**: the app runs its own small CA and serves the receiver stream over TLS (add `clientauth` to require client certificates); `web.start https` does the same for the web UI
 ```powershell
@@ -87,6 +87,7 @@ Type `help` in the shell, or `help wifi` to filter by prefix. Full list with arg
 | HID | `hid.setup`, `hid.text`, `hid.key` (act as a Bluetooth keyboard) |
 | Utilities | `utils.qr.text`, `utils.qr.wifi`, `utils.qr.geo`, `utils.zip`, `utils.unzip` |
 | Sensors | `gnss.detect`, `gnss.open`, `gnss.status`, `gnss.sats`, `gnss.bridge`, `imu.detect`, `imu.open`, `imu.status`, `imu.bridge` (PC serial sensors, bridged over TCP, UDP or BLE) |
+| Cellular | `cell.detect`, `cell.open`, `cell.status`, `cell.apn`, `cell.attach`, `cell.ping`, `cell.connect`, `cell.bridge`, `cell.at` (a cellular modem on a PC serial port) |
 | Certificates | `cert.list`, `cert.upload`, `cert.info`, `cert.remove` |
 | Firmware | `fw.download [latest [file]]` or `fw.download <url> <file> [sha256]`, `fw.flash <file> [baud]` |
 | Web UI | `web.start`, `web.stop`, `web.status` |
@@ -97,6 +98,7 @@ Type `help` in the shell, or `help wifi` to filter by prefix. Full list with arg
 git clone https://github.com/u-blox/u-connectXpressApp.git
 cd u-connectXpressApp
 git submodule update --init u-connectClient
+git submodule update --init --recursive third-party/mbedtls
 .\ucxapp             # builds on first run, then starts the shell
 ```
 
@@ -108,6 +110,11 @@ Find attached modules, GNSS receivers and IMUs: `.\ucxapp --detect`.
 - [Command reference](COMMANDS.md): every command with usage
 - [Building, flashing and releasing](BUILDING.md): prerequisites, launchers, STM32 boards, signing, file structure
 - [u-connectClient](https://github.com/u-blox/u-connectClient): the small-footprint AT client library underneath
+
+## Security notes
+
+- Saved Wi-Fi passwords (`ucxapp.wifi`, `wifi.profile.*`) are XOR-obfuscated so they are not readable at a glance. This is obfuscation, not protection: anyone with the file can recover them.
+- The web UI is protected by a random 128-bit token in the printed URL. Use `web.start https` on networks you do not trust.
 
 ---
 

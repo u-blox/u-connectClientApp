@@ -13,7 +13,8 @@ def _run(app_exe, tmp_path, port, *commands, timeout=60):
     args = [str(app_exe), port]
     for command in commands:
         args += ["--exec", command]
-    return subprocess.run(args, capture_output=True, text=True, timeout=timeout, errors="replace")
+    return subprocess.run(args, capture_output=True, text=True, timeout=timeout, errors="replace",
+                          stdin=subprocess.DEVNULL)
 
 
 def test_help_lists_command_packs(app_exe, tmp_path):
@@ -459,7 +460,8 @@ def _run_in(app_exe, cwd, *commands):
     args = [str(app_exe), "--offline"]
     for command in commands:
         args += ["--exec", command]
-    return subprocess.run(args, capture_output=True, text=True, timeout=120, errors="replace", cwd=cwd)
+    return subprocess.run(args, capture_output=True, text=True, timeout=120, errors="replace", cwd=cwd,
+                          stdin=subprocess.DEVNULL)
 
 
 def _handshake(ca, cert, key, hostname, client_cert=None):

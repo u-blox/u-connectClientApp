@@ -41,6 +41,11 @@ static bool cryptoReady(void)
     return ok;
 }
 
+bool ucxapp_tls_random(void *buf, size_t len)
+{
+    return cryptoReady() && psa_generate_random(buf, len) == PSA_SUCCESS;
+}
+
 static void setErr(char *err, size_t errLen, const char *what, int rc)
 {
     if (err && errLen) {
