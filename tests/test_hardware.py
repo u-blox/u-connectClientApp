@@ -355,12 +355,12 @@ def _close_listeners(exe, port):
         _run(exe, port, *[f"sock.close {handle}" for handle in handles])
 
 
-def _start_bridge(exe, port, source, found, setup, bridge):
+def _start_bridge(exe, port, source, found, setup, bridge, cwd=None):
     """Module A runs the source bridge in a shell; returns (process, line queue)."""
     _close_listeners(exe, port)
     args = _args(exe, port, *setup, f"{source}.open {found[0]} {found[1]}".strip(), bridge) + ["--shell"]
     proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                            errors="replace")
+                            errors="replace", cwd=cwd)
     lines = queue.Queue()
     threading.Thread(target=lambda: [lines.put(line) for line in proc.stdout], daemon=True).start()
     seen = []
@@ -417,6 +417,43 @@ def test_bridge_over_wifi_between_two_modules(app_exe, port_a, port_b, source, r
         _stop(proc)
     assert out.returncode == 0, out.stdout
     _check_stream(source, out.stdout)
+
+
+@pytest.mark.two_devices
+@pytest.mark.parametrize("source", SOURCES)
+@pytest.mark.parametrize("clientauth", [False, True], ids=["server-auth", "mutual-auth"])
+def test_secure_bridge_over_wifi_between_two_modules(app_exe, port_a, port_b, source, clientauth, request, tmp_path):
+    """A serves the source over TLS with a certificate from the app's local CA; B trusts that CA and reads."""
+    ssid, password = _wifi_credentials()
+    ip_a, _ = _join_wifi(app_exe, port_a, ssid, password)
+    out = subprocess.run(_args(app_exe, port_a, "tls.ca.create", f"tls.server.create server {ip_a}",
+                               "tls.client.create rover"), capture_output=True, text=True, timeout=60,
+                         errors="replace", cwd=tmp_path)
+    assert out.returncode == 0, out.stdout
+    bridge = f"{source}.bridge tls 2947 server" + (" clientauth" if clientauth else "")
+    proc, _ = _start_bridge(app_exe, port_a, source, request.getfixturevalue(source),
+                            [f"wifi.connect {ssid} {password}"], bridge, cwd=tmp_path)
+    upload = [f"cert.upload ca {tmp_path / 'tls-ca.crt'} ucxtestca"]
+    tls = "sock.tls ucxtestca"
+    if clientauth:
+        upload += [f"cert.upload client {tmp_path / 'tls-rover.crt'} ucxtestrover",
+                   f"cert.upload key {tmp_path / 'tls-rover.key'} ucxtestroverkey"]
+        tls += " ucxtestrover ucxtestroverkey"
+    try:
+        _run(app_exe, port_b, "cert.remove ucxtestca", "cert.remove ucxtestrover", "cert.remove ucxtestroverkey")
+        out = _run(app_exe, port_b, f"wifi.connect {ssid} {password}", *upload, "sock.open tcp", tls,
+                   f"sock.connect 0 {ip_a} 2947", "sock.read 0 400 15", "sock.close 0", timeout=240)
+        if clientauth:
+            # B without a client certificate must be refused by A
+            refused = _run(app_exe, port_b, f"wifi.connect {ssid} {password}", "sock.open tcp", "sock.tls ucxtestca",
+                           f"sock.connect 0 {ip_a} 2947", "sock.read 0 400 5", timeout=240)
+    finally:
+        _stop(proc)
+        _run(app_exe, port_b, "cert.remove ucxtestca", "cert.remove ucxtestrover", "cert.remove ucxtestroverkey")
+    assert out.returncode == 0, out.stdout
+    _check_stream(source, out.stdout)
+    if clientauth:
+        assert refused.returncode != 0 or "received 0 bytes" in refused.stdout, refused.stdout
 
 
 @pytest.mark.two_devices

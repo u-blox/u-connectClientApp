@@ -79,6 +79,7 @@ bool ucxappLogEventsEnabled(void);   /* log.events.on: URC events are also print
 void ucxapp_register_mqtt_cmds(void);
 void ucxapp_register_bt_cmds(void);
 void ucxapp_register_cert_cmds(void);
+void ucxapp_register_tls_cmds(void);     /* tls.* local CA and certificates (ucxapp_cmds_tls.c) */
 void ucxapp_register_fw_cmds(void);
 void ucxapp_register_gatt_cmds(void);
 void ucxapp_register_qr_cmds(void);

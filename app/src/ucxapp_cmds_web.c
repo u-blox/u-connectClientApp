@@ -9,6 +9,7 @@
 
 #include "ucxapp_cmd.h"
 #include "ucxapp_thread.h"
+#include "ucxapp_tls.h"
 #include "ucxapp_ui.h"
 
 #ifdef _MSC_VER
@@ -141,6 +142,7 @@ static const char kPage[] =
 static ucxapp_t *gApp;
 static uWebServer_t *gServer;
 static uint16_t gPort;
+static bool gHttps;
 static char gToken[TOKEN_LEN + 1];
 static volatile bool gRunning;
 static volatile bool gStop;
@@ -583,8 +585,21 @@ static void webStop(void)
 static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
 {
     int32_t port = DEFAULT_PORT;
-    char ssid[64], ip[48];
+    char ssid[64], ip[48], err[160] = "";
+    const char *cert = NULL;
+    ucxapp_tls_server_t *tls = NULL;
 
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "https") == 0) {
+            if (argc - i > 2) {
+                return UCXAPP_ERR_USAGE;
+            }
+            cert = i + 1 < argc ? argv[i + 1] : "server";
+            port = 443;
+            argc = i;
+            break;
+        }
+    }
     if (argc > 3 || (argc > 1 && (!ucxapp_parse_int(argv[1], &port) || port < 1 || port > 65535))) {
         return UCXAPP_ERR_USAGE;
     }
@@ -595,6 +610,14 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
     if (!ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip)) || ip[0] == '\0') {
         ucxapp_print("ERROR: connect Wi-Fi first (wifi.connect)\n");
         return UCXAPP_ERR_FAILED;
+    }
+    if (cert != NULL) {
+        tls = ucxapp_tls_server_new(cert, false, err, sizeof(err));
+        if (tls == NULL) {
+            ucxapp_print("ERROR: TLS certificate '%s': %s (try tls.ca.create, then tls.server.create %s %s)\n",
+                         cert, err, cert, ip);
+            return UCXAPP_ERR_FAILED;
+        }
     }
     if (argc == 3) {
         snprintf(gToken, sizeof(gToken), "%s", argv[2]);
@@ -610,6 +633,7 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
 
     if (!ucxapp_ui_acquire(app)) {
         ucxapp_print("ERROR: cannot start the command runner\n");
+        ucxapp_tls_server_free(tls);
         U_CX_MUTEX_DELETE(gLock);
         return UCXAPP_ERR_FAILED;
     }
@@ -619,6 +643,11 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
 
     (void)uCxSocketSetReadMode(app->ucx, U_READ_MODE_BUFFERED);
     gServer = uWebServerInit(app->ucx, gPort);
+    if (gServer == NULL) {
+        ucxapp_tls_server_free(tls);
+    }
+    uWebServerSetTls(gServer, tls);
+    gHttps = tls != NULL;
     if (gServer == NULL ||
         uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/", routePage, NULL) != 0 ||
         uWebServerAddRoute(gServer, U_HTTP_METHOD_GET, "/events", routeEvents, NULL) != 0 ||
@@ -649,7 +678,10 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
         webStop();
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("web server on %s: http://%s:%d/?t=%s\n", ssid, ip, (int)port, gToken);
+    ucxapp_print("web server on %s: %s://%s:%d/?t=%s\n", ssid, gHttps ? "https" : "http", ip, (int)port, gToken);
+    if (gHttps) {
+        ucxapp_print("trust tls-ca.crt in the browser (tls.pem ca) to avoid the certificate warning\n");
+    }
     return UCXAPP_OK;
 }
 
@@ -674,14 +706,14 @@ static int cmdWebStatus(ucxapp_t *app, int argc, char *argv[])
     if (gServer == NULL) {
         ucxapp_print("web server: stopped\n");
     } else {
-        ucxapp_print("web server: port %u, %d event client(s)\n", (unsigned)gPort,
+        ucxapp_print("web server: %s port %u, %d event client(s)\n", gHttps ? "https" : "http", (unsigned)gPort,
                      (int)uWebServerGetSSEClientCount(gServer));
     }
     return UCXAPP_OK;
 }
 
 static const ucxapp_cmd_t gWebCmds[] = {
-    { "web.start",  "[port] [token]", "Serve a web UI from the module (needs Wi-Fi); default port 80", UCXAPP_CMD_NEEDS_DEVICE, cmdWebStart },
+    { "web.start",  "[port] [token] [https [cert]]", "Serve a web UI from the module (needs Wi-Fi); port 80, or 443 with https", UCXAPP_CMD_NEEDS_DEVICE, cmdWebStart },
     { "web.stop",   "",               "Stop the web server",                                          0, cmdWebStop },
     { "web.status", "",               "Show web server state",                                        0, cmdWebStatus },
 };

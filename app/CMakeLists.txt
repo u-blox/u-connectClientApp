@@ -34,6 +34,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/mbedtls.cmake)
+
 # Non-Windows hosts (Linux): command-line app built from the portable command layer only
 
 if(NOT WIN32)
@@ -80,6 +82,8 @@ if(NOT WIN32)
     src/ucxapp_cmds_bt.c
     src/ucxapp_adv.c
     src/ucxapp_cmds_cert.c
+    src/ucxapp_cmds_tls.c
+    src/ucxapp_tls.c
     src/ucxapp_cmds_fw.c
     src/ucxapp_cmds_gatt.c
     src/ucxapp_cmds_qr.c
@@ -132,7 +136,7 @@ if(NOT WIN32)
 
   )
 
-  target_link_libraries(ucxapp PRIVATE Threads::Threads)
+  target_link_libraries(ucxapp PRIVATE Threads::Threads ${UCXAPP_MBEDTLS_LIBS})
 
   return()
 
@@ -173,6 +177,8 @@ add_executable(ucxapp
   src/ucxapp_cmds_bt.c
   src/ucxapp_adv.c
   src/ucxapp_cmds_cert.c
+  src/ucxapp_cmds_tls.c
+  src/ucxapp_tls.c
   src/ucxapp_cmds_fw.c
   src/ucxapp_cmds_gatt.c
   src/ucxapp_cmds_qr.c
@@ -216,7 +222,7 @@ target_include_directories(ucxapp PUBLIC
   ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_link_libraries(ucxapp PRIVATE setupapi)
+target_link_libraries(ucxapp PRIVATE setupapi ${UCXAPP_MBEDTLS_LIBS})
 
 # Set different output names for Debug and Release builds
 set_target_properties(ucxapp PROPERTIES

@@ -10,6 +10,7 @@
 #include "ucxapp_platform.h"
 #include "ucxapp_stats.h"
 #include "ucxapp_thread.h"
+#include "ucxapp_tls.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -86,6 +87,8 @@ struct ucxapp_stream {
     uint32_t nextRetry;
     bool udpListen;                /* reply to whoever sent last */
     int32_t spsConn;
+    ucxapp_tls_server_t *tlsSrv;   /* BR_TCP server with TLS; NULL for plain TCP */
+    ucxapp_tls_conn_t *tls[MAX_CLIENTS];
 };
 
 static ucxapp_stream_t *gStreams[MAX_STREAMS];
@@ -318,10 +321,14 @@ const char *ucxapp_stream_log_name(const ucxapp_stream_t *s)
 
 static void dropClient(ucxapp_stream_t *s, int idx, bool closeSock)
 {
+    ucxapp_tls_close(s->tls[idx], closeSock);
     if (closeSock) {
         (void)uCxSocketClose(s->app->ucx, s->clients[idx]);
     }
-    s->clients[idx] = s->clients[--s->nClients];
+    s->nClients--;
+    s->clients[idx] = s->clients[s->nClients];
+    s->tls[idx] = s->tls[s->nClients];
+    s->tls[s->nClients] = NULL;
 }
 
 static bool connectOnce(ucxapp_stream_t *s)
@@ -366,6 +373,11 @@ static void tcpService(ucxapp_stream_t *s)
     }
     for (int i = 0; i < nAcc; i++) {
         if (s->nClients < MAX_CLIENTS) {
+            s->tls[s->nClients] = s->tlsSrv != NULL ? ucxapp_tls_accept(s->tlsSrv, s->app->ucx, acc[i]) : NULL;
+            if (s->tlsSrv != NULL && s->tls[s->nClients] == NULL) {
+                (void)uCxSocketClose(s->app->ucx, acc[i]);
+                continue;
+            }
             s->clients[s->nClients++] = acc[i];
         } else {
             (void)uCxSocketClose(s->app->ucx, acc[i]);
@@ -408,7 +420,11 @@ static void deliver(ucxapp_stream_t *s, const uint8_t *d, size_t n)
 
     if (s->bridge == BR_TCP) {
         for (int c = s->nClients - 1; c >= 0; c--) {
-            if (uCxSocketWrite(ucx, s->clients[c], d, (int32_t)n) < 0) {
+            if (s->tls[c] != NULL && ucxapp_tls_handshake(s->tls[c]) <= 0) {
+                continue;   /* not secured yet: nothing in clear text */
+            }
+            if ((s->tls[c] != NULL ? ucxapp_tls_write(s->tls[c], d, n)
+                                   : uCxSocketWrite(ucx, s->clients[c], d, (int32_t)n)) < 0) {
                 dropClient(s, c, true);
             } else {
                 ucxapp_stats_add(UCXAPP_STATS_TCP, n, 0);
@@ -455,9 +471,14 @@ static void pullInbound(ucxapp_stream_t *s)
     uint8_t buf[NET_CHUNK];
 
     if (s->bridge == BR_TCP) {
-        for (int c = 0; c < s->nClients; c++) {
+        for (int c = s->nClients - 1; c >= 0; c--) {
             for (int i = 0; i < 8; i++) {
-                int32_t n = uCxSocketRead(ucx, s->clients[c], (int32_t)sizeof(buf), buf);
+                int32_t n = s->tls[c] != NULL ? ucxapp_tls_read(s->tls[c], buf, sizeof(buf))
+                                              : uCxSocketRead(ucx, s->clients[c], (int32_t)sizeof(buf), buf);
+                if (n < 0 && s->tls[c] != NULL) {
+                    dropClient(s, c, true);   /* failed handshake or peer closed the session */
+                    break;
+                }
                 if (n <= 0) {
                     break;
                 }
@@ -509,9 +530,9 @@ static void senderLoop(void *arg)
         if (s->bridge == BR_TCP) {
             tcpService(s);
         }
-        if (s->rxPending) {
+        if (s->rxPending || (s->tlsSrv != NULL && s->nClients > 0)) {
             s->rxPending = false;
-            pullInbound(s);
+            pullInbound(s);   /* TLS polls: records can wait in the module without a new URC */
         }
         while (!s->senderStop && (n = ringGet(s, chunk, sizeof(chunk))) > 0) {
             if (s->bridge == BR_BLE && ucxapp_handle_current(UCXAPP_HANDLE_CONN) < 0) {
@@ -620,6 +641,30 @@ bool ucxapp_stream_bridge_tcp(ucxapp_stream_t *s, ucxapp_t *app, int32_t port)
     } else {
         ucxapp_print("%s bridge: listening on TCP port %d\n", s->cfg.kind, (int)port);
     }
+    return true;
+}
+
+bool ucxapp_stream_bridge_tls(ucxapp_stream_t *s, ucxapp_t *app, int32_t port, const char *certName, bool clientAuth)
+{
+    char err[160] = "";
+    ucxapp_tls_server_t *srv;
+
+    if (s->bridge != BR_NONE) {
+        ucxapp_print("ERROR: a bridge is already running (stop it first)\n");
+        return false;
+    }
+    srv = ucxapp_tls_server_new(certName, clientAuth, err, sizeof(err));
+    if (srv == NULL) {
+        ucxapp_print("ERROR: TLS certificate '%s': %s (see tls.ca.create / tls.server.create)\n", certName, err);
+        return false;
+    }
+    s->tlsSrv = srv;   /* set before the sender starts so no client is ever served in clear text */
+    if (!ucxapp_stream_bridge_tcp(s, app, port)) {
+        ucxapp_tls_server_free(s->tlsSrv);   /* bridge_stop may already have freed it */
+        s->tlsSrv = NULL;
+        return false;
+    }
+    ucxapp_print("TLS with certificate '%s'%s\n", certName, clientAuth ? ", client certificate required" : "");
     return true;
 }
 
@@ -785,6 +830,12 @@ void ucxapp_stream_bridge_stop(ucxapp_stream_t *s)
         uPortUartClose(s->out);
         s->out = NULL;
     }
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        ucxapp_tls_close(s->tls[i], ucx != NULL && i < s->nClients);
+        s->tls[i] = NULL;
+    }
+    ucxapp_tls_server_free(s->tlsSrv);
+    s->tlsSrv = NULL;
     if (ucx != NULL && s->bridge != BR_UART) {
         for (int i = 0; i < s->nClients; i++) {
             (void)uCxSocketClose(ucx, s->clients[i]);
@@ -864,7 +915,12 @@ void ucxapp_stream_bridge_status(ucxapp_stream_t *s)
     if (s->bridge == BR_TCP && s->connectHost[0]) {
         ucxapp_print(" %s:%d, %s", s->connectHost, (int)s->connectPort, s->nClients > 0 ? "connected" : "reconnecting");
     } else if (s->bridge == BR_TCP) {
-        ucxapp_print(" port %d, %d client(s)", (int)s->tcpPort, s->nClients);
+        ucxapp_print("%s port %d, %d client(s)", s->tlsSrv != NULL ? " (TLS)" : "", (int)s->tcpPort, s->nClients);
+        for (int c = 0; c < s->nClients; c++) {
+            if (s->tls[c] != NULL && ucxapp_tls_peer(s->tls[c])[0] != '\0') {
+                ucxapp_print(" [%s]", ucxapp_tls_peer(s->tls[c]));
+            }
+        }
     } else if (s->bridge == BR_UDP) {
         ucxapp_print(" port %d", (int)s->udpPort);
     } else if (s->bridge == BR_UART) {
@@ -921,6 +977,20 @@ int ucxapp_stream_bridge_cmd(ucxapp_stream_t *s, ucxapp_t *app, int argc, char *
             return UCXAPP_ERR_USAGE;
         }
         return ucxapp_stream_bridge_tcp(s, app, port) ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+    }
+    if (strcasecmp(argv[1], "tls") == 0 && argc <= 5) {
+        const char *cert = "server";
+        bool auth = argc > 2 && strcasecmp(argv[argc - 1], "clientauth") == 0;
+        int rest = argc - (auth ? 1 : 0);
+        if (rest >= 3 && (!ucxapp_parse_int(argv[2], &port) || port < 1 || port > 65535)) {
+            return UCXAPP_ERR_USAGE;
+        }
+        if (rest == 4) {
+            cert = argv[3];
+        } else if (rest > 4) {
+            return UCXAPP_ERR_USAGE;
+        }
+        return ucxapp_stream_bridge_tls(s, app, port, cert, auth) ? UCXAPP_OK : UCXAPP_ERR_FAILED;
     }
     if (strcasecmp(argv[1], "tcpc") == 0 && argc == 4) {
         if (!ucxapp_parse_int(argv[3], &port) || port < 1 || port > 65535) {

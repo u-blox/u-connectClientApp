@@ -711,7 +711,7 @@ static const ucxapp_cmd_t kCmds[] = {
     { "cell.ping", "<host>", "Ping through the cellular link (Quectel and u-blox only)", 0, cmdPing },
     { "cell.connect", "<host> <port> [tcp|udp]", "Open a transparent TCP/UDP socket through the modem (u-blox, Quectel, SIMCom, Telit, Nordic nRF91); then use gnss.bridge cell or imu.bridge cell", 0, cmdConnect },
     { "cell.disconnect", "", "Leave transparent mode and close the socket", 0, cmdDisconnect },
-    { "cell.bridge", "tcp [port] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | off | status", "Bridge the modem's AT console to TCP, UDP, BLE or another PC UART", 0, cmdBridge },
+    { "cell.bridge", "tcp [port] | tls [port] [cert] [clientauth] | tcpc <host> <port> | udp <host> <port> [local] | udps <port> | ble [nus|sps|custom <uuid> [rx tx]] | uart <port> [baud] | off | status", "Bridge the modem's AT console to TCP, UDP, BLE or another PC UART", 0, cmdBridge },
 };
 
 void ucxapp_register_cell_cmds(void)

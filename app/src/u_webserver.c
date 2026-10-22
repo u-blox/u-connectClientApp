@@ -21,6 +21,7 @@
 #include "u_cx_log.h"
 #include "u_port.h"
 #include "ucxapp_stats.h"
+#include "ucxapp_tls.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,6 +58,7 @@ typedef struct {
     int32_t  tx_total;           /**< Total bytes to send */
     int32_t  tx_offset;          /**< Bytes already sent */
     bool     tx_close_when_done; /**< Mark pending_close once tx_buffer drains (non-SSE) */
+    ucxapp_tls_conn_t *tls;      /**< HTTPS session, NULL for plain HTTP */
 } uWebServerClient_t;
 
 /* Per-call chunk size for deferred sends.
@@ -90,6 +92,7 @@ struct uWebServer {
     uWebServerClient_t clients[U_WEBSERVER_MAX_CLIENTS];  /**< Client connections */
     uRoute_t routes[U_WEBSERVER_MAX_ROUTES];               /**< Route handlers */
     int32_t route_count;                           /**< Number of routes */
+    ucxapp_tls_server_t *tls;                      /**< HTTPS configuration, NULL for HTTP */
 };
 
 /* Global server instance for callbacks (ucxclient callbacks don't support user_data) */
@@ -252,6 +255,12 @@ static void client_release_tx_buffer(uWebServerClient_t *client)
     client->tx_close_when_done = false;
 }
 
+static void client_drop_tls(uWebServerClient_t *client, bool notify)
+{
+    ucxapp_tls_close(client->tls, notify);
+    client->tls = NULL;
+}
+
 /**
  * Send one chunk of a client's pending TX buffer over its socket.
  *
@@ -285,9 +294,10 @@ static int32_t client_drain_tx(uWebServer_t *server, uWebServerClient_t *client)
 
     /* The older u-connectClient used here has no URC queue to drain; the app pump
      * feeds socket-closed events to uWebServerHandleSocketClosed() between chunks. */
-    int32_t result = uCxSocketWrite(server->ucx_handle, client->socket,
-                                    (const uint8_t *)(client->tx_buffer + client->tx_offset),
-                                    chunk_len);
+    int32_t result = client->tls != NULL
+        ? ucxapp_tls_write(client->tls, (const uint8_t *)(client->tx_buffer + client->tx_offset), (size_t)chunk_len)
+        : uCxSocketWrite(server->ucx_handle, client->socket,
+                         (const uint8_t *)(client->tx_buffer + client->tx_offset), chunk_len);
     if (result > 0) {
         ucxapp_stats_add(UCXAPP_STATS_WEB, (size_t)result, 0);
     }
@@ -359,7 +369,8 @@ static void handle_client_request(uWebServer_t *server, uWebServerClient_t *clie
     char *tx_buffer = (char *)malloc(U_WEBSERVER_MAX_RESPONSE_SIZE);
     if (!tx_buffer) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to allocate %d bytes for response", (int)U_WEBSERVER_MAX_RESPONSE_SIZE);
-        client->active = false;
+        client->closing = true;
+        client->pending_close = true;
         return;
     }
     int32_t response_len = build_response(&response, tx_buffer, U_WEBSERVER_MAX_RESPONSE_SIZE, is_sse);
@@ -698,6 +709,7 @@ int32_t uWebServerProcess(uWebServer_t *server)
             server->clients[i].active = false;
             // Release any TX buffer that survived (defensive — normally drained already).
             client_release_tx_buffer(&server->clients[i]);
+            client_drop_tls(&server->clients[i], true);
 
             int32_t err = uCxSocketClose(server->ucx_handle, sock);
             // ERROR:11 (-11) means "socket already closed" — harmless race with
@@ -744,6 +756,7 @@ int32_t uWebServerStop(uWebServer_t *server)
             server->clients[i].rx_length = 0;
             server->clients[i].request_complete = false;
             client_release_tx_buffer(&server->clients[i]);
+            client_drop_tls(&server->clients[i], false);
         }
     }
     
@@ -762,6 +775,7 @@ void uWebServerFree(uWebServer_t *server)
 {
     if (server) {
         uWebServerStop(server);
+        ucxapp_tls_server_free(server->tls);
         
         if (g_server_instance == server) {
             g_server_instance = NULL;
@@ -975,6 +989,7 @@ int32_t uWebServerCloseSSE(uWebServer_t *server, uSseClient_t client)
         uCxSocketClose(server->ucx_handle, server->clients[client].socket);
         server->clients[client].active = false;
         client_release_tx_buffer(&server->clients[client]);
+        client_drop_tls(&server->clients[client], false);
     }
     
     return 0;
@@ -1058,6 +1073,15 @@ void uWebServerHandleIncomingConnection(uWebServer_t *server, struct uCxHandle *
     }
     
     // Initialize client
+    client_drop_tls(client, false);
+    if (server->tls) {
+        client->tls = ucxapp_tls_accept(server->tls, puCxHandle, clientSocket);
+        if (!client->tls) {
+            client->active = false;
+            uCxSocketClose(puCxHandle, clientSocket);
+            return;
+        }
+    }
     client->socket = clientSocket;
     client->active = true;
     client->is_sse = false;
@@ -1100,6 +1124,34 @@ void uWebServerHandleDataAvailable(uWebServer_t *server, struct uCxHandle *puCxH
         return;
     }
     
+    if (client->tls) {
+        /* Handshake and decrypt until the module has nothing more for this socket. */
+        for (;;) {
+            rx_space = U_WEBSERVER_MAX_REQUEST_SIZE - client->rx_length - 1;
+            if (rx_space <= 0) {
+                client->closing = true;
+                client->pending_close = true;
+                return;
+            }
+            int32_t n = ucxapp_tls_read(client->tls, (uint8_t *)(client->rx_buffer + client->rx_length), (size_t)rx_space);
+            if (n < 0) {
+                client->closing = true;
+                client->pending_close = true;
+                return;
+            }
+            if (n == 0) {
+                return;
+            }
+            ucxapp_stats_add(UCXAPP_STATS_WEB, 0, (size_t)n);
+            client->rx_length += n;
+            client->rx_buffer[client->rx_length] = '\0';
+            if (!client->request_complete && strstr(client->rx_buffer, "\r\n\r\n")) {
+                client->request_complete = true;
+                handle_client_request(server, client);
+            }
+        }
+    }
+
     uint8_t *rx_ptr = (uint8_t*)(client->rx_buffer + client->rx_length);
     int32_t result = uCxSocketRead(puCxHandle, socketHandle, rx_space, rx_ptr);
     
@@ -1176,6 +1228,15 @@ void uWebServerHandleSocketClosed(uWebServer_t *server, struct uCxHandle *puCxHa
         client->rx_length = 0;
         client->request_complete = false;
         client_release_tx_buffer(client);
+        client_drop_tls(client, false);
+    }
+}
+
+void uWebServerSetTls(uWebServer_t *server, struct ucxapp_tls_server *tls)
+{
+    if (server) {
+        ucxapp_tls_server_free(server->tls);
+        server->tls = tls;
     }
 }
 

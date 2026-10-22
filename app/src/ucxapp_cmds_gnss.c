@@ -966,7 +966,7 @@ static const ucxapp_cmd_t kCmds[] = {
     { "gnss.send", "<hex..|$NMEA|ubx cls id [hex]>", "Send raw bytes, an NMEA sentence or a UBX frame", 0, cmdSend },
     { "gnss.restart", "<hot|warm|cold>", "Restart the receiver (UBX-CFG-RST)", 0, cmdRestart },
     { "gnss.rate", "<hz>", "Set the navigation rate, 1 to 25 Hz (UBX-CFG-RATE)", 0, cmdRate },
-    { "gnss.bridge", "<tcp [port]|tcpc <host> <port>|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off|status>", "Two-way bridge of the receiver stream (TCP server/client, UDP, BLE NUS/SPS, PC UART)", 0, cmdBridge },
+    { "gnss.bridge", "<tcp [port]|tls [port] [cert] [clientauth]|tcpc <host> <port>|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off|status>", "Two-way bridge of the receiver stream (TCP server/client, UDP, BLE NUS/SPS, PC UART)", 0, cmdBridge },
 };
 
 void ucxapp_register_gnss_cmds(void)

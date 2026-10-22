@@ -52,6 +52,12 @@ ucxapp COM13 --exec "wifi.connect MySsid MyPassword" --exec "web.start" --shell
 ```
 It prints `http://<module-ip>:<port>/?t=<token>`. Open it on your phone or laptop for a command box with live output.
 
+**Secure GNSS data bridge**: the app runs its own small CA and serves the receiver stream over TLS (add `clientauth` to require client certificates); `web.start https` does the same for the web UI
+```powershell
+ucxapp COM13 --exec "tls.ca.create" --exec "tls.server.create server 192.168.1.42" --exec "wifi.connect MySsid MyPassword" --exec "gnss.open" --exec "gnss.bridge tls 2947" --shell
+```
+Clients trust `tls-ca.crt`; another module connects with `cert.upload ca tls-ca.crt` and `sock.tls`.
+
 **Use it in CI and test scripts**: every `--exec` runs in order and the app exits with code 1 on the first failure.
 
 ## Highlights
@@ -73,8 +79,9 @@ Type `help` in the shell, or `help wifi` to filter by prefix. Full list with arg
 | Device | `device.info`, `device.reboot`, `device.factory confirm`, `at <raw AT command>` |
 | Wi-Fi | `wifi.scan`, `wifi.connect <ssid> [pw]`, `wifi.status`, `wifi.disconnect`, `wifi.ip`, `wifi.rssi`, `wifi.profile.*`, `wifi.ap.*` |
 | Network | `net.ping <host>`, `net.dns <host>`, `http.get <url>`, `http.download <url> <file>` |
-| Sockets | `sock.open`, `sock.connect`, `sock.send`, `sock.read`, `sock.listen`, `sock.accept`, `sock.sendto`, `sock.recvfrom`, `sock.close` |
+| Sockets | `sock.open`, `sock.tls`, `sock.connect`, `sock.send`, `sock.read`, `sock.listen`, `sock.accept`, `sock.sendto`, `sock.recvfrom`, `sock.close` |
 | MQTT | `mqtt.connect`, `mqtt.subscribe`, `mqtt.publish`, `mqtt.read`, `mqtt.disconnect` |
+| App TLS | `tls.ca.create`, `tls.server.create`, `tls.client.create`, `tls.list`, `tls.pem`, `tls.remove` (HTTPS and TLS bridges) |
 | Bluetooth | `bt.scan`, `bt.connect`, `bt.pairing`, `bt.bonds`, `bt.profile.*`, `bt.list` |
 | GATT | `gatt.services`, `gatt.read`, `gatt.write`, `gatt.subscribe`, `gatt.client.example.*`, `gatt.server.example.*` (heart rate, battery, NUS, SPS, Wi-Fi provisioning and more) |
 | HID | `hid.setup`, `hid.text`, `hid.key` (act as a Bluetooth keyboard) |

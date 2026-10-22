@@ -35,6 +35,8 @@ const char *ucxapp_stream_log_name(const ucxapp_stream_t *s);   /* "" when off *
 
 /* Bridges: the raw byte stream is forwarded through the module. Only one bridge per stream. */
 bool ucxapp_stream_bridge_tcp(ucxapp_stream_t *s, ucxapp_t *app, int32_t port);
+/* TCP server with TLS terminated in the app (certificate tls-<certName>.crt); clientAuth requires a client certificate from the local CA. */
+bool ucxapp_stream_bridge_tls(ucxapp_stream_t *s, ucxapp_t *app, int32_t port, const char *certName, bool clientAuth);
 bool ucxapp_stream_bridge_udp(ucxapp_stream_t *s, ucxapp_t *app, const char *host, int32_t port, int32_t local);
 /* TCP client that reconnects when the link drops. */
 bool ucxapp_stream_bridge_tcp_connect(ucxapp_stream_t *s, ucxapp_t *app, const char *host, int32_t port);

@@ -702,7 +702,7 @@ static const ucxapp_cmd_t kCmds[] = {
     { "imu.log", "<file|off>", "Record the raw IMU byte stream to a file", 0, cmdLog },
     { "imu.send", "<hex..>", "Send raw bytes to the sensor (e.g. WitMotion configuration frames)", 0, cmdSend },
     { "imu.rate", "<hz>", "Set the WitMotion output rate (0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200 Hz)", 0, cmdRate },
-    { "imu.bridge", "<tcp [port]|tcpc <host> <port>|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off|status>", "Two-way bridge of the IMU stream (TCP server/client, UDP, BLE NUS/SPS, PC UART)", 0, cmdBridge },
+    { "imu.bridge", "<tcp [port]|tls [port] [cert] [clientauth]|tcpc <host> <port>|udp <host> <port> [local]|udps <port>|ble [nus|sps|custom <uuid> [rx tx]]|uart <port> [baud]|cell|off|status>", "Two-way bridge of the IMU stream (TCP server/client, UDP, BLE NUS/SPS, PC UART)", 0, cmdBridge },
 };
 
 void ucxapp_register_imu_cmds(void)

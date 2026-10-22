@@ -66,6 +66,28 @@ static int cmdSockConnect(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+static int cmdSockTls(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t handle;
+    int32_t result;
+
+    if ((argc != 3 && argc != 5) || !parseHandle(argv[1], &handle)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (argc == 5) {
+        result = uCxSocketSetTLS5(app->ucx, handle, U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3, argv[2], argv[3], argv[4]);
+    } else {
+        result = uCxSocketSetTLS3(app->ucx, handle, U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3, argv[2]);
+    }
+    if (result != 0) {
+        ucxapp_print("ERROR: TLS setup failed (%d%s)\n", (int)result, ucxapp_errname(result));
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("socket %d uses TLS with ca %s%s%s\n", (int)handle, argv[2], argc == 5 ? ", client " : "",
+                 argc == 5 ? argv[3] : "");
+    return UCXAPP_OK;
+}
+
 /* Joins argv[first..] with spaces and converts \r, \n and \\ to the real characters; false if too long. */
 static bool buildPayload(int argc, char *argv[], int first, char *text, size_t size, size_t *outLen)
 {
@@ -357,6 +379,7 @@ static int cmdSockList(ucxapp_t *app, int argc, char *argv[])
 static const ucxapp_cmd_t gSockCmds[] = {
     { "sock.open",    "<tcp|udp>",                "Create a socket, prints its handle",   UCXAPP_CMD_NEEDS_DEVICE, cmdSockOpen },
     { "sock.connect", "[handle] <host> <port>",   "Connect a socket",                     UCXAPP_CMD_NEEDS_DEVICE, cmdSockConnect },
+    { "sock.tls",     "[handle] <ca> [client key]", "Use TLS on a TCP socket before connect (certificates from cert.upload)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockTls },
     { "sock.send",    "[handle] <text>",          "Send text on a connected socket",      UCXAPP_CMD_NEEDS_DEVICE, cmdSockSend },
     { "sock.read",    "[handle] [max] [wait_s]",  "Wait for data (default 5 s) and read", UCXAPP_CMD_NEEDS_DEVICE, cmdSockRead },
     { "sock.bind",    "[handle] <port>",          "Bind a socket to a local port (UDP receive)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockBind },

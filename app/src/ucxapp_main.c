@@ -114,6 +114,7 @@ static void printUsage(const char *prog)
     ucxapp_print("  without a port, --exec/--shell use the first NORA EVK found\n");
     ucxapp_print("  with no --exec/--shell the text UI starts (command shell if not on a terminal); 'help' lists the commands\n");
     ucxapp_print("  --tui forces the three-pane text UI (commands, log, events), --shell the plain command shell\n");
+    ucxapp_print("  --offline skips the module auto-detection (commands that need no device)\n");
 }
 
 static bool isPort(const char *name)
@@ -154,6 +155,7 @@ int main(int argc, char *argv[])
     int execCount = 0;
     bool shellMode = false;
     bool tuiMode = false;
+    bool offline = false;
     const char *pos[MAX_POS];
     int posCount = 0;
 
@@ -167,6 +169,8 @@ int main(int argc, char *argv[])
             shellMode = true;
         } else if (strcmp(argv[i], "--tui") == 0) {
             tuiMode = true;
+        } else if (strcmp(argv[i], "--offline") == 0) {
+            offline = true;
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
 #ifdef APP_VERSION_STRING
             ucxapp_print("%s\n", ucxapp_version_text());
@@ -218,6 +222,7 @@ int main(int argc, char *argv[])
     ucxapp_register_mqtt_cmds();
     ucxapp_register_bt_cmds();
     ucxapp_register_cert_cmds();
+    ucxapp_register_tls_cmds();
     ucxapp_register_fw_cmds();
     ucxapp_register_gatt_cmds();
     ucxapp_register_qr_cmds();
@@ -232,7 +237,7 @@ int main(int argc, char *argv[])
     ucxapp_t app = { NULL };
     int rc = 0;
     char detected[8][32];
-    if (port == NULL && ucxapp_find_modules(detected, 8) > 0) {
+    if (port == NULL && !offline && ucxapp_find_modules(detected, 8) > 0) {
         port = detected[0];
         ucxapp_print("auto-detected module on %s\n", port);
     }

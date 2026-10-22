@@ -164,6 +164,13 @@ int32_t uWebServerAddRoute(uWebServer_t *server, uHttpMethod_t method, const cha
 int32_t uWebServerStart(uWebServer_t *server);
 
 /**
+ * Serve HTTPS: every accepted client runs TLS with this server configuration.
+ * Call before uWebServerStart(); the web server takes ownership and frees it.
+ */
+struct ucxapp_tls_server;
+void uWebServerSetTls(uWebServer_t *server, struct ucxapp_tls_server *tls);
+
+/**
  * Process pending HTTP requests
  * 
  * NOTE: In event-driven architecture, this function is OPTIONAL.

@@ -21,6 +21,7 @@ ucxapp device.info
 - Add `--tui` for a three-pane text UI (see [Text UI](#text-ui)).
 
 - Without a port argument, `--exec` and `--shell` use the saved port from the ini file.
+- `--offline` skips the module auto-detection, for commands that need no device (`tls.*`, `help`).
 - If the module cannot be connected, commands that need it fail with `not connected`; `help` still works.
 - Arguments are whitespace separated; use double quotes for values with spaces
   (`wifi.connect "My Network" "my password"`). `\"` and `\\` escape inside quotes.
@@ -194,6 +195,7 @@ ucxapp COM13 --exec "wifi.profile.auto" --exec "net.dns example.com" --exec "net
 |---|---|---|
 | `sock.open` | `<tcp\|udp>` | Create a socket and print its handle |
 | `sock.connect` | `[handle] <host> <port>` | Connect; waits up to 10 s |
+| `sock.tls` | `[handle] <ca> [client key]` | Use TLS 1.2/1.3 on a TCP socket before `sock.connect`; names are certificates from `cert.upload` (e.g. `tls-ca.crt` from another app to reach its `bridge tls`) |
 | `sock.send` | `[handle] <text...>` | Send text (arguments are joined with single spaces, max 511 bytes; `\r`, `\n` and `\\` are converted) |
 | `sock.read` | `[handle] [max] [wait_s]` | Wait for data (default 5 s) and print up to `max` bytes (default and maximum 512) |
 | `sock.bind` | `[handle] <port>` | Bind a socket to a local port (UDP receive) |
@@ -274,6 +276,34 @@ NORA-W36 has no GNSS; for a position from a receiver on the PC use `gnss.open` a
 ucxapp COM13 --exec "cert.upload ca root-ca.pem" --exec "cert.upload client device.pem" --exec "cert.upload key device-key.pem" --exec "cert.list"
 ```
 
+#### App TLS (HTTPS and TLS bridges)
+
+The module's TLS only covers outgoing connections, so the app terminates TLS itself (mbedTLS) for
+`web.start https` and `*.bridge tls`. The `tls.*` commands keep a small local CA and certificates in the
+app store as `tls-<name>.crt` / `tls-<name>.key` (PEM, ECDSA P-256, SHA-256). No device is needed.
+
+| Command | Arguments | Description |
+|---|---|---|
+| `tls.ca.create` | `[cn] [force]` | Create the local CA (`tls-ca.*`, valid 20 years). `force` replaces it; certificates it issued stop working |
+| `tls.server.create` | `<name> <host\|ip> [...]` | Server certificate signed by the CA for up to 8 host names / IPv4 addresses (the first is the common name), valid 10 years |
+| `tls.client.create` | `<name>` | Client certificate for `clientauth` bridges |
+| `tls.list` | | Certificates with subject, issuer and validity |
+| `tls.pem` | `<name> [key]` | Print a certificate, or its key, in PEM (copy `tls.pem ca` to clients) |
+| `tls.remove` | `<name>` | Remove a certificate and its key |
+
+```powershell
+ucxapp COM13 --shell
+> tls.ca.create
+> tls.server.create server 192.168.1.42 nora.local
+> web.start https                 # https://192.168.1.42/?t=<token>
+> tls.client.create laptop
+> gnss.bridge tls 2947 server clientauth
+```
+
+Install `tls-ca.crt` as a trusted root in the browser or OS to avoid the certificate warning.
+Validity starts at the app's build date, so no clock is needed. A test client:
+`openssl s_client -connect 192.168.1.42:2947 -CAfile tls-ca.crt -cert tls-laptop.crt -key tls-laptop.key`.
+
 ### GNSS and IMU sensors (PC only, no module needed except for bridges)
 
 A sensor on a PC serial port is read by a background thread. `gnss.*` handles u-blox receivers (NMEA and UBX); `imu.*` handles WitMotion serial IMUs (WT61, WT901 and similar, including the 20-byte BLE packet) and Bosch BNO055 over UART. Bosch BMI160/BMI270/BMI323 and BNO08x have no PC serial interface (I2C or SPI only) and are not supported.
@@ -291,7 +321,7 @@ A bridge forwards the raw byte stream through the connected module: `tcp` listen
 | `gnss.send` | `<hex..\|$NMEA\|ubx cls id [hex]>` | Send raw bytes, an NMEA sentence (checksum added) or a UBX frame |
 | `gnss.restart` | `<hot\|warm\|cold>` | Restart the receiver (UBX-CFG-RST) |
 | `gnss.rate` | `<hz>` | Navigation rate 1 to 25 Hz (UBX-CFG-RATE) |
-| `gnss.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off\|status>` | Two-way bridge of the receiver stream. `tcp` serves (default 2947), `tcpc` connects and reconnects, `udp` sends and listens on `local`, `udps` listens and answers the last sender, `ble` is Nordic UART (`nus`), u-blox SPS or your own service (`custom`, below), `uart` a second PC port, `cell` the data link opened by `cell.connect`. Data from the far side goes to the receiver |
+| `gnss.bridge` | `<tcp [port]\|tls [port] [cert] [clientauth]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off\|status>` | Two-way bridge of the receiver stream. `tcp` serves (default 2947), `tls` serves the same over TLS with certificate `tls-<cert>` (default `server`; `clientauth` requires a client certificate from the local CA), `tcpc` connects and reconnects, `udp` sends and listens on `local`, `udps` listens and answers the last sender, `ble` is Nordic UART (`nus`), u-blox SPS or your own service (`custom`, below), `uart` a second PC port, `cell` the data link opened by `cell.connect`. Data from the far side goes to the receiver |
 | `imu.detect` | `[port]` | Find a WitMotion or Bosch BNO055 IMU |
 | `imu.open` | `[port] [baud] [wit\|bno055]` | Open an IMU; detects port, baud and type when omitted |
 | `imu.close` | | Close the IMU |
@@ -405,7 +435,7 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 | `app.uptime` | | Time since the app started (`days hh:mm:ss`) |
 | `app.sbom` | | Software bill of materials: components, versions, licences and sources |
 | `app.license` | `[name]` | Licence of each component; with a name (e.g. `qrcodegen`), the full notice |
-| `web.start` | `[port] [token]` | Serve a web UI from the module's TCP listener (needs Wi-Fi; default port 80); prints `http://<ip>:<port>/?t=<token>` |
+| `web.start` | `[port] [token] [https [cert]]` | Serve a web UI from the module's TCP listener (needs Wi-Fi; default port 80); prints `http://<ip>:<port>/?t=<token>`. `https` serves over TLS (default port 443, certificate `tls-server`, see App TLS) |
 | `web.stop` |  | Stop the web server |
 | `web.status` |  | Show whether the web server is running, its port and SSE client count |
 

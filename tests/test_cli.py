@@ -453,3 +453,217 @@ def test_cell_open_on_missing_port_fails_cleanly(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "COM255", "cell.open COM254")
     assert out.returncode == 1
     assert "no AT response" in out.stdout
+
+
+def _run_in(app_exe, cwd, *commands):
+    args = [str(app_exe), "--offline"]
+    for command in commands:
+        args += ["--exec", command]
+    return subprocess.run(args, capture_output=True, text=True, timeout=120, errors="replace", cwd=cwd)
+
+
+def _handshake(ca, cert, key, hostname, client_cert=None):
+    """TLS handshake over a socket pair with Python's ssl: proves the generated files form a valid chain."""
+    errors = _try_handshake(ca, cert, key, hostname, client_cert)
+    assert not errors, errors
+
+
+def _try_handshake(ca, cert, key, hostname, client_cert=None, require_client=None):
+    """Echo over TLS; returns the exceptions the client and the server saw (empty when it works)."""
+    import ssl
+    import sys
+
+    truststore = None
+    if ssl.SSLContext.__module__.endswith("truststore._api"):   # injected truststore checks peers even on servers
+        truststore = sys.modules[ssl.SSLContext.__module__]
+        truststore.extract_from_ssl()
+    try:
+        return _handshake_once(ssl, ca, cert, key, hostname, client_cert, require_client)
+    finally:
+        if truststore is not None:
+            truststore.inject_into_ssl()
+
+
+def _handshake_once(ssl, ca, cert, key, hostname, client_cert, require_client):
+    import socket
+    import threading
+
+    context = ssl.SSLContext
+    server_ctx = context(ssl.PROTOCOL_TLS_SERVER)
+    server_ctx.load_cert_chain(cert, key)
+    if require_client or (require_client is None and client_cert):
+        server_ctx.verify_mode = ssl.CERT_REQUIRED
+        server_ctx.load_verify_locations(require_client or ca)
+    client_ctx = context(ssl.PROTOCOL_TLS_CLIENT)
+    client_ctx.verify_flags |= ssl.VERIFY_X509_STRICT
+    client_ctx.load_verify_locations(ca)
+    if client_cert:
+        client_ctx.load_cert_chain(*client_cert)
+    a, b = socket.socketpair()
+    a.settimeout(10)
+    b.settimeout(10)
+    errors = []
+
+    def serve():
+        try:
+            with server_ctx.wrap_socket(a, server_side=True) as s:
+                s.sendall(s.recv(5))
+        except Exception as e:   # noqa: BLE001
+            errors.append(e)
+            a.close()
+
+    t = threading.Thread(target=serve)
+    t.start()
+    try:
+        with client_ctx.wrap_socket(b, server_hostname=hostname) as c:
+            c.sendall(b"hello")
+            if c.recv(5) != b"hello":
+                errors.append(AssertionError("echo mismatch"))
+    except Exception as e:   # noqa: BLE001
+        errors.append(e)
+        b.close()
+    t.join(10)
+    return errors
+
+
+def test_tls_certificates_form_a_valid_chain(app_exe, tmp_path):
+    out = _run_in(app_exe, tmp_path, "tls.ca.create", "tls.server.create server localhost 127.0.0.1",
+                  "tls.client.create alice", "tls.list")
+    assert out.returncode == 0, out.stdout
+    for name in ("ca", "server", "alice"):
+        assert (tmp_path / f"tls-{name}.crt").read_text().startswith("-----BEGIN CERTIFICATE-----")
+        assert "PRIVATE KEY-----" in (tmp_path / f"tls-{name}.key").read_text()
+    assert re.search(r"^server\s+CN=localhost, O=u-blox ucxapp \| issuer CN=ucxapp-local-ca", out.stdout, re.M)
+    assert "| SAN" in out.stdout
+
+    _handshake(tmp_path / "tls-ca.crt", tmp_path / "tls-server.crt", tmp_path / "tls-server.key", "localhost")
+    _handshake(tmp_path / "tls-ca.crt", tmp_path / "tls-server.crt", tmp_path / "tls-server.key", "localhost",
+               client_cert=(tmp_path / "tls-alice.crt", tmp_path / "tls-alice.key"))
+
+
+def test_tls_commands_protect_the_ca_and_reject_bad_names(app_exe, tmp_path):
+    out = _run_in(app_exe, tmp_path, "tls.server.create web 10.0.0.1")
+    assert out.returncode == 1
+    assert "run tls.ca.create first" in out.stdout
+
+    assert _run_in(app_exe, tmp_path, "tls.ca.create").returncode == 0
+    before = (tmp_path / "tls-ca.crt").read_text()
+    out = _run_in(app_exe, tmp_path, "tls.ca.create")
+    assert out.returncode == 1
+    assert "already exists" in out.stdout
+    assert (tmp_path / "tls-ca.crt").read_text() == before
+
+    for bad in ("tls.server.create ../x host", "tls.server.create ca host", "tls.server.create web a,b",
+                "tls.client.create bob extra"):
+        assert _run_in(app_exe, tmp_path, bad).returncode == 1, bad
+
+    out = _run_in(app_exe, tmp_path, "tls.pem ca", "tls.remove ca", "tls.pem ca")
+    assert "-----BEGIN CERTIFICATE-----" in out.stdout
+    assert "tls-ca.crt not found" in out.stdout
+
+
+def test_https_needs_a_device(app_exe, tmp_path):
+    out = _run_in(app_exe, tmp_path, "web.start https")
+    assert out.returncode == 1
+    assert "not connected" in out.stdout
+    out = _run_in(app_exe, tmp_path, "help gnss.bridge")
+    assert "tls [port] [cert] [clientauth]" in out.stdout
+
+
+@pytest.fixture
+def tls_dir(app_exe, tmp_path):
+    """A store with the local CA, a server certificate for gnss.local + 192.168.1.42 and a client 'rover'."""
+    out = _run_in(app_exe, tmp_path, "tls.ca.create", "tls.server.create server gnss.local 192.168.1.42",
+                  "tls.client.create rover")
+    assert out.returncode == 0, out.stdout
+    return tmp_path
+
+
+def _files(d, name):
+    return d / f"tls-{name}.crt", d / f"tls-{name}.key"
+
+
+def test_tls_server_certificate_is_valid_for_its_names_only(tls_dir):
+    import ssl
+
+    ca = tls_dir / "tls-ca.crt"
+    for host in ("gnss.local", "192.168.1.42"):
+        assert not _try_handshake(ca, *_files(tls_dir, "server"), host), host
+    for host in ("other.local", "192.168.1.43"):
+        errors = _try_handshake(ca, *_files(tls_dir, "server"), host)
+        assert any(isinstance(e, ssl.SSLCertVerificationError) for e in errors), (host, errors)
+
+
+def test_tls_certificate_contents(tls_dir):
+    import ssl
+
+    decode = ssl._ssl._test_decode_cert   # noqa: SLF001 - stdlib X.509 decoder, avoids a cryptography dependency
+    ca, server, rover = (decode(str(tls_dir / f"tls-{n}.crt")) for n in ("ca", "server", "rover"))
+    assert ca["subject"] == ca["issuer"]
+    assert server["issuer"] == ca["subject"] == rover["issuer"]
+    assert set(server["subjectAltName"]) == {("DNS", "gnss.local"), ("IP Address", "192.168.1.42")}
+    assert ("commonName", "gnss.local") in [rdn[0] for rdn in server["subject"]]
+    assert ("commonName", "rover") in [rdn[0] for rdn in rover["subject"]]
+    year = lambda c, k: int(c[k].split()[3])   # noqa: E731
+    assert year(ca, "notAfter") - year(ca, "notBefore") == 20
+    assert year(server, "notAfter") - year(server, "notBefore") == 10
+    assert server["serialNumber"] != rover["serialNumber"]
+
+
+def test_tls_client_auth_accepts_only_certificates_from_the_ca(app_exe, tls_dir, tmp_path_factory):
+    ca = tls_dir / "tls-ca.crt"
+    server = _files(tls_dir, "server")
+    assert not _try_handshake(ca, *server, "gnss.local", client_cert=_files(tls_dir, "rover"))
+    assert _try_handshake(ca, *server, "gnss.local", require_client=ca)   # no client certificate
+
+    other = tmp_path_factory.mktemp("other")
+    assert _run_in(app_exe, other, "tls.ca.create", "tls.client.create mallory").returncode == 0
+    assert _try_handshake(ca, *server, "gnss.local", client_cert=_files(other, "mallory"), require_client=ca)
+
+
+def test_tls_ca_force_invalidates_old_certificates(app_exe, tls_dir):
+    old = (tls_dir / "tls-ca.crt").read_text()
+    out = _run_in(app_exe, tls_dir, "tls.ca.create my-ca force", "tls.list")
+    assert out.returncode == 0, out.stdout
+    assert (tls_dir / "tls-ca.crt").read_text() != old
+    assert re.search(r"^ca\s+CN=my-ca", out.stdout, re.M)
+    assert _try_handshake(tls_dir / "tls-ca.crt", *_files(tls_dir, "server"), "gnss.local")
+    assert _run_in(app_exe, tls_dir, "tls.server.create server gnss.local").returncode == 0
+    assert not _try_handshake(tls_dir / "tls-ca.crt", *_files(tls_dir, "server"), "gnss.local")
+
+
+def test_tls_pem_prints_the_key_only_when_asked(app_exe, tls_dir):
+    out = _run_in(app_exe, tls_dir, "tls.pem rover")
+    assert "BEGIN CERTIFICATE" in out.stdout and "PRIVATE KEY" not in out.stdout
+    out = _run_in(app_exe, tls_dir, "tls.pem rover key")
+    assert "PRIVATE KEY" in out.stdout and "BEGIN CERTIFICATE" not in out.stdout
+    assert _run_in(app_exe, tls_dir, "tls.pem rover cert").returncode == 1
+
+
+def test_tls_remove_and_list(app_exe, tls_dir):
+    out = _run_in(app_exe, tls_dir, "tls.remove rover", "tls.list")
+    assert out.returncode == 0, out.stdout
+    assert not (tls_dir / "tls-rover.crt").exists() and not (tls_dir / "tls-rover.key").exists()
+    assert "rover" not in out.stdout.split("removed rover", 1)[1]
+    assert _run_in(app_exe, tls_dir, "tls.remove rover").returncode == 1
+
+
+def test_tls_list_on_an_empty_store(app_exe, tmp_path):
+    out = _run_in(app_exe, tmp_path, "tls.list")
+    assert out.returncode == 0
+    assert "no certificates, start with tls.ca.create" in out.stdout
+
+
+@pytest.mark.parametrize("command, expected", [
+    ("gnss.bridge tls", "no receiver open"),
+    ("gnss.bridge tls 2947 server clientauth", "no receiver open"),
+    ("imu.bridge tls 5000", "no IMU open"),
+    ("cell.bridge tls", "no cellular module open"),
+    ("sock.tls ca", "not connected"),
+    ("sock.tls 0 ca client key", "not connected"),
+    ("web.start 8443 tok https server", "not connected"),
+])
+def test_tls_bridges_and_sockets_need_their_device(app_exe, tmp_path, command, expected):
+    out = _run_in(app_exe, tmp_path, command)
+    assert out.returncode == 1
+    assert expected in out.stdout
