@@ -113,7 +113,7 @@ static int generateKey(mbedtls_pk_context *pk)
 }
 
 /* Validity starts at the build date: no target needs a real-time clock. */
-static void validity(char notBefore[15], char notAfter[15], int years)
+static void validity(char notBefore[32], char notAfter[32], int years)
 {
     static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
     const char *date = __DATE__; /* "Mmm dd yyyy" */
@@ -125,8 +125,8 @@ static void validity(char notBefore[15], char notAfter[15], int years)
     }
     int day = atoi(date + 4);
     int year = atoi(date + 7);
-    snprintf(notBefore, 15, "%04d%02d%02d000000", year, month, day);
-    snprintf(notAfter, 15, "%04d%02d%02d000000", year + years, month, day);
+    snprintf(notBefore, 32, "%04d%02d%02d000000", year, month, day);
+    snprintf(notAfter, 32, "%04d%02d%02d000000", year + years, month, day);
 }
 
 static bool loadPair(const char *name, mbedtls_x509_crt *crt, mbedtls_pk_context *key, char *err, size_t errLen)
@@ -179,7 +179,7 @@ static bool issue(const char *name, const char *subject, const char *issuerName,
     mbedtls_x509_san_list san[MAX_SANS];
     uint8_t ips[MAX_SANS][4];
     unsigned char serial[16];
-    char notBefore[15], notAfter[15], file[96];
+    char notBefore[32], notAfter[32], file[96];
     unsigned char *pem = calloc(1, PEM_MAX);
     bool ok = false;
     int rc;
