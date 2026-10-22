@@ -468,6 +468,11 @@ def _run_in(app_exe, cwd, *commands):
                           stdin=subprocess.DEVNULL)
 
 
+def _store(cwd):
+    """The app keeps certificates in storage/ under its working directory."""
+    return cwd / "storage"
+
+
 def _handshake(ca, cert, key, hostname, client_cert=None):
     """TLS handshake over a socket pair with Python's ssl: proves the generated files form a valid chain."""
     errors = _try_handshake(ca, cert, key, hostname, client_cert)
@@ -536,15 +541,16 @@ def test_tls_certificates_form_a_valid_chain(app_exe, tmp_path):
     out = _run_in(app_exe, tmp_path, "tls.ca.create", "tls.server.create server localhost 127.0.0.1",
                   "tls.client.create alice", "tls.list")
     assert out.returncode == 0, out.stdout
+    store = _store(tmp_path)
     for name in ("ca", "server", "alice"):
-        assert (tmp_path / f"tls-{name}.crt").read_text().startswith("-----BEGIN CERTIFICATE-----")
-        assert "PRIVATE KEY-----" in (tmp_path / f"tls-{name}.key").read_text()
+        assert (store / f"tls-{name}.crt").read_text().startswith("-----BEGIN CERTIFICATE-----")
+        assert "PRIVATE KEY-----" in (store / f"tls-{name}.key").read_text()
     assert re.search(r"^server\s+CN=localhost, O=u-blox ucxapp \| issuer CN=ucxapp-local-ca", out.stdout, re.M)
     assert "| SAN" in out.stdout
 
-    _handshake(tmp_path / "tls-ca.crt", tmp_path / "tls-server.crt", tmp_path / "tls-server.key", "localhost")
-    _handshake(tmp_path / "tls-ca.crt", tmp_path / "tls-server.crt", tmp_path / "tls-server.key", "localhost",
-               client_cert=(tmp_path / "tls-alice.crt", tmp_path / "tls-alice.key"))
+    _handshake(store / "tls-ca.crt", store / "tls-server.crt", store / "tls-server.key", "localhost")
+    _handshake(store / "tls-ca.crt", store / "tls-server.crt", store / "tls-server.key", "localhost",
+               client_cert=(store / "tls-alice.crt", store / "tls-alice.key"))
 
 
 def test_tls_commands_protect_the_ca_and_reject_bad_names(app_exe, tmp_path):
@@ -553,11 +559,11 @@ def test_tls_commands_protect_the_ca_and_reject_bad_names(app_exe, tmp_path):
     assert "run tls.ca.create first" in out.stdout
 
     assert _run_in(app_exe, tmp_path, "tls.ca.create").returncode == 0
-    before = (tmp_path / "tls-ca.crt").read_text()
+    before = (_store(tmp_path) / "tls-ca.crt").read_text()
     out = _run_in(app_exe, tmp_path, "tls.ca.create")
     assert out.returncode == 1
     assert "already exists" in out.stdout
-    assert (tmp_path / "tls-ca.crt").read_text() == before
+    assert (_store(tmp_path) / "tls-ca.crt").read_text() == before
 
     for bad in ("tls.server.create ../x host", "tls.server.create ca host", "tls.server.create web a,b",
                 "tls.client.create bob extra"):
@@ -586,13 +592,13 @@ def tls_dir(app_exe, tmp_path):
 
 
 def _files(d, name):
-    return d / f"tls-{name}.crt", d / f"tls-{name}.key"
+    return _store(d) / f"tls-{name}.crt", _store(d) / f"tls-{name}.key"
 
 
 def test_tls_server_certificate_is_valid_for_its_names_only(tls_dir):
     import ssl
 
-    ca = tls_dir / "tls-ca.crt"
+    ca = _store(tls_dir) / "tls-ca.crt"
     for host in ("gnss.local", "192.168.1.42"):
         assert not _try_handshake(ca, *_files(tls_dir, "server"), host), host
     for host in ("other.local", "192.168.1.43"):
@@ -604,7 +610,7 @@ def test_tls_certificate_contents(tls_dir):
     import ssl
 
     decode = ssl._ssl._test_decode_cert   # noqa: SLF001 - stdlib X.509 decoder, avoids a cryptography dependency
-    ca, server, rover = (decode(str(tls_dir / f"tls-{n}.crt")) for n in ("ca", "server", "rover"))
+    ca, server, rover = (decode(str(_store(tls_dir) / f"tls-{n}.crt")) for n in ("ca", "server", "rover"))
     assert ca["subject"] == ca["issuer"]
     assert server["issuer"] == ca["subject"] == rover["issuer"]
     assert set(server["subjectAltName"]) == {("DNS", "gnss.local"), ("IP Address", "192.168.1.42")}
@@ -617,7 +623,7 @@ def test_tls_certificate_contents(tls_dir):
 
 
 def test_tls_client_auth_accepts_only_certificates_from_the_ca(app_exe, tls_dir, tmp_path_factory):
-    ca = tls_dir / "tls-ca.crt"
+    ca = _store(tls_dir) / "tls-ca.crt"
     server = _files(tls_dir, "server")
     assert not _try_handshake(ca, *server, "gnss.local", client_cert=_files(tls_dir, "rover"))
     assert _try_handshake(ca, *server, "gnss.local", require_client=ca)   # no client certificate
@@ -628,14 +634,14 @@ def test_tls_client_auth_accepts_only_certificates_from_the_ca(app_exe, tls_dir,
 
 
 def test_tls_ca_force_invalidates_old_certificates(app_exe, tls_dir):
-    old = (tls_dir / "tls-ca.crt").read_text()
+    old = (_store(tls_dir) / "tls-ca.crt").read_text()
     out = _run_in(app_exe, tls_dir, "tls.ca.create my-ca force", "tls.list")
     assert out.returncode == 0, out.stdout
-    assert (tls_dir / "tls-ca.crt").read_text() != old
+    assert (_store(tls_dir) / "tls-ca.crt").read_text() != old
     assert re.search(r"^ca\s+CN=my-ca", out.stdout, re.M)
-    assert _try_handshake(tls_dir / "tls-ca.crt", *_files(tls_dir, "server"), "gnss.local")
+    assert _try_handshake(_store(tls_dir) / "tls-ca.crt", *_files(tls_dir, "server"), "gnss.local")
     assert _run_in(app_exe, tls_dir, "tls.server.create server gnss.local").returncode == 0
-    assert not _try_handshake(tls_dir / "tls-ca.crt", *_files(tls_dir, "server"), "gnss.local")
+    assert not _try_handshake(_store(tls_dir) / "tls-ca.crt", *_files(tls_dir, "server"), "gnss.local")
 
 
 def test_tls_pem_prints_the_key_only_when_asked(app_exe, tls_dir):
@@ -649,7 +655,7 @@ def test_tls_pem_prints_the_key_only_when_asked(app_exe, tls_dir):
 def test_tls_remove_and_list(app_exe, tls_dir):
     out = _run_in(app_exe, tls_dir, "tls.remove rover", "tls.list")
     assert out.returncode == 0, out.stdout
-    assert not (tls_dir / "tls-rover.crt").exists() and not (tls_dir / "tls-rover.key").exists()
+    assert not (_store(tls_dir) / "tls-rover.crt").exists() and not (_store(tls_dir) / "tls-rover.key").exists()
     assert "rover" not in out.stdout.split("removed rover", 1)[1]
     assert _run_in(app_exe, tls_dir, "tls.remove rover").returncode == 1
 
