@@ -22,6 +22,7 @@
 #include "u_port.h"
 #include "ucxapp_stats.h"
 #include "ucxapp_tls.h"
+#include <ctype.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -143,6 +144,22 @@ static bool parse_request(const char *raw, uHttpRequest_t *request)
     memcpy(request->path, url, plen);
     request->path[plen] = '\0';
     
+    // Header lines between the request line and the blank line; lines that don't fit are dropped
+    const char *line = strstr(raw, "\r\n");
+    size_t hlen = 0;
+    while (line && line[2] != '\r' && line[2] != '\0') {
+        line += 2;
+        const char *eol = strstr(line, "\r\n");
+        size_t n = eol ? (size_t)(eol - line) : strlen(line);
+        if (hlen + n + 2 <= sizeof(request->headers)) {
+            memcpy(request->headers + hlen, line, n);
+            hlen += n;
+            request->headers[hlen++] = '\n';
+        }
+        line = eol;
+    }
+    request->headers[hlen] = '\0';
+
     // Find body (after "\r\n\r\n")
     const char *body_start = strstr(raw, "\r\n\r\n");
     if (body_start) {
@@ -848,6 +865,40 @@ int32_t uWebServerGetQueryParam(const uHttpRequest_t *request, const char *param
     value[len] = '\0';
     
     return 0;
+}
+
+int32_t uWebServerGetHeader(const uHttpRequest_t *request, const char *name, char *value, size_t max_len)
+{
+    if (!request || !name || !value || max_len == 0) {
+        return -1;
+    }
+    size_t nlen = strlen(name);
+    for (const char *p = request->headers; *p; ) {
+        const char *eol = strchr(p, '\n');
+        size_t llen = eol ? (size_t)(eol - p) : strlen(p);
+        bool match = llen > nlen && p[nlen] == ':';
+        for (size_t i = 0; match && i < nlen; i++) {
+            match = tolower((unsigned char)p[i]) == tolower((unsigned char)name[i]);
+        }
+        if (match) {
+            const char *v = p + nlen + 1;
+            while (*v == ' ' || *v == '\t') {
+                v++;
+            }
+            size_t len = llen - (size_t)(v - p);
+            if (len >= max_len) {
+                len = max_len - 1;
+            }
+            memcpy(value, v, len);
+            value[len] = '\0';
+            return 0;
+        }
+        if (!eol) {
+            break;
+        }
+        p = eol + 1;
+    }
+    return -2;
 }
 
 /* ========================================

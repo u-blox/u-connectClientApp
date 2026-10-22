@@ -94,7 +94,7 @@ typedef struct {
     uHttpMethod_t method;                          /**< HTTP method */
     char path[256];                                /**< Request path (e.g., "/api/status") */
     char query[256];                               /**< Query string (e.g., "id=123") */
-    char headers[512];                             /**< Raw headers (newline-separated) */
+    char headers[1024];                            /**< Raw headers (newline-separated) */
     const char *body;                              /**< Request body (POST/PUT data) */
     int32_t body_length;                           /**< Body length in bytes */
 } uHttpRequest_t;
@@ -244,6 +244,9 @@ void uWebServerSendError(uHttpResponse_t *response, int32_t status_code, const c
  * @return         0 on success, negative if not found
  */
 int32_t uWebServerGetQueryParam(const uHttpRequest_t *request, const char *param, char *value, size_t max_len);
+
+/** Case-insensitive header lookup; same return values as uWebServerGetQueryParam. */
+int32_t uWebServerGetHeader(const uHttpRequest_t *request, const char *name, char *value, size_t max_len);
 
 /* ========================================
  * Server-Sent Events (SSE) API

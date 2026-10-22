@@ -182,7 +182,7 @@ Passwords given on the command line are visible in the process list and shell hi
 | Command | Arguments | Description |
 |---|---|---|
 | `net.ping` | `<host> [count]` | ICMP ping, count 1-10 (default 4); fails if no reply |
-| `net.iperf` | `<server\|client\|stop> [args...]` | iperf throughput test run by the module: `server [tcp\|udp] [port]` keeps running until `stop`; `client <ip> [tcp\|udp] [seconds] [port]` runs for the given time (default 10 s, port 5001). Needs a Wi-Fi connection |
+| `net.iperf` | `<server\|client\|stop> [args...]` | iperf throughput test run by the module: `server [tcp\|udp] [port]` keeps running until `stop`; `client <ip> [tcp\|udp] [seconds] [port]` runs for the given time (default 10 s, port 5001). Needs a Wi-Fi connection. PC side: iperf 2 (`iperf -c <module-ip>` / `iperf -s`) |
 | `net.dns` | `<host>` | Resolve a host name |
 
 ```powershell
@@ -454,6 +454,7 @@ network up/down, MQTT, Bluetooth, GATT, SPS, HTTP and ping results), and a comma
 (up/down arrows) and quick buttons. Commands run one at a time; the `web.*` commands are not allowed
 from the page. Open the printed URL, including the `#t=` token. The token sits in the URL fragment, so it is not
 sent with the page request; the page removes it from the address bar and keeps it for the tab only.
+API calls send it in an `X-Token` header (or `?t=`); the `/events` stream uses `?t=`, as EventSource cannot set headers.
 
 #### Text UI
 

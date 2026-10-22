@@ -79,7 +79,7 @@ static const char kPage[] =
     "<button id=\"run\">Run</button></footer><div id=\"keys\"></div><script>"
     "const $=i=>document.getElementById(i),out=$('out'),ev=$('ev'),st=$('st'),cmd=$('cmd'),"
     "T=new URLSearchParams(location.hash.slice(1)).get('t')||new URLSearchParams(location.search).get('t')"
-    "||sessionStorage.getItem('t')||'',H=[];let hi=0;sessionStorage.setItem('t',T);"
+    "||sessionStorage.getItem('t')||'',K={'X-Token':T},H=[];let hi=0;sessionStorage.setItem('t',T);"
     "history.replaceState(null,'',location.pathname);"
     "const stick=el=>el.scrollTop+el.clientHeight>=el.scrollHeight-20;"
     "function add(t){const s=stick(out);out.textContent+=t.replace(/\\x1b\\[[0-9;]*m/g,'');"
@@ -96,9 +96,9 @@ static const char kPage[] =
     "es.addEventListener('done',e=>{$('busy').textContent='';add('[exit '+e.data+']\\n')});"
     "async function run(c,a,raw){c=c.trim();if(!c)return;const sh=c+(a?' '+a.join(' '):'');"
     "if(H[H.length-1]!==sh)H.push(sh);hi=H.length;add('> '+sh+'\\n');"
-    "try{let u='/api/exec?t='+T+'&cmd='+encodeURIComponent(c);"
+    "try{let u='/api/exec?cmd='+encodeURIComponent(c);"
     "if(a){while(a.length&&!a[a.length-1])a.pop();a.forEach((v,i)=>u+='&a'+i+'='+encodeURIComponent(v));if(raw)u+='&r=1'}"
-    "const r=await fetch(u,{method:'POST'});"
+    "const r=await fetch(u,{method:'POST',headers:K});"
     "if(r.status==409)add('busy: a command is still running\\n');"
     "else if(!r.ok)add('error '+r.status+'\\n');else $('busy').textContent='running '+c}"
     "catch(x){add('send failed\\n')}}"
@@ -119,10 +119,10 @@ static const char kPage[] =
     "ins.push(e);d.appendChild(e)});"
     "const g=document.createElement('button');g.textContent='Run';g.title=c.h;"
     "g.onclick=()=>run(c.n,ins.map(e=>e.value.trim()),raw);d.appendChild(g);return d}"
-    "fetch('/api/groups?t='+T).then(r=>r.json()).then(gs=>{"
+    "fetch('/api/groups',{headers:K}).then(r=>r.json()).then(gs=>{"
     "gs.forEach(g=>{const d=document.createElement('details'),s=document.createElement('summary');let l=0;"
     "s.textContent=g;d.appendChild(s);d.ontoggle=()=>{if(d.open&&!l){l=1;"
-    "fetch('/api/commands?t='+T+'&g='+g).then(r=>r.json()).then(cs=>cs.forEach(c=>d.appendChild(mk(c))))}};"
+    "fetch('/api/commands?g='+g,{headers:K}).then(r=>r.json()).then(cs=>cs.forEach(c=>d.appendChild(mk(c))))}};"
     "$('side').appendChild(d)})});"
     "const kh=$('keys');kh.textContent='/ command   Up/Down select   Enter open or run   Left/Right fold   PgUp/PgDn log   End bottom   Ctrl-L clear   Esc back';"
     "function nav(){return Array.from(document.querySelectorAll('#side summary, #side .c button')).filter(e=>e.offsetParent!==null)}"
@@ -371,8 +371,20 @@ static void pumpLoop(void *arg)
 static bool tokenOk(const uHttpRequest_t *req)
 {
     char t[TOKEN_LEN + 8];
+    unsigned diff = 0;
 
-    return uWebServerGetQueryParam(req, "t", t, sizeof(t)) == 0 && strcmp(t, gToken) == 0;
+    /* EventSource can't set headers, so /events still uses ?t= */
+    if (uWebServerGetHeader(req, "X-Token", t, sizeof(t)) != 0 &&
+        uWebServerGetQueryParam(req, "t", t, sizeof(t)) != 0) {
+        return false;
+    }
+    if (strlen(t) != TOKEN_LEN) {
+        return false;
+    }
+    for (size_t i = 0; i < TOKEN_LEN; i++) {
+        diff |= (unsigned char)t[i] ^ (unsigned char)gToken[i];
+    }
+    return diff == 0;
 }
 
 static int hexVal(char c)
