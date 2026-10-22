@@ -58,27 +58,29 @@ cmake -S app -B build/windows
 cmake --build build/windows --config Release
 ```
 
-### STM32 (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI, NUCLEO-F401RE, NUCLEO-F446RE, STM32F4DISCOVERY, Blue Pill)
+### STM32 (NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI, NUCLEO-F401RE, NUCLEO-F446RE, STM32F4DISCOVERY, NUCLEO-F103RB, NUCLEO-G071RB)
 
 ```powershell
 # Build, flash over the ST-Link and open the console on its virtual COM port (default board: H753)
 .\ucxapp --stm32 --build --flash --log
 
-# Select another board: h753 (default), f767, f439, f407, f401, f446, bluepill, or all (parallel build, logs in build/all_*.log)
+# Select another board: h753 (default), f767, f439, f407, f401, f446, f103, g071, or all (parallel build, logs in build/all_*.log)
 .\ucxapp --stm32 --board f767 --build --flash --log
 
 # Other options: --rebuild, --clean, --erase, --recover, --log COMx, --help
 ```
 
 The module is wired to USART1 (H753) or USART6 (F767, F439); the shell runs on the ST-Link VCP. On the STM32F4DISCOVERY (f407) the module is on
-USART3 (PB10 TX, PB11 RX) and the shell on USART2 (PA2 TX, PA3 RX) through a USB-UART adapter. On the NUCLEO-F401RE and NUCLEO-F446RE (f401, f446)
+USART3 (PB10 TX, PB11 RX) and the shell on USART2 (PA2 TX, PA3 RX) through a USB-UART adapter. On the NUCLEO-F401RE, NUCLEO-F446RE, NUCLEO-F103RB and NUCLEO-G071RB (f401, f446, f103, g071)
 the module is on USART1 (D8 = PA9 TX, D2 = PA10 RX) and the shell on the ST-Link VCP. `bridge [baud]` turns the board into a
 transparent console-to-module bridge (for AT debugging or XMODEM firmware update); press Ctrl-] with 1 s of silence around it to return to the shell.
 
-The Blue Pill (STM32F103C8, `bluepill`) gets a lite build with Wi-Fi, sockets, MQTT, Bluetooth and GATT but no net or cert commands, smaller scan/discovery tables and no Bluetooth company, appearance or characteristic names. It needs 128 KB of usable flash; the
-module is on USART2 (PA2 TX, PA3 RX) and the shell on USART1 (PA9 TX, PA10 RX) through a USB-UART adapter.
+Every STM32 build prints its flash and RAM usage and updates the table in [docs/STM32_MEMORY.md](docs/STM32_MEMORY.md); commit it with the change that moved the numbers.
 
-The build needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH`, `STM32CUBEF4_PATH` or `STM32CUBEF1_PATH`, or the u-connectClient submodule).
+The NUCLEO-F103RB (`f103`) and NUCLEO-G071RB (`g071`), both 128 KB flash, get a lite build with Wi-Fi, sockets, MQTT, Bluetooth and GATT but no net or cert commands, smaller scan/discovery tables and no Bluetooth company, appearance or characteristic names.
+Only official ST NUCLEO and Discovery boards are supported.
+
+The build needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH`, `STM32CUBEF4_PATH` or `STM32CUBEF1_PATH` or `STM32CUBEG0_PATH`, or the u-connectClient submodule).
 Release builds of all five boards are published with each tag.
 
 ## File structure

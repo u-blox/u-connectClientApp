@@ -1,6 +1,6 @@
 ## What's in this release
 
-u-connectXpressApp is the command shell for u-connectXpress modules (NORA-W36, NORA-B26). It runs on Windows and Linux, and as firmware on the NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI, NUCLEO-F401RE, NUCLEO-F446RE, STM32F4DISCOVERY and Blue Pill (lite) boards.
+u-connectXpressApp is the command shell for u-connectXpress modules (NORA-W36, NORA-B26). It runs on Windows and Linux, and as firmware on the NUCLEO-H753ZI, NUCLEO-F767ZI, NUCLEO-F439ZI, NUCLEO-F401RE, NUCLEO-F446RE, STM32F4DISCOVERY, NUCLEO-F103RB and NUCLEO-G071RB (lite) boards.
 
 - One launcher, `ucxapp.py`, for Windows, Linux (also WSL) and STM32
 - Hardware detection with `--detect`, including NORA modules, GNSS receiver and IMU
@@ -23,7 +23,8 @@ There is one archive per target. Each unpacks to a folder of the same name that 
 | `ucxapp-stm32-f407_disc.zip` | Same (STM32F4DISCOVERY) |
 | `ucxapp-stm32-nucleo_f401re.zip` | Same (NUCLEO-F401RE) |
 | `ucxapp-stm32-nucleo_f446re.zip` | Same (NUCLEO-F446RE) |
-| `ucxapp-stm32-bluepill_f103c8.zip` | Same (Blue Pill, lite build, needs 128 KB flash) |
+| `ucxapp-stm32-nucleo_f103rb.zip` | Same (NUCLEO-F103RB, lite build) |
+| `ucxapp-stm32-nucleo_g071rb.zip` | Same (NUCLEO-G071RB, lite build) |
 
 ## Connecting a NORA-W36 to a NUCLEO board
 

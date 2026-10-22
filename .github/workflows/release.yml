@@ -70,8 +70,11 @@ jobs:
           - board: nucleo_f446re
             repo: STM32CubeF4
             ref: master
-          - board: bluepill_f103c8
+          - board: nucleo_f103rb
             repo: STM32CubeF1
+            ref: master
+          - board: nucleo_g071rb
+            repo: STM32CubeG0
             ref: master
     steps:
       - uses: actions/checkout@v4
@@ -79,6 +82,7 @@ jobs:
         run: |
           git submodule update --init u-connectClient
           git submodule update --init --recursive third-party/mbedtls
+          git submodule update --init third-party/littlefs
       - name: Install toolchain
         run: |
           sudo apt-get update

@@ -6,14 +6,29 @@
 
 #include "ucxapp_platform.h"
 
+#ifdef _WIN32
+#include <direct.h>
+#define MKDIR(p) _mkdir(p)
+#elif defined(__unix__) || defined(__APPLE__)
+#include <sys/stat.h>
+#define MKDIR(p) mkdir(p, 0777)
+#else
+#define MKDIR(p) ((void)(p), 0)   /* bare-metal: no directories */
+#endif
+
 #define NAME_MAX_LEN 256
 #define TMP_SUFFIX   ".part"
 
 static char gDir[NAME_MAX_LEN];
 
+static bool isAbsolute(const char *name)
+{
+    return name[0] == '/' || name[0] == '\\' || (name[0] != '\0' && name[1] == ':');
+}
+
 static bool fullPath(const char *name, char *out, size_t outSize)
 {
-    int n = snprintf(out, outSize, "%s%s", gDir, name);
+    int n = snprintf(out, outSize, "%s%s", isAbsolute(name) ? "" : gDir, name);
     return n > 0 && (size_t)n < outSize;
 }
 
@@ -23,7 +38,12 @@ static void *stdioOpen(const char *name, bool forWrite)
     if (!fullPath(name, path, sizeof(path))) {
         return NULL;
     }
-    return fopen(path, forWrite ? "wb" : "rb");
+    FILE *f = fopen(path, forWrite ? "wb" : "rb");
+    /* Files given by the user (firmware images, certificates) may still live in the working directory. */
+    if (f == NULL && !forWrite && gDir[0] != '\0' && !isAbsolute(name)) {
+        f = fopen(name, "rb");
+    }
+    return f;
 }
 
 static int32_t stdioRead(void *h, uint8_t *buf, size_t len)
@@ -84,6 +104,9 @@ void ucxapp_store_set_backend(const ucxapp_store_ops_t *ops)
 void ucxapp_store_set_dir(const char *dir)
 {
     snprintf(gDir, sizeof(gDir), "%s", dir != NULL ? dir : "");
+    if (gDir[0] != '\0') {
+        (void)MKDIR(gDir);
+    }
 }
 
 int ucxapp_store_list(ucxapp_store_list_cb_t cb, void *ctx)

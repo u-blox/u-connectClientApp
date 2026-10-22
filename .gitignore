@@ -30,6 +30,7 @@ __pycache__/
 .vscode/
 
 # User settings and saved profiles (contain credentials)
+storage/
 ucxapp.ini
 u-connectClientApp.ini
 ucxapp.wifi

@@ -23,6 +23,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -38,9 +39,11 @@ BOARDS = {
     "f407": ("f407_disc", "STM32F4DISCOVERY", "F4", "STM32CubeF4", "stm32f4"),
     "f401": ("nucleo_f401re", "NUCLEO-F401RE", "F4", "STM32CubeF4", "stm32f4"),
     "f446": ("nucleo_f446re", "NUCLEO-F446RE", "F4", "STM32CubeF4", "stm32f4"),
-    # Lite build (Wi-Fi + BT/GATT, no net/cert); ST-Link V2 clones report no board name.
-    "bluepill": ("bluepill_f103c8", "BLUEPILL", "F1", "STM32CubeF1", "stm32f1"),
+    # Lite builds (Wi-Fi + BT/GATT, no net/cert) for 128 KB flash.
+    "f103": ("nucleo_f103rb", "NUCLEO-F103RB", "F1", "STM32CubeF1", "stm32f1"),
+    "g071": ("nucleo_g071rb", "NUCLEO-G071RB", "G0", "STM32CubeG0", "stm32g0"),
 }
+MEMORY_DOC = ROOT / "docs" / "STM32_MEMORY.md"
 
 UBLOX_VID = 0x1546
 FTDI_VID = 0x0403
@@ -89,7 +92,8 @@ def parse(argv):
     g = p.add_argument_group("target (default: this OS)")
     g.add_argument("--linux", action="store_true", help="Linux build; on Windows run it inside WSL")
     g.add_argument("--stm32", action="store_true", help="STM32 Nucleo firmware")
-    g.add_argument("--board", default="h753", choices=[*BOARDS, "all"], help="STM32 board (default h753)")
+    g.add_argument("--board", default="h753", choices=[*BOARDS, "all"],
+                   help="STM32 board (default h753)")
     g = p.add_argument_group("build")
     g.add_argument("--build", action="store_true", help="build, then stop (add --run to start the app)")
     g.add_argument("--clean", action="store_true", help="remove build output")
@@ -218,12 +222,12 @@ def run_app(exe, app_args):
     print("Starting", exe.relative_to(ROOT), *app_args)
     if not IS_WINDOWS:
         wsl_serial_hint()
-        os.chdir(exe.parent)
+        os.chdir(ROOT)
         os.execv(str(exe), [str(exe), *app_args])
     # The app handles Ctrl-C itself; the launcher must not die and kill it.
     old = signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
-        return subprocess.call([str(exe), *app_args], cwd=exe.parent)
+        return subprocess.call([str(exe), *app_args], cwd=ROOT)
     finally:
         signal.signal(signal.SIGINT, old)
 
@@ -297,7 +301,7 @@ def list_ports(exe):
 
 def app_output(exe, *app_args, timeout):
     try:
-        r = subprocess.run([str(exe), *app_args], cwd=exe.parent, stdin=subprocess.DEVNULL, capture_output=True,
+        r = subprocess.run([str(exe), *app_args], cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True,
                            text=True, encoding="utf-8", errors="replace", timeout=timeout)
         return r.stdout + r.stderr
     except subprocess.TimeoutExpired:
@@ -435,6 +439,73 @@ def stm32_build(board, family, hal_dir, portdir, bd):
     check(["cmake", "--build", bd], "STM32 build")
 
 
+def stm32_usage(board):
+    """(flash used, flash size, RAM used, RAM size) in bytes from the .map regions and the ELF sections."""
+    elf = ROOT / "build" / "bin" / f"ucxapp_{board}.elf"
+    mapfile = elf.with_suffix(".map")
+    if not elf.exists() or not mapfile.exists() or shutil.which("arm-none-eabi-size") is None:
+        return None
+    regions = []
+    in_cfg = False
+    for line in mapfile.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("Memory Configuration"):
+            in_cfg = True
+        elif in_cfg and line.startswith("Linker script and memory map"):
+            break
+        elif in_cfg:
+            m = re.match(r"(\S+)\s+0x([0-9a-fA-F]+)\s+0x([0-9a-fA-F]+)", line)
+            if m and m.group(1) != "*default*":
+                regions.append((int(m.group(2), 16), int(m.group(3), 16)))
+    out = subprocess.run(["arm-none-eabi-size", "-A", "-d", str(elf)], capture_output=True, text=True).stdout
+    sections = {}
+    for line in out.splitlines():
+        m = re.match(r"(\.\S+)\s+(\d+)\s+(\d+)", line)
+        if m and int(m.group(2)):
+            sections[m.group(1)] = (int(m.group(2)), int(m.group(3)))
+
+    def region(addr):
+        return next((r for r in regions if r[0] <= addr < r[0] + r[1]), None)
+
+    flash_r = region(sections.get(".isr_vector", (0, 0x08000000))[1]) or region(0x08000000)
+    ram_r = region(sections[".bss"][1]) if ".bss" in sections else None
+    if flash_r is None or ram_r is None:
+        return None
+    flash = sum(s for s, a in sections.values() if region(a) == flash_r) + sections.get(".data", (0, 0))[0]
+    ram = sum(s for s, a in sections.values() if region(a) == ram_r)
+    return flash, flash_r[1], ram, ram_r[1]
+
+
+def usage_row(key, usage):
+    board, name = BOARDS[key][:2]
+    flash, flash_size, ram, ram_size = usage
+    return (f"| `{key}` | {name} | {flash // 1024} KB | {flash_size // 1024} KB | {100 * flash / flash_size:.0f}% "
+            f"| {ram // 1024} KB | {ram_size // 1024} KB | {100 * ram / ram_size:.0f}% |")
+
+
+def record_usage(results, quiet=False):
+    """Print the usage and keep the per-board table in docs/STM32_MEMORY.md up to date."""
+    rows = {}
+    if MEMORY_DOC.exists():
+        for line in MEMORY_DOC.read_text(encoding="utf-8").splitlines():
+            m = re.match(r"\| `(\w+)` \|", line)
+            if m and m.group(1) in BOARDS:
+                rows[m.group(1)] = line
+    for key, usage in results.items():
+        row = usage_row(key, usage)
+        if not quiet:
+            print("Memory:", row)
+        rows[key] = row
+    table = "\n".join(rows[k] for k in BOARDS if k in rows)
+    MEMORY_DOC.parent.mkdir(exist_ok=True)
+    MEMORY_DOC.write_text(
+        "# STM32 flash and RAM usage\n\n"
+        "Updated by `ucxapp --stm32 --build` (Release builds). RAM includes the static FreeRTOS heap\n"
+        "(`configTOTAL_HEAP_SIZE`, set per board in `app/stm32/CMakeLists.txt`), so free RAM is the headroom left\n"
+        "after that heap. Flash is code, read-only data and the initial values of `.data`.\n\n"
+        "| Board | Name | Flash used | Flash size | Flash % | RAM used | RAM size | RAM % |\n"
+        "|---|---|---|---|---|---|---|---|\n" + table + "\n", encoding="utf-8")
+
+
 def stm32_log(port):
     if IS_WINDOWS:
         cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
@@ -447,6 +518,25 @@ def stm32_log(port):
     return subprocess.call([sys.executable, "-m", "serial.tools.miniterm", port, "115200"])
 
 
+ALL_PROBLEM = re.compile(r"warning:|error:|undefined reference|overflowed|FAILED:|CMake Error|^ERROR:")
+
+
+def all_problem_line(line):
+    """Compiler/linker line without directories and code offsets, so repeats collapse into one."""
+    line = re.sub(r"^.*?ld(\.exe)?: ", "", line.strip())
+    line = re.sub(r"(?:[A-Za-z]:)?[^\s:]*[/\\]", "", line)
+    return re.sub(r":\d+:\(\.text[^)]*\)", "", line)
+
+
+def all_progress(path):
+    """(done, total, problem lines) from a child build log."""
+    text = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+    steps = re.findall(r"^\[(\d+)/(\d+)\]", text, re.M)
+    done, total = (int(steps[-1][0]), int(steps[-1][1])) if steps else (0, 0)
+    problems = list(dict.fromkeys(all_problem_line(ln) for ln in text.splitlines() if ALL_PROBLEM.search(ln)))
+    return done, total, problems
+
+
 def stm32_all(args):
     if args.erase or args.recover or args.log is not None:
         fail("--board all supports only --clean, --build, --rebuild and --flash")
@@ -456,16 +546,60 @@ def stm32_all(args):
         fail("--board all needs --build, --clean, --rebuild or --flash")
     (ROOT / "build").mkdir(exist_ok=True)
     procs = {}
+    start = time.monotonic()
     for b in BOARDS:
         log = open(ROOT / "build" / f"all_{b}.log", "w", encoding="utf-8")
         procs[b] = (subprocess.Popen([sys.executable, __file__, "--stm32", "--board", b, *flags], cwd=ROOT,
-                                     stdout=log, stderr=subprocess.STDOUT), log)
+                                     stdout=log, stderr=subprocess.STDOUT,
+                                     env={**os.environ, "UCXAPP_ALL_CHILD": "1"}), log)
+    tty = sys.stdout.isatty()
+    ended = {}
+    while len(ended) < len(procs):
+        cells = []
+        for b, (proc, log) in procs.items():
+            if b not in ended and proc.poll() is not None:
+                log.close()
+                ended[b] = (proc.returncode, time.monotonic() - start)
+                if not tty:
+                    print(f"[{b}] {'done' if proc.returncode == 0 else 'FAILED'} after {ended[b][1]:.0f} s",
+                          flush=True)
+            done, total, _ = all_progress(ROOT / "build" / f"all_{b}.log")
+            state = ("ok" if ended[b][0] == 0 else "FAIL") if b in ended else (f"{done}/{total}" if total else "...")
+            cells.append(f"{b} {state}")
+        if tty:
+            print(f"\r{time.monotonic() - start:4.0f} s  " + "  ".join(cells) + "   ", end="", flush=True)
+        if len(ended) < len(procs):
+            time.sleep(1)
+    if tty:
+        print()
+
+    usage = {}
+    if args.build or args.rebuild:
+        usage = {b: u for b in BOARDS if (u := stm32_usage(BOARDS[b][0])) is not None}
+    print(f"\n{'board':6} {'result':7} {'time':>6} {'warn':>5} {'flash':>12} {'ram':>12}")
     failed = False
-    for b, (proc, log) in procs.items():
-        rc = proc.wait()
-        log.close()
-        print(f"[{b}] ok" if rc == 0 else f"[{b}] FAILED, see build/all_{b}.log")
+    report = []
+    for b in BOARDS:
+        rc, secs = ended[b]
+        _, _, problems = all_progress(ROOT / "build" / f"all_{b}.log")
+        warns = sum("warning:" in p for p in problems)
+        u = usage.get(b)
+        flash = f"{u[0] // 1024}K {100 * u[0] / u[1]:3.0f}%" if u else "-"
+        ram = f"{u[2] // 1024}K {100 * u[2] / u[3]:3.0f}%" if u else "-"
+        print(f"{b:6} {'ok' if rc == 0 else 'FAILED':7} {secs:5.0f}s {warns:5} {flash:>12} {ram:>12}")
         failed |= rc != 0
+        if problems:
+            report.append((b, problems))
+    for b, problems in report:
+        print(f"\n--- {b} (build/all_{b}.log)")
+        for p in problems[:20]:
+            print("  " + p)
+        if len(problems) > 20:
+            print(f"  ... {len(problems) - 20} more")
+    if usage:
+        record_usage(usage, quiet=True)
+    print(f"\n{'FAILED' if failed else 'All boards OK'}"
+          f"{'' if failed or report else ', zero warnings'} in {time.monotonic() - start:.0f} s")
     return 1 if failed else 0
 
 
@@ -489,6 +623,11 @@ def stm32(args, extra):
     if args.build or args.rebuild:
         stm32_build(board, family, hal_dir, portdir, bd)
         print("Built", image.relative_to(ROOT))
+        usage = stm32_usage(board)
+        if usage is not None and not os.environ.get("UCXAPP_ALL_CHILD"):
+            record_usage({args.board: usage})
+        elif usage is not None:
+            print("Memory:", usage_row(args.board, usage))
     if args.erase or args.recover:
         check([programmer(), "-c", "port=SWD", "mode=UR", "reset=HWrst", "-e", "all"], "erase")
     if args.flash:

@@ -10,6 +10,8 @@
 #include "task.h"
 
 #include "ucxapp_cmd.h"
+#include "ucxapp_flashfs.h"
+#include "ucxapp_sdcard.h"
 #include "ucxapp_store.h"
 #include "u_cx_system.h"
 #include "u_port.h"
@@ -23,7 +25,7 @@
 #ifndef UCXAPP_STACK_WORDS
 #define UCXAPP_STACK_WORDS 6144
 #endif
-/* UCXAPP_LITE (Blue Pill, 20 KB RAM): no net or cert packs and small AT buffers. */
+/* UCXAPP_LITE (NUCLEO-F103RB, 20 KB RAM): no net or cert packs and small AT buffers. */
 #ifndef UCXAPP_RX_BUFFER_SIZE
 #define UCXAPP_RX_BUFFER_SIZE 8192
 #endif
@@ -377,10 +379,69 @@ static int cmdBridge(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+typedef enum { STORE_RAM, STORE_FLASH, STORE_SD } storeKind_t;
+
+static storeKind_t gStoreKind = STORE_RAM;
+
+/* SD card first, then the flash area, then RAM. */
+static void mountStore(void)
+{
+    const ucxapp_store_ops_t *ops;
+    uint32_t size = 0;
+
+    if ((ops = ucxapp_sdcard_mount(&size)) != NULL) {
+        gStoreKind = STORE_SD;
+        ucxapp_print("files: SD card, %u MB\n", (unsigned)size);
+    } else if ((ops = ucxapp_flashfs_mount(&size)) != NULL) {
+        gStoreKind = STORE_FLASH;
+        ucxapp_print("files: %u KB in flash\n", (unsigned)size);
+    } else {
+        ops = &gRamStore;
+        gStoreKind = STORE_RAM;
+        ucxapp_print("files: RAM only (lost at reset)\n");
+    }
+    ucxapp_store_set_backend(ops);
+}
+
+static int cmdFileMount(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    (void)argc;
+    (void)argv;
+    mountStore();
+    return UCXAPP_OK;
+}
+
+static int cmdFileFormat(ucxapp_t *app, int argc, char *argv[])
+{
+    bool ok;
+
+    (void)app;
+    if (argc != 2 || (strcmp(argv[1], "yes") != 0 && strcmp(argv[1], "sd") != 0)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (strcmp(argv[1], "sd") == 0 || gStoreKind == STORE_SD) {
+        ok = ucxapp_sdcard_format();
+        if (ok) {
+            mountStore();
+        }
+    } else {
+        ok = ucxapp_flashfs_format();
+    }
+    if (!ok) {
+        ucxapp_print("format failed (no SD card or flash file area)\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("all files erased\n");
+    return UCXAPP_OK;
+}
+
 static const ucxapp_cmd_t gConnectCmds[] = {
     { "bridge",            "[baud]", "Transparent console<->module bridge, Ctrl-] exits", 0, cmdBridge },
     { "device.connect",    "[uart] [baud]", "Connect to the module (default " U_EXAMPLE_UART ")", 0, cmdDeviceConnect },
     { "device.disconnect", "",       "Disconnect from the module",                         0, cmdDeviceDisconnect },
+    { "file.format",       "yes|sd", "Erase all files (sd: create a FAT volume on the card)", 0, cmdFileFormat },
+    { "file.mount",        "",       "Use the SD card if inserted, else flash or RAM",     0, cmdFileMount },
 };
 
 static void appTask(void *arg)
@@ -390,8 +451,8 @@ static void appTask(void *arg)
 
     (void)arg;
     ucxapp_io_set(&gConsoleIo);
-    ucxapp_store_set_backend(&gRamStore);
     ucxapp_print("\nu-connectXpressApp (STM32), module on %s at %d baud\n", U_EXAMPLE_UART, (int)UCXAPP_MODULE_BAUD);
+    mountStore();
 
     ucxapp_cmd_register(gConnectCmds, sizeof(gConnectCmds) / sizeof(gConnectCmds[0]));
     ucxapp_register_device_cmds();

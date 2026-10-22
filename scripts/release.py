@@ -29,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_THUMBPRINT = "EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E"
 STM32_BOARDS = ("nucleo_h753zi", "nucleo_f767zi", "nucleo_f439zi", "f407_disc", "nucleo_f401re",
-                "nucleo_f446re", "bluepill_f103c8")
+                "nucleo_f446re", "nucleo_f103rb", "nucleo_g071rb")
 EXPECTED_ASSETS = 1 + len(STM32_BOARDS)  # one archive for Linux and one per STM32 board
 IS_WINDOWS = platform.system() == "Windows"
 

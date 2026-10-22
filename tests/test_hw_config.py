@@ -11,7 +11,7 @@ BOARDS = sorted(p for p in (ROOT / "app" / "boards").glob("*.json") if not p.nam
 
 
 def test_three_boards_are_defined():
-    assert {b.stem for b in BOARDS} == {"h753", "f767", "f439", "f407", "f401", "f446", "bluepill"}
+    assert {b.stem for b in BOARDS} == {"h753", "f767", "f439", "f407", "f401", "f446", "f103", "g071"}
 
 
 def test_schema_covers_every_profile_key():

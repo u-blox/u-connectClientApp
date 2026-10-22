@@ -1,15 +1,14 @@
 {
-  "board": "BLUEPILL",
-  "gpio": ["PB0", "PC13", "PA15", "PB3", "PB4", "PB5"],
-  "adc": ["PA4", "PA5", "PA6", "PA7"],
+  "board": "NUCLEO-F103RB",
+  "gpio": ["PB0", "PA5", "PC13", "PA8", "PB10", "PB4", "PB5"],
+  "adc": ["PA0", "PA1", "PA4", "PC1"],
   "pwm": [
     { "pin": "PB6", "timer": "TIM4_CH1" },
     { "pin": "PB7", "timer": "TIM4_CH2" }
   ],
   "i2c": { "scl": "PB8", "sda": "PB9" },
   "spi": { "sck": "PB13", "miso": "PB14", "mosi": "PB15", "cs": "PB12" },
-  "can": { "rx": "PA11", "tx": "PA12" },
-  "reserved": ["PA0", "PA1", "PA2", "PA3", "PA9", "PA10", "PA13", "PA14"],
+  "reserved": ["PA2", "PA3", "PA9", "PA10", "PA11", "PA12", "PA13", "PA14"],
   "emu": {
     "i2c": [
       { "addr": "0x48", "regs": { "0": "0x19" } },

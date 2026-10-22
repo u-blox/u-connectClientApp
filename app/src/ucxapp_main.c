@@ -6,6 +6,7 @@
 
 #include "ucxapp_cmd.h"
 #include "ucxapp_platform.h"
+#include "ucxapp_store.h"
 #include "ucxapp_tui.h"
 #ifdef APP_VERSION_MAJOR
 #include "version.h"
@@ -161,6 +162,7 @@ int main(int argc, char *argv[])
 
     ucxapp_platform_init();
     ucxapp_io_set(&ucxapp_io_stdio);
+    ucxapp_store_set_dir("storage/");
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--exec") == 0 && i + 1 < argc && execCount < MAX_EXEC) {

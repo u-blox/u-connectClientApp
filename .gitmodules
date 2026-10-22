@@ -8,3 +8,6 @@
 [submodule "third-party/mbedtls"]
 	path = third-party/mbedtls
 	url = https://github.com/Mbed-TLS/mbedtls.git
+[submodule "third-party/littlefs"]
+	path = third-party/littlefs
+	url = https://github.com/littlefs-project/littlefs.git

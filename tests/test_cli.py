@@ -120,7 +120,7 @@ def test_wifi_profiles_round_trip(app_exe, tmp_path):
     assert "cafe: ssid=CafeNet open" in out.stdout
     assert "2 profile(s)" in out.stdout
     assert "s3cret!" not in out.stdout
-    assert "s3cret!" not in (tmp_path / "ucxapp.wifi").read_text()
+    assert "s3cret!" not in (tmp_path / "storage" / "ucxapp.wifi").read_text()
 
     out = run("wifi.profile.add home ubx newpass", "wifi.profile.remove cafe", "wifi.profile.list")
     assert "1 profile(s)" in out.stdout
@@ -141,11 +141,12 @@ def test_wifi_profiles_move_from_the_old_file_name(app_exe, tmp_path):
         return subprocess.run(args, capture_output=True, text=True, timeout=60, errors="replace", cwd=tmp_path)
 
     run("wifi.profile.add home ubx s3cret!")
-    (tmp_path / "ucxapp.wifi").rename(tmp_path / "u-connectClientApp.wifi")
+    storage = tmp_path / "storage"
+    (storage / "ucxapp.wifi").rename(storage / "u-connectClientApp.wifi")
     out = run("wifi.profile.list")
     assert "home: ssid=ubx WPA" in out.stdout
-    assert (tmp_path / "ucxapp.wifi").exists()
-    assert not (tmp_path / "u-connectClientApp.wifi").exists()
+    assert (storage / "ucxapp.wifi").exists()
+    assert not (storage / "u-connectClientApp.wifi").exists()
 
 
 def test_app_about_commands(app_exe, tmp_path):
@@ -176,9 +177,11 @@ def test_file_list_and_remove(app_exe, tmp_path):
             args += ["--exec", command]
         return subprocess.run(args, capture_output=True, text=True, timeout=60, errors="replace", cwd=tmp_path)
 
-    (tmp_path / "a.zip").write_bytes(b"x" * 1234)
-    (tmp_path / "b.bin").write_bytes(b"y")
-    (tmp_path / "sub").mkdir()
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    (storage / "a.zip").write_bytes(b"x" * 1234)
+    (storage / "b.bin").write_bytes(b"y")
+    (storage / "sub").mkdir()
     out = run("file.list")
     assert out.returncode == 0, out.stdout
     assert re.search(r"\d+\s+1234\s+a\.zip", out.stdout)
@@ -187,8 +190,8 @@ def test_file_list_and_remove(app_exe, tmp_path):
     number = re.search(r"(\d+)\s+1\s+b\.bin", out.stdout).group(1)
     out = run("file.list", f"file.remove {number}", "file.remove a.zip")
     assert out.returncode == 0, out.stdout
-    assert not (tmp_path / "a.zip").exists()
-    assert not (tmp_path / "b.bin").exists()
+    assert not (storage / "a.zip").exists()
+    assert not (storage / "b.bin").exists()
 
     for bad in ("file.remove 99", "file.remove ../x", "file.remove missing.bin"):
         assert run(bad).returncode == 1, bad
@@ -356,7 +359,7 @@ def test_hw_exec_speaks_the_bridge_protocol(app_exe, tmp_path):
 BOARDS = Path(__file__).resolve().parents[1] / "app" / "boards"
 
 
-@pytest.mark.parametrize("board", ["h753", "f767", "f439", "f407", "f401", "f446", "bluepill"])
+@pytest.mark.parametrize("board", ["h753", "f767", "f439", "f407", "f401", "f446", "f103", "g071"])
 def test_hw_load_board_profiles(app_exe, tmp_path, board):
     out = _run(app_exe, tmp_path, "COM255", f"hw.load {BOARDS / (board + '.json')}", "hw.board", "hw.gpio.mode PB0 out",
                "hw.gpio.write PB0 1", "hw.gpio.read pb0", "hw.i2c.scan", "hw.adc.read 3", "hw.adc.read 4")

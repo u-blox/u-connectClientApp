@@ -63,14 +63,15 @@ def test_wifi_profile_auto_falls_back_to_scan(app_exe, port_a, tmp_path):
     ssid, password = os.environ.get("UCX_WIFI_SSID"), os.environ.get("UCX_WIFI_PASS", "")
     if not ssid:
         pytest.skip("set UCX_WIFI_SSID (and UCX_WIFI_PASS) to run the Wi-Fi profile test")
-    (tmp_path / "ucxapp.wifilast").write_text("bogus")
+    (tmp_path / "storage").mkdir()
+    (tmp_path / "storage" / "ucxapp.wifilast").write_text("bogus")
     out = subprocess.run(
         _args(app_exe, port_a, "wifi.profile.add bogus no-such-network-xyz pw12345678",
               f"wifi.profile.add real {ssid} {password}", "wifi.profile.auto", "wifi.status"),
         capture_output=True, text=True, timeout=180, errors="replace", cwd=tmp_path)
     assert out.returncode == 0, out.stdout
     assert "Strongest known network: 'real'" in out.stdout, out.stdout
-    assert (tmp_path / "ucxapp.wifilast").read_text() == "real"
+    assert (tmp_path / "storage" / "ucxapp.wifilast").read_text() == "real"
 
 
 @pytest.mark.hardware
@@ -81,7 +82,8 @@ def test_ble_scan_completes(app_exe, port_a):
 
 @pytest.mark.hardware
 def test_ble_profile_auto_falls_back_to_scan(app_exe, port_a, tmp_path):
-    (tmp_path / "ucxapp.blelast").write_text("ghost")
+    (tmp_path / "storage").mkdir()
+    (tmp_path / "storage" / "ucxapp.blelast").write_text("ghost")
     out = subprocess.run(
         _args(app_exe, port_a, "bt.profile.add ghost 11:22:33:44:55:66", "bt.profile.list", "bt.profile.auto"),
         capture_output=True, text=True, timeout=180, errors="replace", cwd=tmp_path)
@@ -107,7 +109,7 @@ def test_wifi_regdomain_set_and_read_back(app_exe, port_a, tmp_path):
                          timeout=60, errors="replace", cwd=tmp_path)
     assert out.returncode == 0, out.stdout
     assert out.stdout.count("regdomain=fcc") == 2, out.stdout
-    assert (tmp_path / "ucxapp.regdomain").read_text() == "fcc"
+    assert (tmp_path / "storage" / "ucxapp.regdomain").read_text() == "fcc"
     restore = subprocess.run(_args(app_exe, port_a, "wifi.regdomain etsi"), capture_output=True, text=True, timeout=60,
                              errors="replace", cwd=tmp_path)
     assert "regdomain=etsi" in restore.stdout, restore.stdout

@@ -34,7 +34,7 @@ typedef struct ucxapp_store_writer ucxapp_store_writer_t;
 /** Install a backend; NULL restores the stdio default. */
 void ucxapp_store_set_backend(const ucxapp_store_ops_t *ops);
 
-/** Directory prepended to every name by the stdio backend (include the trailing separator). Default: current directory. */
+/** Directory prepended to every name by the stdio backend (include the trailing separator); created if missing. Reads fall back to the current directory. */
 void ucxapp_store_set_dir(const char *dir);
 
 /** Stores a whole blob atomically (written to a temporary name, then renamed). */
