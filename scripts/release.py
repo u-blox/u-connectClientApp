@@ -102,10 +102,12 @@ def build_and_sign(thumbprint, tree):
 def wait_for_run(tag, minutes):
     step("Waiting for the CI release build of the tag")
     deadline = time.time() + minutes * 60
+    sha = out("git", "rev-parse", f"{tag}^{{commit}}")[1].strip()
     while time.time() < deadline:
         code, text = out("gh", "run", "list", "--workflow", "release.yml", "--branch", tag,
-                         "--json", "databaseId", "--limit", "1")
-        runs = json.loads(text) if code == 0 and text else []
+                         "--json", "databaseId,headSha", "--limit", "5")
+        # A re-created tag keeps the old runs listed, so match the commit.
+        runs = [r for r in (json.loads(text) if code == 0 and text else []) if r["headSha"] == sha]
         if runs:
             run_id = runs[0]["databaseId"]
             run("gh", "run", "watch", run_id, "--exit-status", "--interval", "30")
@@ -139,10 +141,18 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--publish", action="store_true")
     ap.add_argument("--wait-minutes", type=int, default=30)
+    ap.add_argument("--resume", action="store_true",
+                    help="tag already pushed and dist/<tag> signed: wait for CI, package and create the release")
     args = ap.parse_args()
 
     tag = read_version()
     print(f"Release tag: {tag}")
+    if args.resume:
+        tree = ROOT / "dist" / tag / "ucxapp"
+        exe = tree / "windows" / "ucxapp.exe"
+        if not exe.is_file() or not out("git", "tag", "-l", tag)[1]:
+            fail(f"nothing to resume: need tag {tag} and {exe}")
+        return finish(args, tag, tree, exe)
 
     step("Checking repository")
     if not shutil.which("gh"):
@@ -183,7 +193,11 @@ def main():
     step(f"Tagging and pushing {tag}")
     run("git", "tag", "-a", tag, "-m", f"Release u-connectXpressApp {tag}")
     run("git", "push", "origin", tag)
+    finish(args, tag, tree, exe)
 
+
+def finish(args, tag, tree, exe):
+    dist = tree.parent
     run_id = wait_for_run(tag, args.wait_minutes)
     step("Downloading the Linux and STM32 builds")
     run("gh", "run", "download", run_id, "--name", "release-tree", "--dir", tree)
