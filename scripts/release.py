@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Release u-connectXpressApp: tag vX.Y.Z.YYMMDD, let CI build Linux and STM32,
-sign and upload the Windows exe.
+"""Release u-connectXpressApp: tag vX.Y.Z.YYMMDD, let CI build Linux and STM32, sign the Windows exe
+and publish one archive with the layout windows/, linux/, stm32/stm32_<board>/.
 
 1. Checks the work tree is clean, on master and in sync with origin.
-2. Windows only: builds the Windows Release exe and signs it (the EV certificate is only available locally).
-3. Tags and pushes; .github/workflows/release.yml builds Linux + STM32 and creates a draft release.
-4. Waits for the draft, uploads the signed exe and its SHA-256 (Windows only), optionally publishes.
+2. Builds the Windows Release exe and signs it (the EV certificate is only available locally).
+3. Tags and pushes; .github/workflows/release.yml builds Linux + STM32 into the `release-tree` artifact.
+4. Downloads that tree, adds windows/ucxapp.exe and creates the release with
+   ucxapp-<tag>.zip plus ucxapp.exe and ucxapp (Linux) as direct downloads.
 
 X.Y.Z is U_CX_VERSION_MAJOR/MINOR/PATCH in u_cx_version.h (the same header app/CMakeLists.txt reads), YYMMDD is today.
 
 Examples:
     python scripts/release.py --dry-run     # build and sign only, nothing is tagged or pushed
-    python scripts/release.py --publish     # full release, publish the draft when done
+    python scripts/release.py --publish     # full release, published instead of left as a draft
 """
 import argparse
 import datetime
@@ -24,13 +25,12 @@ import shutil
 import subprocess
 import sys
 import time
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_THUMBPRINT = "EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E"
-STM32_BOARDS = ("nucleo_h753zi", "nucleo_f767zi", "nucleo_f439zi", "f407_disc", "nucleo_f401re",
-                "nucleo_f446re", "nucleo_f103rb", "nucleo_g071rb")
-EXPECTED_ASSETS = 1 + len(STM32_BOARDS)  # one archive for Linux and one per STM32 board
+STM32_BOARDS = ("h753", "f767", "f439", "f407", "f401", "f446", "f103", "g071")
 IS_WINDOWS = platform.system() == "Windows"
 
 
@@ -74,7 +74,7 @@ def find_signtool():
     return found[0]
 
 
-def build_and_sign(thumbprint):
+def build_and_sign(thumbprint, tree):
     signtool = find_signtool()
     step("Building Windows Release")
     run("cmake", "-S", "app", "-B", "build/windows", "-A", "x64")
@@ -84,9 +84,7 @@ def build_and_sign(thumbprint):
         fail(f"{built} not found")
 
     step("Signing")
-    dist = ROOT / "dist"
-    folder = dist / "ucxapp-windows-x64"
-    shutil.rmtree(folder, ignore_errors=True)
+    folder = tree / "windows"
     folder.mkdir(parents=True)
     exe = folder / "ucxapp.exe"
     shutil.copy2(built, exe)
@@ -96,24 +94,37 @@ def build_and_sign(thumbprint):
     digest = hashlib.sha256(exe.read_bytes()).hexdigest()
     Path(f"{exe}.sha256").write_text(f"{digest}  {exe.name}\n", encoding="ascii")
     print(f"SHA-256: {digest}")
-    archive = shutil.make_archive(str(folder), "zip", root_dir=dist, base_dir=folder.name)
-    print(f"Packaged: {archive}")
-    return Path(archive)
+    return exe
 
 
-def wait_for_draft(tag, minutes):
-    step(f"Waiting for CI to create the draft release ({EXPECTED_ASSETS} archives: Linux and the STM32 boards)")
+def wait_for_run(tag, minutes):
+    step("Waiting for the CI release build of the tag")
     deadline = time.time() + minutes * 60
     while time.time() < deadline:
-        time.sleep(20)
-        code, text = out("gh", "release", "view", tag, "--json", "isDraft,assets")
-        if code == 0 and text:
-            rel = json.loads(text)
-            count = len(rel["assets"])
-            print(f"  draft={rel['isDraft']} assets={count}")
-            if count >= EXPECTED_ASSETS:
-                return True
-    return False
+        code, text = out("gh", "run", "list", "--workflow", "release.yml", "--branch", tag,
+                         "--json", "databaseId", "--limit", "1")
+        runs = json.loads(text) if code == 0 and text else []
+        if runs:
+            run_id = runs[0]["databaseId"]
+            run("gh", "run", "watch", run_id, "--exit-status", "--interval", "30")
+            return run_id
+        time.sleep(10)
+    fail(f"no release.yml run for {tag} after {minutes} min; check the Actions tab")
+
+
+def package(tree, archive):
+    """Zip the tree; zipfile keeps the Linux binary executable."""
+    missing = [b for b in STM32_BOARDS if not (tree / "stm32" / f"stm32_{b}").is_dir()]
+    if not (tree / "linux" / "ucxapp").is_file() or missing:
+        fail(f"release tree incomplete (linux/ucxapp or stm32 boards {missing})")
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(tree.rglob("*")):
+            if f.is_file():
+                info = zipfile.ZipInfo.from_file(f, f.relative_to(tree).as_posix())
+                info.external_attr = (0o755 if f.name == "ucxapp" else 0o644) << 16
+                info.compress_type = zipfile.ZIP_DEFLATED
+                z.writestr(info, f.read_bytes())
+    print(f"Packaged: {archive}")
 
 
 def main():
@@ -144,34 +155,35 @@ def main():
         if out("git", "tag", "-l", tag)[1]:
             fail(f"Tag {tag} already exists")
 
-    exe = None
-    if IS_WINDOWS:
-        exe = build_and_sign(args.thumbprint)
-    else:
-        print("Not on Windows: skipping Windows build and signing; the signed exe must be uploaded separately.")
+    if not IS_WINDOWS:
+        fail("run the release on Windows: the Windows exe is signed with the local EV certificate")
+
+    dist = ROOT / "dist" / tag
+    shutil.rmtree(dist, ignore_errors=True)
+    tree = dist / "ucxapp"
+    exe = build_and_sign(args.thumbprint, tree)
 
     if args.dry_run:
-        print(f"\nDry run done{': ' + str(exe) if exe else ''}")
+        print(f"\nDry run done: {exe}")
         return
 
     step(f"Tagging and pushing {tag}")
     run("git", "tag", "-a", tag, "-m", f"Release u-connectXpressApp {tag}")
     run("git", "push", "origin", tag)
 
-    if not wait_for_draft(tag, args.wait_minutes):
-        upload = f' gh release upload {tag} "{exe}"' if exe else ""
-        fail(f"CI did not finish in {args.wait_minutes} min; check the Actions tab, then run:{upload}")
+    run_id = wait_for_run(tag, args.wait_minutes)
+    step("Downloading the Linux and STM32 builds")
+    run("gh", "run", "download", run_id, "--name", "release-tree", "--dir", tree)
+    archive = dist / f"ucxapp-{tag}.zip"
+    package(tree, archive)
 
-    if exe:
-        step("Uploading signed Windows zip")
-        run("gh", "release", "upload", tag, exe, "--clobber")
-
-    if args.publish:
-        step("Publishing")
-        run("gh", "release", "edit", tag, "--draft=false")
-        print(f"Published: {out('gh', 'release', 'view', tag, '--json', 'url', '--jq', '.url')[1]}")
-    else:
-        print(f"\nDraft ready. Review it and publish: gh release edit {tag} --draft=false")
+    step("Creating the release")
+    run("gh", "release", "create", tag, archive, exe, tree / "linux" / "ucxapp",
+        "--title", f"u-connectXpressApp {tag}", "--notes-file", ".github/release-notes.md",
+        "--generate-notes", *([] if args.publish else ["--draft"]))
+    print(f"Release: {out('gh', 'release', 'view', tag, '--json', 'url', '--jq', '.url')[1]}")
+    if not args.publish:
+        print(f"Draft ready. Review it and publish: gh release edit {tag} --draft=false")
 
 
 if __name__ == "__main__":

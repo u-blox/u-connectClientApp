@@ -18,12 +18,7 @@ jobs:
           git submodule update --init u-connectClient
           git submodule update --init --recursive third-party/mbedtls
       - run: cmake -S app -B build/windows -A x64
-      - run: cmake --build build/windows --config Release
-      - run: Copy-Item app/bin/ucxapp.exe ucxapp-windows-x64.exe
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows
-          path: ucxapp-windows-x64.exe
+      - run: cmake --build build/windows --config Release   # build check only; release.py ships the locally signed exe
 
   linux:
     runs-on: ubuntu-latest
@@ -37,14 +32,13 @@ jobs:
       - run: cmake --build build/linux
       - name: Package
         run: |
-          mkdir -p pkg/ucxapp-linux-x64
-          cp app/bin/ucxapp pkg/ucxapp-linux-x64/
-          (cd pkg/ucxapp-linux-x64 && sha256sum ucxapp > ucxapp.sha256)
-          tar -czf ucxapp-linux-x64.tar.gz -C pkg ucxapp-linux-x64
+          mkdir -p pkg/linux
+          cp app/bin/ucxapp pkg/linux/
+          (cd pkg/linux && sha256sum ucxapp > ucxapp.sha256)
       - uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: ucxapp-linux-x64.tar.gz
+          path: pkg
 
   stm32:
     runs-on: ubuntu-latest
@@ -98,30 +92,27 @@ jobs:
           cmake --build build/stm32
       - name: Package
         run: |
-          d=ucxapp-stm32-${{ matrix.board }}
-          mkdir -p pkg/$d
-          cp build/bin/ucxapp_${{ matrix.board }}.{bin,hex,elf} pkg/$d/
-          (cd pkg/$d && sha256sum * > SHA256SUMS)
-          (cd pkg && zip -r ../$d.zip $d)
+          short=$(echo "${{ matrix.board }}" | sed -E 's/^(nucleo_)?([a-z][0-9]+).*/\2/')
+          d=pkg/stm32/stm32_$short
+          mkdir -p $d
+          cp build/bin/ucxapp_${{ matrix.board }}.{bin,hex,elf} $d/
+          (cd $d && sha256sum * > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: stm32-${{ matrix.board }}
-          path: ucxapp-stm32-${{ matrix.board }}.zip
+          path: pkg
 
-  publish:
-    if: startsWith(github.ref, 'refs/tags/v')
+  # One tree for release.py: linux/ and stm32/stm32_<board>/; it adds the signed windows/ and publishes.
+  bundle:
     needs: [windows, linux, stm32]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4   # for body_path
       - uses: actions/download-artifact@v4
         with:
-          path: dist
+          path: tree
           pattern: "{linux,stm32-*}"
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: actions/upload-artifact@v4
         with:
-          files: dist/*
-          draft: true   # signed Windows zip is added by release.py, then the draft is published
-          body_path: .github/release-notes.md
-          generate_release_notes: true
+          name: release-tree
+          path: tree

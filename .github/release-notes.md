@@ -11,20 +11,22 @@ u-connectXpressApp is the command shell for u-connectXpress modules (NORA-W36, N
 
 ## Downloads
 
-There is one archive per target. Each unpacks to a folder of the same name that also holds the SHA-256 checksums.
+`ucxapp-<version>.zip` holds every target, with SHA-256 checksums next to each file:
 
-| Archive | How to use |
-|---|---|
-| `ucxapp-windows-x64.zip` | Signed `ucxapp.exe`; run it and connect to the module's COM port |
-| `ucxapp-linux-x64.tar.gz` | `tar -xzf`, then run `ucxapp` with the serial port, e.g. `/dev/ttyUSB0` |
-| `ucxapp-stm32-nucleo_h753zi.zip` | `.bin/.hex/.elf`; flash with STM32CubeProgrammer at `0x08000000` |
-| `ucxapp-stm32-nucleo_f767zi.zip` | Same |
-| `ucxapp-stm32-nucleo_f439zi.zip` | Same |
-| `ucxapp-stm32-f407_disc.zip` | Same (STM32F4DISCOVERY) |
-| `ucxapp-stm32-nucleo_f401re.zip` | Same (NUCLEO-F401RE) |
-| `ucxapp-stm32-nucleo_f446re.zip` | Same (NUCLEO-F446RE) |
-| `ucxapp-stm32-nucleo_f103rb.zip` | Same (NUCLEO-F103RB, lite build) |
-| `ucxapp-stm32-nucleo_g071rb.zip` | Same (NUCLEO-G071RB, lite build) |
+```
+windows/ucxapp.exe            signed; run it with the module's COM port
+linux/ucxapp                  run it with the serial port, e.g. /dev/ttyUSB0
+stm32/stm32_h753/             .bin/.hex/.elf; flash with STM32CubeProgrammer at 0x08000000
+stm32/stm32_f767/
+stm32/stm32_f439/
+stm32/stm32_f407/             STM32F4DISCOVERY
+stm32/stm32_f401/
+stm32/stm32_f446/
+stm32/stm32_f103/             lite build
+stm32/stm32_g071/             lite build
+```
+
+`ucxapp.exe` (Windows, signed) and `ucxapp` (Linux x64) are also attached on their own.
 
 ## Connecting a NORA-W36 to a NUCLEO board
 
