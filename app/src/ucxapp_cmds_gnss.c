@@ -484,13 +484,12 @@ static bool probe(const char *port, int32_t baud, parser_t *p)
     memset(p, 0, sizeof(*p));
     (void)sendFrame(&kUart, h, 0x0A, 0x04, NULL, 0);
     start = ucxapp_platform_tick_ms();
-    while (ucxapp_platform_tick_ms() - start < 900u) {
-        int32_t n = kUart.read(h, buf, sizeof(buf), 50);
+    while (ucxapp_platform_tick_ms() - start < 500u) {
+        int32_t n = kUart.read(h, buf, sizeof(buf), 20);
         if (n > 0) {
             feed(p, buf, (size_t)n);
         }
-        if ((p->st.sw[0] != '\0' && p->st.nmea > 0) ||
-            (p->st.nmea + p->st.ubx > 0 && ucxapp_platform_tick_ms() - start > 350u)) {
+        if (p->st.sw[0] != '\0' || (p->st.nmea + p->st.ubx > 0 && ucxapp_platform_tick_ms() - start > 250u)) {
             break;
         }
     }

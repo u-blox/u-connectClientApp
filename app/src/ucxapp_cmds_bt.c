@@ -130,7 +130,7 @@ static int scanDevices(ucxapp_t *app)
             e->rssi = dev.rssi;
         }
         if (dev.device_name != NULL && strlen(dev.device_name) > strlen(e->name)) {
-            snprintf(e->name, sizeof(e->name), "%s", dev.device_name);
+            snprintf(e->name, sizeof(e->name), "%.*s", (int)(sizeof(e->name) - 1), dev.device_name);
         }
         if (dev.data.pData != NULL && dev.data.length > 0 &&
             !containsChunk(e->adv, e->advLen, dev.data.pData, dev.data.length < BT_ADV_MAX ? dev.data.length : BT_ADV_MAX)) {

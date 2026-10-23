@@ -11,8 +11,11 @@ Environment (an empty value means "not attached", as set by `ucxapp --detect --t
   UCX_IMU_PORT, UCX_IMU_BAUD     IMU (default: what imu.detect finds)
 """
 
+import concurrent.futures
 import functools
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -57,6 +60,21 @@ def _source(name):
 
     found = (ucxapp.find_gnss if name == "gnss" else ucxapp.find_imu)(_exe())
     return found[:2] if found else None
+
+
+@functools.lru_cache(maxsize=None)
+def _describe(port):
+    """'NORA-W36 (3.5.0) on COM155' from device.info, or just the port if it does not answer."""
+    try:
+        out = subprocess.run([str(_exe()), port, "--exec", "device.info"], capture_output=True, text=True,
+                             timeout=30, errors="replace", stdin=subprocess.DEVNULL).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return port
+    model = re.search(r"Model:\s*(\S+)", out)
+    version = re.search(r"Firmware Version:\s*(\S+)", out)
+    if not model:
+        return port
+    return f"{model.group(1)} ({version.group(1) if version else '?'}) on {port}"
 
 
 def pytest_configure(config):
@@ -111,11 +129,19 @@ def pytest_collection_modifyitems(config, items):
     reporter = config.pluginmanager.get_plugin("terminalreporter")
     if not wanted or reporter is None:
         return
-    modules = ", ".join(p for p in (hw["a"], hw["b"]) if p) or "none"
+    ports = [p for p in (hw["a"], hw["b"]) if p]
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        modules = ", ".join(pool.map(_describe, ports)) or "none"
     gnss = f"{hw['gnss'][0]} at {hw['gnss'][1]} baud" if hw["gnss"] else "none"
     imu = f"{hw['imu'][0]} at {hw['imu'][1]} baud" if hw["imu"] else "none"
     reporter.write_line(f"Found: NORA {modules} | GNSS {gnss} | IMU {imu}", bold=True)
     reporter.write_line(f"Starting {run} hardware test(s) using what was found")
+    sys.path.insert(0, str(ROOT))
+    import ucxapp
+
+    reporter.write_line("Wi-Fi for the tests:")
+    for line in ucxapp.wifi_summary():
+        reporter.write_line(f"  {line}")
     for reason, count in skipped.items():
         reporter.write_line(f"  skipping {count}: {reason}")
 

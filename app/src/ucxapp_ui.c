@@ -278,6 +278,12 @@ static const char *const kOrder[] = {
     "general", "device", "bt", "gatt", "wifi", "net", "sock", "mqtt", "http", "cert", "fw", "gnss", "imu", "cell", "hw", "utils", "file", "web"
 };
 
+/* Groups whose work is done by this PC (crypto, local sockets, files, the web UI, sensors on USB).
+ * Every other group sends AT commands that the NORA module executes. */
+static const char *const kHostGroups[] = {
+    "general", "file", "web", "cert", "tls", "dtls", "coap", "qr", "utils", "gnss", "imu", "hid"
+};
+
 static void groupOf(const char *name, char *out)
 {
     const char *dot = strchr(name, '.');
@@ -360,6 +366,24 @@ static void visitCmd(const ucxapp_cmd_t *cmd, void *user)
     if (strcmp(group, c->group) == 0 && c->count < c->max) {
         c->out[c->count++] = cmd;
     }
+}
+
+const char *ucxapp_ui_runs_on(const char *group)
+{
+    for (size_t i = 0; i < sizeof(kHostGroups) / sizeof(kHostGroups[0]); i++) {
+        if (strcmp(kHostGroups[i], group) == 0) {
+            return "host";
+        }
+    }
+    return "module";
+}
+
+const char *ucxapp_ui_cmd_runs_on(const ucxapp_cmd_t *cmd)
+{
+    char group[UCXAPP_UI_GROUP_LEN];
+
+    groupOf(cmd->name, group);
+    return ucxapp_ui_runs_on(group);
 }
 
 int ucxapp_ui_group_cmds(const char *group, const ucxapp_cmd_t **out, int max)

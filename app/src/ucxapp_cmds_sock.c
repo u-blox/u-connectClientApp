@@ -1,4 +1,5 @@
 #include "ucxapp_cmd.h"
+#include "ucxapp_platform.h"
 #include "ucxapp_stats.h"
 
 #include <string.h>
@@ -376,6 +377,72 @@ static int cmdSockList(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+/* Echo server for latency and throughput tests: everything received is sent straight back. */
+static int cmdSockEcho(ucxapp_t *app, int argc, char *argv[])
+{
+    int32_t port;
+    int32_t seconds = 60;
+    bool udp;
+    int32_t sock = -1;
+    int32_t client = -1;
+    int32_t listenSock;
+    uint8_t buf[SOCK_MAX_READ];
+    size_t total = 0;
+
+    if (argc < 3 || argc > 4 || (strcmp(argv[1], "tcp") != 0 && strcmp(argv[1], "udp") != 0) ||
+        !ucxapp_parse_int(argv[2], &port) || port < 1 || port > 65535 ||
+        (argc == 4 && (!ucxapp_parse_int(argv[3], &seconds) || seconds < 1))) {
+        return UCXAPP_ERR_USAGE;
+    }
+    udp = argv[1][0] == 'u';
+    if (uCxSocketCreate1(app->ucx, udp ? U_SOCKET_PROTOCOL_UDP : U_SOCKET_PROTOCOL_TCP, &sock) != 0) {
+        ucxapp_print("ERROR: failed to create socket\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_sock_clear_incoming();
+    if ((udp ? uCxSocketBind(app->ucx, sock, port) : uCxSocketListen2(app->ucx, sock, port)) != 0) {
+        ucxapp_print("ERROR: cannot open port %d\n", (int)port);
+        uCxSocketClose(app->ucx, sock);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("%s echo on port %d for %d s\n", udp ? "UDP" : "TCP", (int)port, (int)seconds);
+    uint32_t end = ucxapp_platform_tick_ms() + (uint32_t)seconds * 1000u;
+    while ((int32_t)(end - ucxapp_platform_tick_ms()) > 0) {
+        int32_t n;
+        if (udp) {
+            uCxSocketReceiveFrom_t from;
+            n = uCxSocketReceiveFrom(app->ucx, sock, (int32_t)sizeof(buf), buf, &from);
+            if (n > 0 && uCxSocketSendTo(app->ucx, sock, &from.remote_ip, from.remote_port, buf, n) < 0) {
+                break;
+            }
+        } else {
+            if (client < 0) {
+                if (popIncoming(&client, &listenSock)) {
+                    ucxapp_print("client connected\n");
+                }
+                n = 0;
+            } else {
+                n = uCxSocketRead(app->ucx, client, (int32_t)sizeof(buf), buf);
+                if (n > 0 && uCxSocketWrite(app->ucx, client, buf, n) < 0) {
+                    break;
+                }
+            }
+        }
+        if (n > 0) {
+            total += (size_t)n;
+            ucxapp_stats_add(udp ? UCXAPP_STATS_UDP : UCXAPP_STATS_TCP, (size_t)n, (size_t)n);
+        } else {
+            ucxapp_platform_sleep_ms(1);
+        }
+    }
+    if (client >= 0) {
+        uCxSocketClose(app->ucx, client);
+    }
+    uCxSocketClose(app->ucx, sock);
+    ucxapp_print("echoed %u bytes\n", (unsigned)total);
+    return UCXAPP_OK;
+}
+
 static const ucxapp_cmd_t gSockCmds[] = {
     { "sock.open",    "<tcp|udp>",                "Create a socket, prints its handle",   UCXAPP_CMD_NEEDS_DEVICE, cmdSockOpen },
     { "sock.connect", "[handle] <host> <port>",   "Connect a socket",                     UCXAPP_CMD_NEEDS_DEVICE, cmdSockConnect },
@@ -389,6 +456,7 @@ static const ucxapp_cmd_t gSockCmds[] = {
     { "sock.recvfrom", "[handle] [max] [wait_s]", "Receive a UDP datagram and show its sender", UCXAPP_CMD_NEEDS_DEVICE, cmdSockRecvFrom },
     { "sock.close",   "[handle]",                 "Close a socket",                       UCXAPP_CMD_NEEDS_DEVICE, cmdSockClose },
     { "sock.list",    "",                         "List open sockets",                    UCXAPP_CMD_NEEDS_DEVICE, cmdSockList },
+    { "sock.echo",    "<tcp|udp> <port> [seconds]", "Echo server for latency/throughput tests (default 60 s, one TCP client)", UCXAPP_CMD_NEEDS_DEVICE, cmdSockEcho },
 };
 
 void ucxapp_register_sock_cmds(void)

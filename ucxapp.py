@@ -7,7 +7,7 @@ and STM32.
   ucxapp --linux                            Linux build; on Windows it runs inside WSL
   ucxapp --stm32 --board f767 --build --flash --log
   ucxapp --detect                           find NORA modules, GNSS receivers and IMUs
-  ucxapp --detect --test tests/test_hardware.py   hardware tests on what was found
+  ucxapp --detect --test tests/hardware   hardware tests on what was found
 
 Arguments the launcher does not know go to the app (to pytest with --test); everything after "--" too.
 Windows: ucxapp.cmd calls this script. Linux: ./ucxapp.py or python3 ucxapp.py.
@@ -100,6 +100,9 @@ def parse(argv):
     g.add_argument("--rebuild", action="store_true", help="clean, reconfigure and build")
     g.add_argument("--debug", action="store_true", help="Debug configuration (host builds)")
     g.add_argument("--all", action="store_true", help="build Debug and Release (Windows)")
+    g.add_argument("--everything", action="store_true",
+                   help="with --build/--rebuild/--clean: Windows, Linux (WSL) and every STM32 board in parallel, "
+                        "one table of results and warnings, then the offline tests")
     g.add_argument("--run", action="store_true", help="start the app after --build/--clean/--rebuild/--sign")
     g = p.add_argument_group("STM32")
     g.add_argument("--erase", action="store_true", help="erase the whole flash")
@@ -343,7 +346,8 @@ def detect(exe):
         infos = list(pool.map(lambda p: app_output(exe, p, "--exec", "device.info", timeout=30), modules))
     for port, info in zip(modules, infos, strict=True):
         m = re.search(r"\b(NORA-[A-Z0-9]+[\w-]*)", info)
-        print(f"  {port:<14} {m.group(1) if m else '(no answer to device.info)'}")
+        v = re.search(r"Firmware Version:\s*(\S+)", info)
+        print(f"  {port:<14} {m.group(1) + (f' ({v.group(1)})' if v else '') if m else '(no answer to device.info)'}")
     if not modules:
         print("  none")
 
@@ -367,7 +371,25 @@ def detect(exe):
         print("Test variables:")
         for k, v in env.items():
             print(f'  $env:{k} = "{v}"' if IS_WINDOWS else f"  export {k}={v}")
+    print("Wi-Fi for the tests:")
+    for line in wifi_summary():
+        print(f"  {line}")
     return env
+
+
+def wifi_summary():
+    """Lines saying which Wi-Fi the hardware tests will join."""
+    profiles = ROOT / "storage" / "ucxapp.wifi"
+    last = ROOT / "storage" / "ucxapp.wifilast"
+    if os.environ.get("UCX_WIFI_SSID"):
+        password = "set" if os.environ.get("UCX_WIFI_PASS") else "not set"
+        return [f"UCX_WIFI_SSID={os.environ['UCX_WIFI_SSID']} (UCX_WIFI_PASS {password})"]
+    if profiles.is_file() and profiles.read_text(errors="replace").strip():
+        names = [line.split("\t")[0] for line in profiles.read_text(errors="replace").splitlines() if "\t" in line]
+        used = last.read_text(errors="replace").strip() if last.is_file() else ""
+        return [f"UCX_WIFI_SSID not set: using saved profiles {', '.join(names)} (wifi.profile.auto"
+                f"{', last used ' + used if used else ''})"]
+    return ["none: set UCX_WIFI_SSID and UCX_WIFI_PASS, or run wifi.connect <ssid> <password> once to save a profile"]
 
 
 def run_tests(pytest_args, found):
@@ -518,7 +540,8 @@ def stm32_log(port):
     return subprocess.call([sys.executable, "-m", "serial.tools.miniterm", port, "115200"])
 
 
-ALL_PROBLEM = re.compile(r"warning:|error:|undefined reference|overflowed|FAILED:|CMake Error|^ERROR:")
+ALL_PROBLEM = re.compile(r"warning( C\d+)?:|error( C\d+| MSB\d+)?:|undefined reference|overflowed|FAILED:"
+                         r"|CMake Error|^ERROR:")
 
 
 def all_problem_line(line):
@@ -544,12 +567,40 @@ def stm32_all(args):
                              ("--flash", args.flash)) if on]
     if not flags:
         fail("--board all needs --build, --clean, --rebuild or --flash")
+    return build_many(args, {b: ["--stm32", "--board", b, *flags] for b in BOARDS})
+
+
+def everything(args):
+    flags = [f for f, on in (("--clean", args.clean), ("--build", args.build), ("--rebuild", args.rebuild)) if on]
+    if not flags:
+        fail("--everything needs --build, --clean or --rebuild")
+    jobs = {"win": flags} if IS_WINDOWS else {}
+    jobs["linux"] = ["--linux", *flags]
+    if IS_WINDOWS and not shutil.which("wsl"):
+        del jobs["linux"]
+        print("WSL not found, skipping the Linux build")
+    stm32_tools()
+    jobs.update({b: ["--stm32", "--board", b, *flags] for b in BOARDS})
+    rc = build_many(args, jobs)
+    if args.clean and not (args.build or args.rebuild):
+        return rc
+    print("\nOffline tests (pytest, no hardware):")
+    out = subprocess.run([sys.executable, "-m", "pytest", "tests", "-q", "--ignore=tests/hardware"],
+                         cwd=ROOT, capture_output=True, text=True, errors="replace")
+    (ROOT / "build" / "all_tests.log").write_text(out.stdout + out.stderr, encoding="utf-8")
+    lines = [ln for ln in out.stdout.splitlines() if ln.startswith(("FAILED", "ERROR"))]
+    print("\n".join(["  " + ln for ln in lines[:20]] + ["  " + (out.stdout.strip().splitlines() or ["no output"])[-1]]))
+    return rc or out.returncode
+
+
+def build_many(args, jobs):
+    """Runs ucxapp.py once per job in parallel, logs to build/all_<name>.log, prints one table."""
     (ROOT / "build").mkdir(exist_ok=True)
     procs = {}
     start = time.monotonic()
-    for b in BOARDS:
+    for b, job in jobs.items():
         log = open(ROOT / "build" / f"all_{b}.log", "w", encoding="utf-8")
-        procs[b] = (subprocess.Popen([sys.executable, __file__, "--stm32", "--board", b, *flags], cwd=ROOT,
+        procs[b] = (subprocess.Popen([sys.executable, __file__, *job], cwd=ROOT,
                                      stdout=log, stderr=subprocess.STDOUT,
                                      env={**os.environ, "UCXAPP_ALL_CHILD": "1"}), log)
     tty = sys.stdout.isatty()
@@ -575,11 +626,11 @@ def stm32_all(args):
 
     usage = {}
     if args.build or args.rebuild:
-        usage = {b: u for b in BOARDS if (u := stm32_usage(BOARDS[b][0])) is not None}
-    print(f"\n{'board':6} {'result':7} {'time':>6} {'warn':>5} {'flash':>12} {'ram':>12}")
+        usage = {b: u for b in jobs if b in BOARDS and (u := stm32_usage(BOARDS[b][0])) is not None}
+    print(f"\n{'target':6} {'result':7} {'time':>6} {'warn':>5} {'flash':>12} {'ram':>12}")
     failed = False
     report = []
-    for b in BOARDS:
+    for b in jobs:
         rc, secs = ended[b]
         _, _, problems = all_progress(ROOT / "build" / f"all_{b}.log")
         warns = sum("warning:" in p for p in problems)
@@ -598,7 +649,7 @@ def stm32_all(args):
             print(f"  ... {len(problems) - 20} more")
     if usage:
         record_usage(usage, quiet=True)
-    print(f"\n{'FAILED' if failed else 'All boards OK'}"
+    print(f"\n{'FAILED' if failed else 'All targets OK'}"
           f"{'' if failed or report else ', zero warnings'} in {time.monotonic() - start:.0f} s")
     return 1 if failed else 0
 
@@ -696,6 +747,8 @@ def main(argv):
         return update()
     if args.selftest:
         return selftest()
+    if args.everything:
+        return everything(args)
     if args.linux and IS_WINDOWS:
         require("wsl", "Install WSL with: wsl --install")
         forward = [a for a in parsed_argv if a != "--linux"]

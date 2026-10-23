@@ -223,7 +223,8 @@ int main(int argc, char *argv[])
             port = pos[k];
         } else {
             size_t used = strlen(posCmd);
-            snprintf(posCmd + used, sizeof(posCmd) - used, "%s%s", used > 0 ? " " : "", pos[k]);
+            const char *q = strchr(pos[k], ' ') != NULL ? "\"" : "";
+            snprintf(posCmd + used, sizeof(posCmd) - used, "%s%s%s%s", used > 0 ? " " : "", q, pos[k], q);
         }
     }
     if (posCmd[0] != '\0' && execCount < MAX_EXEC) {
@@ -241,6 +242,9 @@ int main(int argc, char *argv[])
     ucxapp_register_bt_cmds();
     ucxapp_register_cert_cmds();
     ucxapp_register_tls_cmds();
+    ucxapp_register_dtls_cmds();
+    ucxapp_register_coap_cmds();
+    ucxapp_register_can_cmds();
     ucxapp_register_fw_cmds();
     ucxapp_register_gatt_cmds();
     ucxapp_register_qr_cmds();

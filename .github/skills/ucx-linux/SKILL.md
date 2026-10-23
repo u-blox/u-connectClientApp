@@ -12,7 +12,7 @@ description: Build and run u-connectXpressApp on Linux to test and configure a u
 4. From Windows, `.\ucxapp --linux` runs the same build inside WSL. Attach USB serial devices to WSL with `usbipd` first.
 
 ## Find the hardware
-`./ucxapp.py --detect` lists the ports, NORA modules, GNSS receiver and IMU and prints the `UCX_*` test variables; `--detect --test tests/test_hardware.py` runs the hardware tests on them. Do not write one-off probe scripts; improve `detect()` in `ucxapp.py` or the app detectors instead.
+`./ucxapp.py --detect` lists the ports, NORA modules, GNSS receiver and IMU and prints the `UCX_*` test variables; `--detect --test tests/hardware` runs the hardware tests on them. Do not write one-off probe scripts; improve `detect()` in `ucxapp.py` or the app detectors instead.
 
 ## Use
 - Serial access: add your user to the `dialout` group (`sudo usermod -aG dialout $USER`, then log in again).

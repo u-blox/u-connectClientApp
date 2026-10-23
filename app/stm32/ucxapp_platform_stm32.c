@@ -67,6 +67,13 @@ uint32_t ucxapp_platform_tick_ms(void)
     return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
 }
 
+void ucxapp_platform_sleep_ms(uint32_t ms)
+{
+    TickType_t ticks = pdMS_TO_TICKS(ms);
+
+    vTaskDelay(ticks > 0 ? ticks : 1);
+}
+
 bool ucxapp_platform_key_pressed(void)
 {
     uint8_t c;

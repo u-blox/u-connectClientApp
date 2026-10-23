@@ -77,6 +77,11 @@ endif()
 string(TOLOWER "${STM32_BOARD}" _board)
 set(UCXAPP_STM32_NAME "ucxapp_${_board}")
 add_stm32_example(NAME ${UCXAPP_STM32_NAME} SOURCES ${UCXAPP_STM32_SOURCES})
+# Full boards have the flash for -O2 (the shared default is -Og); lite boards stay at -Os.
+if(NOT UCXAPP_LITE)
+    target_compile_options(${UCXAPP_STM32_NAME}.elf PRIVATE -O2 -ffunction-sections -fdata-sections)
+    target_link_options(${UCXAPP_STM32_NAME}.elf PRIVATE -Wl,--gc-sections)
+endif()
 
 target_include_directories(${UCXAPP_STM32_NAME}.elf PRIVATE ${APP_SRC} ${LITTLEFS_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${FATFS_DIR})
 target_compile_definitions(${UCXAPP_STM32_NAME}.elf PRIVATE LFS_THREADSAFE LFS_NO_DEBUG LFS_NO_WARN LFS_NO_ERROR)

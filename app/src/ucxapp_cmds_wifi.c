@@ -63,14 +63,6 @@ bool ucxapp_wifi_get_status(uCxHandle_t *ucx, char *ssid, size_t ssidSize, char 
     return true;
 }
 
-static bool getModuleIp(uCxHandle_t *ucx, char *out, size_t size)
-{
-    uSockIpAddress_t ip;
-
-    return uCxWifiStationGetNetworkStatus(ucx, U_WIFI_NET_STATUS_ID_IPV4, &ip) == 0 &&
-           uCxIpAddressToString(&ip, out, size) > 0;
-}
-
 static void getNetStatus(uCxHandle_t *ucx, uWifiNetStatusId_t id, char *out, size_t size)
 {
     uSockIpAddress_t ip;
@@ -156,22 +148,20 @@ static int connectTo(ucxapp_t *app, const char *ssid, const char *password, uint
     return UCXAPP_OK;
 }
 
-/* ---- saved profiles: one "name<TAB>ssid<TAB>obfuscated password<TAB>ip prefix" line each ---- */
+/* ---- saved profiles: one "name<TAB>ssid<TAB>obfuscated password" line each (older files add an ignored field) ---- */
 
 #define PROFILES_FILE  "ucxapp.wifi"
 #define MAX_PROFILES   16
 #define NAME_LEN       32
 #define SSID_LEN       33
 #define PASS_LEN       64
-#define PREFIX_LEN     16
 #define OBF_LEN        (PASS_LEN * 2 + 1)
-#define LINE_MAX_LEN   (NAME_LEN + SSID_LEN + OBF_LEN + PREFIX_LEN + 5)
+#define LINE_MAX_LEN   (NAME_LEN + SSID_LEN + OBF_LEN + 4)
 
 typedef struct {
     char name[NAME_LEN];
     char ssid[SSID_LEN];
     char password[PASS_LEN];
-    char prefix[PREFIX_LEN];   /* "192.168.1" of the network the profile was last used on; lets auto recognise it */
 } profile_t;
 
 static bool fieldOk(const char *s, size_t maxLen)
@@ -194,7 +184,6 @@ static int loadProfiles(profile_t *list)
         char *next = end;
         char *tab1;
         char *tab2;
-        char *tab3;
         profile_t *p = &list[count];
 
         while (*next == '\r' || *next == '\n') {
@@ -202,19 +191,14 @@ static int loadProfiles(profile_t *list)
         }
         tab1 = strchr(line, '\t');
         tab2 = tab1 != NULL ? strchr(tab1 + 1, '\t') : NULL;
-        tab3 = tab2 != NULL ? strchr(tab2 + 1, '\t') : NULL;
         if (tab2 != NULL) {
             *tab1 = '\0';
             *tab2 = '\0';
-            if (tab3 != NULL) {
-                *tab3 = '\0';
-            }
-            if (strlen(line) < NAME_LEN && strlen(tab1 + 1) < SSID_LEN && strlen(tab2 + 1) < OBF_LEN &&
-                (tab3 == NULL || strlen(tab3 + 1) < PREFIX_LEN)) {
+            tab2[1 + strcspn(tab2 + 1, "\t")] = '\0';
+            if (strlen(line) < NAME_LEN && strlen(tab1 + 1) < SSID_LEN && strlen(tab2 + 1) < OBF_LEN) {
                 snprintf(p->name, sizeof(p->name), "%s", line);
                 snprintf(p->ssid, sizeof(p->ssid), "%s", tab1 + 1);
                 deobfuscatePassword(tab2 + 1, p->password, sizeof(p->password));
-                snprintf(p->prefix, sizeof(p->prefix), "%s", tab3 != NULL ? tab3 + 1 : "");
                 count++;
             }
         }
@@ -237,7 +221,7 @@ static bool saveProfiles(const profile_t *list, int count)
         size_t used = strlen(text);
 
         obfuscatePassword(list[i].password, obf, sizeof(obf));
-        snprintf(text + used, LINE_MAX_LEN, "%s\t%s\t%s\t%s\n", list[i].name, list[i].ssid, obf, list[i].prefix);
+        snprintf(text + used, LINE_MAX_LEN, "%s\t%s\t%s\n", list[i].name, list[i].ssid, obf);
     }
     ok = ucxapp_store_save(PROFILES_FILE, text, strlen(text));
     free(text);
@@ -304,24 +288,12 @@ static bool loadLastUsed(char *name, size_t size)
     return name[0] != '\0';
 }
 
-/* "192.168.1.54" -> "192.168.1" */
-static bool ipPrefix(const char *ip, char *out, size_t size)
-{
-    const char *dot = strrchr(ip, '.');
-
-    if (dot == NULL || (size_t)(dot - ip) >= size) {
-        return false;
-    }
-    snprintf(out, size, "%.*s", (int)(dot - ip), ip);
-    return true;
-}
-
-/* Connects, remembers the profile as last used and learns which network (IP prefix) it belongs to.
+/* Connects and remembers the profile as last used.
  * reuse: keep an existing link to the same SSID instead of reconnecting. */
-static int connectProfile(ucxapp_t *app, profile_t *list, int count, int idx, uint32_t timeoutS, bool reuse)
+static int connectProfile(ucxapp_t *app, const profile_t *list, int idx, uint32_t timeoutS, bool reuse)
 {
-    profile_t *p = &list[idx];
-    char ip[40], prefix[PREFIX_LEN], current[SSID_LEN];
+    const profile_t *p = &list[idx];
+    char ip[40], current[SSID_LEN];
     int rc;
 
     if (reuse && ucxapp_wifi_get_status(app->ucx, current, sizeof(current), ip, sizeof(ip)) &&
@@ -334,13 +306,6 @@ static int connectProfile(ucxapp_t *app, profile_t *list, int count, int idx, ui
     }
     if (rc == UCXAPP_OK) {
         ucxapp_store_save(LAST_FILE, p->name, strlen(p->name));
-        if (getModuleIp(app->ucx, ip, sizeof(ip)) && ipPrefix(ip, prefix, sizeof(prefix)) &&
-            strcmp(prefix, p->prefix) != 0) {
-            snprintf(p->prefix, sizeof(p->prefix), "%s", prefix);
-            if (saveProfiles(list, count)) {
-                ucxapp_print("profile '%s' will be recognised on network %s.x\n", p->name, prefix);
-            }
-        }
     }
     return rc;
 }
@@ -530,11 +495,28 @@ static int cmdWifiConnect(ucxapp_t *app, int argc, char *argv[])
     count = loadProfiles(list);
     idx = findProfileBySsid(list, count, ssid);
     if (argc == 3) {
-        return connectTo(app, ssid, argv[2], 20);
+        int rc = connectTo(app, ssid, argv[2], 20);
+
+        /* Remember the network so wifi.connect / wifi.profile.auto (and the hardware tests) can reuse it. */
+        if (rc == UCXAPP_OK && fieldOk(ssid, SSID_LEN) && fieldOk(argv[2], PASS_LEN) &&
+            (idx >= 0 || count < MAX_PROFILES)) {
+            if (idx < 0) {
+                idx = count++;
+                memset(&list[idx], 0, sizeof(list[idx]));
+                snprintf(list[idx].name, sizeof(list[idx].name), "%.*s", NAME_LEN - 1, ssid);
+                snprintf(list[idx].ssid, sizeof(list[idx].ssid), "%s", ssid);
+            }
+            snprintf(list[idx].password, sizeof(list[idx].password), "%s", argv[2]);
+            if (saveProfiles(list, count)) {
+                ucxapp_store_save(LAST_FILE, list[idx].name, strlen(list[idx].name));
+                ucxapp_print("saved as profile '%s'\n", list[idx].name);
+            }
+        }
+        return rc;
     }
     if (idx >= 0) {
         ucxapp_print("using saved profile '%s'\n", list[idx].name);
-        return connectProfile(app, list, count, idx, 20, false);
+        return connectProfile(app, list, idx, 20, false);
     }
     for (int i = 0; i < gScanCount; i++) {
         if (strcmp(gScan[i].ssid, ssid) == 0 && gScan[i].auth != 0) {
@@ -565,9 +547,6 @@ static int cmdProfileAdd(ucxapp_t *app, int argc, char *argv[])
             return UCXAPP_ERR_FAILED;
         }
         idx = count++;
-        list[idx].prefix[0] = '\0';
-    } else if (strcmp(list[idx].ssid, argv[2]) != 0) {
-        list[idx].prefix[0] = '\0';   /* a different network now */
     }
     snprintf(list[idx].name, sizeof(list[idx].name), "%s", argv[1]);
     snprintf(list[idx].ssid, sizeof(list[idx].ssid), "%s", argv[2]);
@@ -589,8 +568,7 @@ static int cmdProfileList(ucxapp_t *app, int argc, char *argv[])
     (void)argc;
     (void)argv;
     for (int i = 0; i < count; i++) {
-        ucxapp_print("%s: ssid=%s %s%s%s%s\n", list[i].name, list[i].ssid, list[i].password[0] != '\0' ? "WPA" : "open",
-                     list[i].prefix[0] != '\0' ? "  network " : "", list[i].prefix, list[i].prefix[0] != '\0' ? ".x" : "");
+        ucxapp_print("%s: ssid=%s %s\n", list[i].name, list[i].ssid, list[i].password[0] != '\0' ? "WPA" : "open");
     }
     ucxapp_print("%d profile(s)\n", count);
     return UCXAPP_OK;
@@ -636,7 +614,7 @@ static int cmdProfileConnect(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: no profile '%s' (see wifi.profile.list)\n", argv[1]);
         return UCXAPP_ERR_FAILED;
     }
-    return connectProfile(app, list, count, idx, 20, false);
+    return connectProfile(app, list, idx, 20, false);
 }
 
 #define AUTO_FIRST_TRY_S  10
@@ -650,7 +628,6 @@ static int cmdProfileAuto(ucxapp_t *app, int argc, char *argv[])
     int best = -1;
     int bestRssi = -1000;
     uCxWifiStationScanDefault_t net;
-    char pcIp[40], pcPrefix[PREFIX_LEN];
 
     (void)argc;
     (void)argv;
@@ -659,28 +636,9 @@ static int cmdProfileAuto(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
 
-    /* The PC's own network tells where we are before any scanning is needed. */
-    if (ucxapp_platform_local_ip(pcIp, sizeof(pcIp)) && ipPrefix(pcIp, pcPrefix, sizeof(pcPrefix))) {
-        int here = -1;
-
-        for (int i = 0; i < count && here < 0; i++) {
-            if (list[i].prefix[0] != '\0' && strcmp(list[i].prefix, pcPrefix) == 0) {
-                here = i;
-            }
-        }
-        if (here >= 0) {
-            ucxapp_print("PC is on %s: this is the network of profile '%s'\n", pcIp, list[here].name);
-            if (connectProfile(app, list, count, here, AUTO_FIRST_TRY_S, true) == UCXAPP_OK) {
-                return UCXAPP_OK;
-            }
-        } else {
-            ucxapp_print("PC is on %s: no profile knows this network yet\n", pcIp);
-        }
-    }
-
     if (loadLastUsed(last, sizeof(last)) && (idx = findProfile(list, count, last)) >= 0) {
         ucxapp_print("Trying last used profile '%s'...\n", last);
-        if (connectProfile(app, list, count, idx, AUTO_FIRST_TRY_S, true) == UCXAPP_OK) {
+        if (connectProfile(app, list, idx, AUTO_FIRST_TRY_S, true) == UCXAPP_OK) {
             return UCXAPP_OK;
         }
     }
@@ -703,7 +661,7 @@ static int cmdProfileAuto(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("Strongest known network: '%s' (%d dBm)\n", list[best].name, bestRssi);
-    return connectProfile(app, list, count, best, 20, true);
+    return connectProfile(app, list, best, 20, true);
 }
 
 static int cmdWifiRegDomain(ucxapp_t *app, int argc, char *argv[])
@@ -988,7 +946,7 @@ static const ucxapp_cmd_t gWifiCmds[] = {
     { "wifi.profile.list", "",                   "List saved Wi-Fi profiles",        0, cmdProfileList },
     { "wifi.profile.remove", "<name>",           "Delete a saved Wi-Fi profile",     0, cmdProfileRemove },
     { "wifi.profile.connect", "<name>",          "Connect using a saved Wi-Fi profile", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileConnect },
-    { "wifi.profile.auto", "",                   "Connect: the profile of the network the PC is on, else last used, else scan and pick the strongest known", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileAuto },
+    { "wifi.profile.auto", "",                   "Connect: the last used profile, else scan and pick the strongest known", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileAuto },
     { "wifi.regdomain",  "[world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br]", "Show or set (and save) the regulatory domain", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRegDomain },
     { "wifi.roaming",    "[on|off]",            "Show or set Wi-Fi roaming between access points", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRoaming },
     { "wifi.ap.enable",  "[ssid] [password] [channel]", "Start a WPA2 access point and show its join QR code", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiApEnable },

@@ -11,7 +11,7 @@ description: Build and run u-connectXpressApp on Windows to test and configure a
 3. `.\ucxapp` builds on first run and opens the shell. It is a thin caller of `ucxapp.py`; `--help` lists the options (`--debug`, `--clean`, `--rebuild`, `--build --run`, `--selftest`, `--linux` for WSL, `--stm32`).
 
 ## Find the hardware
-`.\ucxapp --detect` lists the serial ports with their role (EVK, GNSS, USB-UART, ST-Link), the NORA modules, the GNSS receiver (port and baud) and the IMU, and prints the `UCX_*` variables for the tests. `--detect --test tests/test_hardware.py` runs the hardware tests on what it found.
+`.\ucxapp --detect` lists the serial ports with their role (EVK, GNSS, USB-UART, ST-Link), the NORA modules, the GNSS receiver (port and baud) and the IMU, and prints the `UCX_*` variables for the tests. `--detect --test tests/hardware` runs the hardware tests on what it found.
 
 Always use `--detect` (or `gnss.detect`, `imu.detect`, `--list-modules`, `--list-ports` in the app). Do not write one-off probe scripts; if detection misses a device, improve `detect()` in `ucxapp.py` or the detector in `app/src/` and add a test.
 

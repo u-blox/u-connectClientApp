@@ -143,7 +143,7 @@ ucxapp COM13 --exec "hid.setup" --exec "hid.text Hello from NORA"
 | Command | Arguments | Description |
 |---|---|---|
 | `wifi.scan` | | List networks strongest first with BSSID, channel and band, signal, security (Open, WPA, WPA2, WPA3) and any saved profile; then channel usage with congestion and the quietest channel for `wifi.ap.enable`. The results are kept for `wifi.connect` |
-| `wifi.connect` | `[ssid\|n] [password]` | With no argument: connect like `wifi.profile.auto` (the profile of the network the PC is on, else last used, else the strongest known network). Otherwise connect by SSID or by the number from the last `wifi.scan`; waits up to 20 s and shows IP, mask, gateway, channel and signal. A saved profile for the SSID supplies the password; open networks need none |
+| `wifi.connect` | `[ssid\|n] [password]` | With no argument: connect like `wifi.profile.auto` (the last used profile, else the strongest known network). Otherwise connect by SSID or by the number from the last `wifi.scan`; waits up to 20 s and shows IP, mask, gateway, channel and signal. A saved profile for the SSID supplies the password; open networks need none |
 | `wifi.status` | | Connection state, SSID, RSSI, IP |
 | `wifi.disconnect` | | Leave the network |
 | `wifi.ip` | `[dhcp \| <ip> <mask> <gw> [dns1 [dns2]]]` | Show, or set, DHCP or static IP; applies on the next `wifi.connect` |
@@ -154,7 +154,7 @@ ucxapp COM13 --exec "hid.setup" --exec "hid.text Hello from NORA"
 | `wifi.profile.list` |  | List saved profiles (no passwords shown) and the network (IP prefix) each was last used on |
 | `wifi.profile.remove` | `<name>` | Delete a saved profile |
 | `wifi.profile.connect` | `<name>` | Connect with a saved profile; it becomes the "last used" profile |
-| `wifi.profile.auto` | | Connect to the profile of the network the PC is on (matched by IP prefix, learned the first time a profile connects); else try the last used profile (10 s); else scan with the saved regulatory domain and connect to the strongest known profile. Keeps an existing link to the same SSID |
+| `wifi.profile.auto` | | Try the last used profile (10 s); else scan with the saved regulatory domain and connect to the strongest known profile. Keeps an existing link to the same SSID |
 | `wifi.ap.enable` | `[ssid] [password] [channel]` | Start a WPA2 access point and show its join QR code |
 | `wifi.ap.disable` |  | Stop the access point |
 | `wifi.ap.status` |  | Show AP parameters, addresses and stations |
@@ -184,6 +184,9 @@ Passwords given on the command line are visible in the process list and shell hi
 | `net.ping` | `<host> [count]` | ICMP ping, count 1-10 (default 4); fails if no reply |
 | `net.iperf` | `<server\|client\|stop> [args...]` | iperf throughput test run by the module: `server [tcp\|udp] [port]` keeps running until `stop`; `client <ip> [tcp\|udp] [seconds] [port]` runs for the given time (default 10 s, port 5001). Needs a Wi-Fi connection. PC side: iperf 2 (`iperf -c <module-ip>` / `iperf -s`) |
 | `net.dns` | `<host>` | Resolve a host name |
+| `net.ntp` | `<status\|on\|off\|server> [args...]` | NTP client: `status`, `on [manual\|auto]`, `off`, `server <0\|1> <host\|->` (`-` removes) |
+| `coap.get` | `<host> <port> [path]` | CoAP GET over UDP via a module socket (confirmable, 3 tries, 2 s each) |
+| `coap.selftest` | | Offline check of CoAP request encoding and response parsing |
 
 ```powershell
 ucxapp COM13 --exec "wifi.profile.auto" --exec "net.dns example.com" --exec "net.ping example.com 3"
@@ -205,6 +208,7 @@ ucxapp COM13 --exec "wifi.profile.auto" --exec "net.dns example.com" --exec "net
 | `sock.recvfrom` | `[handle] [max] [wait_s]` | Receive a UDP datagram and print the sender |
 | `sock.close` | `[handle]` | Close the socket |
 | `sock.list` | | List open sockets |
+| `sock.echo` | `<tcp\|udp> <port> [seconds]` | Echo server for latency/throughput tests (default 60 s, one TCP client) |
 
 ```powershell
 # Fetch a page over TCP
@@ -271,6 +275,9 @@ NORA-W36 has no GNSS; for a position from a receiver on the PC use `gnss.open` a
 | `cert.info` | `<name>` | Size and SHA-256 fingerprint |
 | `cert.upload` | `<ca\|client\|key> <file> [name] [pw]` | Upload a PEM file (max 8192 bytes); the name defaults to the file name, `pw` is for encrypted keys. For `ca` and `client` the fingerprint is checked against the module afterwards |
 | `cert.remove` | `<name>` | Remove a certificate or key (type is looked up automatically) |
+| `dtls.selftest` | `[server-cert]` | Run a DTLS client and server in-process (offline) and check an echo |
+| `dtls.client` | `<host> <port> [text]` | DTLS client over a module UDP socket: handshake, send text, print the reply |
+| `dtls.server` | `<port> [cert]` | DTLS server over a module UDP socket: one client, echo one message |
 
 ```powershell
 ucxapp COM13 --exec "cert.upload ca root-ca.pem" --exec "cert.upload client device.pem" --exec "cert.upload key device-key.pem" --exec "cert.list"
@@ -384,15 +391,22 @@ not wired in yet.
 | `hw.adc.read` | `<ch>` | Read an ADC channel (12 bit, 3.3 V reference) |
 | `hw.pwm.set` | `<ch> <hz> <duty%>` | Start PWM on a channel |
 | `hw.pwm.off` | `<ch>` | Stop PWM on a channel |
-| `hw.can.cfg` | `<bitrate>` | Set the CAN bit rate |
-| `hw.can.send` | `<id> [hex...]` | Send a CAN frame (id above 0x7FF is extended) |
-| `hw.can.recv` |  | Take the next received frame |
 | `hw.exec` | `<command...>` | Run one bridge line, for example `hw.exec gpio.read 3`, and print the reply |
 | `hw.bridge` | `<tcp [port]\|tcpc <host> <port>\|udp <host> <port> [local]\|udps <port>\|ble [nus\|sps\|custom <uuid> [rx tx]]\|uart <port> [baud]\|cell\|off\|status>` | Same modes as `gnss.bridge` (TCP default port 7000) |
 
 The bridge speaks lines: the peer sends a command without the `hw.` prefix (`i2c.reg 0x68 0x75`) and gets `OK <text>`
-or `ERR <text>`. While bridged, GPIO input changes arrive as `EVT gpio <pin> <level>` and received CAN frames as
-`EVT can <id> <hex>` instead of through `hw.can.recv`.
+or `ERR <text>`. While bridged, GPIO input changes arrive as `EVT gpio <pin> <level>`.
+
+CAN has its own commands and bridge (emulated loopback controller until a bxCAN/FDCAN driver is added):
+
+| Command | Arguments | Description |
+|---------|-----------|-------------|
+| `can.cfg` | `<bitrate>` | Set the CAN bit rate |
+| `can.send` | `<id> [hex...]` | Send a CAN frame (id above 0x7FF is extended) |
+| `can.recv` |  | Take the next received frame |
+| `can.status` |  | Bit rate, counters and bridge state |
+| `can.bridge` | same modes as `hw.bridge` (TCP default port 7001) | Binary, both ways: 17-byte records (ts_ms u32 LE, id u32 LE, dlc, data[8]), up to 32 per write |
+| `can.selftest` |  | Offline check of the record format |
 
 Board profiles live in `app/boards/` (`h753.json`, `f767.json`, `f439.json`); `scripts/hw_config.py <profile>
 --out hw_config.h` validates one (unknown keys, bad or duplicate pins, reserved pins) and generates X-macro pin tables
@@ -425,6 +439,8 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 | `log.stop` | | Finish and write the file started by `log.save` |
 | `log.clear` | | Clear the log (in the text UI the Log pane) |
 | `file.hash` | `<md5\|sha256> <file>` | Print the hash of a file (no device needed) |
+| `hash.text` | `<md5\|sha256> <text...>` | Print the hash of a text |
+| `hash.selftest` | | Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors |
 | `file.view` | `<file> [lines]` | Show the first lines of a text file, read only (default 40 lines; non-printable bytes shown as dots) |
 | `file.list` | | List the files in the working folder, numbered, with sizes |
 | `file.remove` | `<file\|number>` | Delete a file by name or by its number from `file.list` |

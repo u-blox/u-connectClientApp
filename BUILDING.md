@@ -48,7 +48,7 @@ git submodule update --init u-connectClient
 .\ucxapp --sign YOUR_CERT_THUMBPRINT
 .\ucxapp --selftest      # workspace validation
 .\ucxapp --detect        # ports, NORA modules, GNSS receiver and IMU, with the UCX_* test variables
-.\ucxapp --detect --test tests/test_hardware.py   # hardware tests on the detected devices
+.\ucxapp --detect --test tests/hardware   # hardware tests on the detected devices
 ```
 
 Manual build:

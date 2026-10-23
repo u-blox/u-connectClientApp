@@ -72,6 +72,9 @@ bool ucxapp_last_port_load(const char *kind, char *port, size_t size, int32_t *b
 void ucxapp_last_port_save(const char *kind, const char *port, int32_t baud);
 void ucxapp_register_wifi_cmds(void);
 void ucxapp_register_sock_cmds(void);
+void ucxapp_register_dtls_cmds(void);    /* dtls.* (host only, empty in UCXAPP_LITE builds) */
+void ucxapp_register_coap_cmds(void);    /* coap.* (host only, empty in UCXAPP_LITE builds) */
+void ucxapp_register_can_cmds(void);     /* can.* (host only, empty in UCXAPP_LITE builds) */
 void ucxapp_register_net_cmds(void);
 void ucxapp_register_sys_cmds(void);
 void ucxapp_register_app_cmds(void);     /* app.* (ucxapp_cmds_app.c) */

@@ -319,15 +319,13 @@ def test_hw_i2c_nack_fails(app_exe, tmp_path):
     assert "no ACK from 0x50" in out.stdout
 
 
-def test_hw_spi_loopback_adc_pwm_and_can(app_exe, tmp_path):
+def test_hw_spi_loopback_adc_and_pwm(app_exe, tmp_path):
     out = _run(app_exe, tmp_path, "COM255", "hw.spi.xfer 9F 00 12", "hw.adc.read 2", "hw.pwm.set 1 2000 12.5",
-               "hw.can.send 0x123 DE AD BE EF", "hw.can.recv", "hw.can.recv", "hw.status")
+               "hw.status")
     assert out.returncode == 0
     assert "9F 00 12" in out.stdout
     assert "adc 2 = " in out.stdout
     assert "pwm 1: 2000 Hz, 12.5 %" in out.stdout
-    assert "0x123 [4] DE AD BE EF" in out.stdout
-    assert "no frame" in out.stdout
     assert "pwm 1 of 4 channels running" in out.stdout
 
 
@@ -340,7 +338,6 @@ def test_hw_spi_loopback_adc_pwm_and_can(app_exe, tmp_path):
     ("hw.spi.xfer zz", "usage: hw.spi.xfer"),
     ("hw.adc.read 8", "usage: hw.adc.read"),
     ("hw.pwm.set 0 1000 101", "usage: hw.pwm.set"),
-    ("hw.can.send 0x20000000", "usage: hw.can.send"),
 ])
 def test_hw_commands_reject_bad_arguments(app_exe, tmp_path, command, usage):
     out = _run(app_exe, tmp_path, "COM255", command)

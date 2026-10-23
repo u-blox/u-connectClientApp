@@ -25,17 +25,10 @@
 #define DEF_GPIO  16
 #define DEF_ADC   8
 #define DEF_PWM   4
-#define CAN_QUEUE 16
 #define MAX_BYTES 32
 #define VREF_MV   3300
 
 enum { GPIO_IN, GPIO_OUT, GPIO_PULLUP, GPIO_PULLDOWN };
-
-typedef struct {
-    uint32_t id;
-    uint8_t len;
-    uint8_t data[8];
-} canFrame_t;
 
 typedef struct {
     const char *name;
@@ -47,8 +40,6 @@ typedef struct {
     bool (*spiXfer)(const uint8_t *tx, uint8_t *rx, size_t n);
     int (*adcRead)(int ch);   /* 12-bit raw, negative on error */
     bool (*pwmSet)(int ch, uint32_t hz, int permille);
-    bool (*canSend)(const canFrame_t *f);
-    bool (*canRecv)(canFrame_t *f);
 } hwBackend_t;
 
 /* ---- emulated backend ---- */
@@ -63,9 +54,6 @@ static uint8_t gEmuRegs[HWCFG_MAX_EMU][256];
 static int gEmuPtr[HWCFG_MAX_EMU];
 static int gEmuAddr[HWCFG_MAX_EMU];
 static int gEmuN;
-static canFrame_t gEmuCan[CAN_QUEUE];
-static int gEmuCanHead;
-static int gEmuCanCount;
 
 static void emuInit(void)
 {
@@ -153,33 +141,12 @@ static bool emuPwmSet(int ch, uint32_t hz, int permille)
     return true;
 }
 
-static bool emuCanSend(const canFrame_t *f)
-{
-    if (gEmuCanCount == CAN_QUEUE) {
-        gEmuCanHead = (gEmuCanHead + 1) % CAN_QUEUE;
-        gEmuCanCount--;
-    }
-    gEmuCan[(gEmuCanHead + gEmuCanCount++) % CAN_QUEUE] = *f;   /* loopback transceiver */
-    return true;
-}
-
-static bool emuCanRecv(canFrame_t *f)
-{
-    if (gEmuCanCount == 0) {
-        return false;
-    }
-    *f = gEmuCan[gEmuCanHead];
-    gEmuCanHead = (gEmuCanHead + 1) % CAN_QUEUE;
-    gEmuCanCount--;
-    return true;
-}
-
 static const hwBackend_t kEmu = {
-    "emulated", emuGpioMode, emuGpioWrite, emuGpioRead, emuI2cXfer, emuSpiXfer, emuAdcRead, emuPwmSet, emuCanSend,
-    emuCanRecv
+    "emulated", emuGpioMode, emuGpioWrite, emuGpioRead, emuI2cXfer, emuSpiXfer, emuAdcRead, emuPwmSet
 };
 
 static const hwBackend_t *gBe = &kEmu;
+
 static U_CX_MUTEX_HANDLE gLock;
 static bool gLockInit;
 
@@ -187,7 +154,6 @@ static bool gLockInit;
 
 static int gSpiMode;
 static int32_t gSpiHz = 1000000;
-static int32_t gCanBitrate = 500000;
 static struct { uint32_t hz; int permille; } gPwm[HWCFG_MAX_PWM];
 static ucxapp_stream_t *gStream;
 
@@ -553,56 +519,6 @@ static int opPwmOff(int argc, char *argv[], hwOut_t *o)
     return UCXAPP_OK;
 }
 
-static int opCanCfg(int argc, char *argv[], hwOut_t *o)
-{
-    int32_t rate;
-
-    if (argc != 2 || !ucxapp_parse_int(argv[1], &rate) || rate < 10000 || rate > 1000000) {
-        return UCXAPP_ERR_USAGE;
-    }
-    gCanBitrate = rate;
-    outf(o, "can bitrate %d", (int)rate);
-    return UCXAPP_OK;
-}
-
-static int opCanSend(int argc, char *argv[], hwOut_t *o)
-{
-    canFrame_t f;
-    int32_t id;
-    int n = 0;
-
-    memset(&f, 0, sizeof(f));
-    if (argc < 2 || !ucxapp_parse_int(argv[1], &id) || id < 0 || id > 0x1FFFFFFF ||
-        (argc > 2 && (n = parseBytes(argc, argv, 2, f.data, 8)) < 0)) {
-        return UCXAPP_ERR_USAGE;
-    }
-    f.id = (uint32_t)id;
-    f.len = (uint8_t)n;
-    if (!gBe->canSend(&f)) {
-        outf(o, "can send failed");
-        return UCXAPP_ERR_FAILED;
-    }
-    outf(o, "sent 0x%X [%d]", (unsigned)f.id, n);
-    return UCXAPP_OK;
-}
-
-static int opCanRecv(int argc, char *argv[], hwOut_t *o)
-{
-    canFrame_t f;
-
-    (void)argv;
-    if (argc != 1) {
-        return UCXAPP_ERR_USAGE;
-    }
-    if (!gBe->canRecv(&f)) {
-        outf(o, "no frame");
-        return UCXAPP_OK;
-    }
-    outf(o, "0x%X [%d] ", (unsigned)f.id, f.len);
-    outBytes(o, f.data, f.len);
-    return UCXAPP_OK;
-}
-
 static int opBoard(int argc, char *argv[], hwOut_t *o)
 {
     (void)argv;
@@ -635,8 +551,7 @@ static int opStatus(int argc, char *argv[], hwOut_t *o)
         return UCXAPP_ERR_USAGE;
     }
     outf(o, "backend %s, board %s\n", gBe->name, gCfg != NULL ? gCfg->board : "(none loaded)");
-    outf(o, "gpio %d pins, i2c, spi mode %d at %d Hz, adc %d ch, can %d bit/s\n", gNGpio, gSpiMode, (int)gSpiHz,
-         gNAdc, (int)gCanBitrate);
+    outf(o, "gpio %d pins, i2c, spi mode %d at %d Hz, adc %d ch\n", gNGpio, gSpiMode, (int)gSpiHz, gNAdc);
     for (int c = 0; c < gNPwm; c++) {
         if (gPwm[c].hz > 0) {
             active++;
@@ -663,9 +578,6 @@ static int opStatus(int argc, char *argv[], hwOut_t *o)
     X(opAdcRead, "adc.read", "<ch>", "Read an ADC channel") \
     X(opPwmSet, "pwm.set", "<ch> <hz> <duty%>", "Start PWM on a channel") \
     X(opPwmOff, "pwm.off", "<ch>", "Stop PWM on a channel") \
-    X(opCanCfg, "can.cfg", "<bitrate>", "Set the CAN bit rate") \
-    X(opCanSend, "can.send", "<id> [hex...]", "Send a CAN frame (id above 0x7FF is extended)") \
-    X(opCanRecv, "can.recv", "", "Take the next received CAN frame") \
     X(opStatus, "status", "", "Backend and peripheral summary") \
     X(opBoard, "board", "", "Pin map of the loaded board profile")
 
@@ -806,12 +718,11 @@ static bool bridgeWrite(void *ctx, const uint8_t *data, size_t len)
     return true;
 }
 
-/* GPIO input changes and received CAN frames become EVT lines. */
+/* GPIO input changes become EVT lines. */
 static void bridgePoll(void *ctx, ucxapp_stream_t *s)
 {
     char evt[512];
     size_t n = 0;
-    canFrame_t f;
 
     (void)ctx;
     (void)s;
@@ -822,11 +733,6 @@ static void bridgePoll(void *ctx, ucxapp_stream_t *s)
             n += (size_t)snprintf(evt + n, sizeof(evt) - n, "EVT gpio %d %d\n", p, level);
         }
         gLastLevel[p] = level;
-    }
-    while (n + 60 < sizeof(evt) && gBe->canRecv(&f)) {
-        hwOut_t o = { { 0 }, 0 };
-        outBytes(&o, f.data, f.len);
-        n += (size_t)snprintf(evt + n, sizeof(evt) - n, "EVT can 0x%X %s\n", (unsigned)f.id, o.buf);
     }
     unlockHw();
     if (n > 0) {

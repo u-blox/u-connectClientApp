@@ -305,13 +305,13 @@ static bool probePort(const char *port, int *proto, int32_t *baud)
         return false;
     }
     if (ucxapp_last_port_load("imu", lastPort, sizeof(lastPort), &lastBaud) && strcasecmp(lastPort, port) == 0 &&
-        listen(port, lastBaud, PROTO_WIT, NULL, 0, 700, p) > 0 && p->frames >= 3) {
+        listen(port, lastBaud, PROTO_WIT, NULL, 0, 400, p) > 0 && p->frames >= 3) {
         *proto = PROTO_WIT;
         *baud = lastBaud;
         hit = true;
     }
     for (size_t b = 0; !hit && b < sizeof(kBauds) / sizeof(kBauds[0]); b++) {
-        int32_t got = listen(port, kBauds[b], PROTO_WIT, NULL, 0, 700, p);
+        int32_t got = listen(port, kBauds[b], PROTO_WIT, NULL, 0, 400, p);
         if (got > 0 && p->frames >= 3) {
             *proto = PROTO_WIT;
             *baud = kBauds[b];

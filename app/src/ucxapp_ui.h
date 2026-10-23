@@ -44,6 +44,9 @@ uint32_t ucxapp_ui_done_seq(int *rc);    /* increments when a command finishes; 
 /* Catalog. Groups follow the AT manual order; commands keep their registration order. */
 int ucxapp_ui_groups(char names[][UCXAPP_UI_GROUP_LEN], int max);
 int ucxapp_ui_group_cmds(const char *group, const ucxapp_cmd_t **out, int max);
+/* "host" when this PC does the work, "module" when the NORA module executes it. */
+const char *ucxapp_ui_runs_on(const char *group);
+const char *ucxapp_ui_cmd_runs_on(const ucxapp_cmd_t *cmd);
 
 /* Splits a usage string into fields; -1 when it is too complex (use one free-text field). */
 int ucxapp_ui_parse_usage(const char *usage, ucxapp_ui_field_t *fields, int max);

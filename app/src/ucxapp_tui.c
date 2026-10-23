@@ -432,8 +432,8 @@ static void drawCommandCell(int row, int bodyRows, int width)
         return;
     }
     if (e.isGroup) {
-        snprintf(text, sizeof(text), "%s %s", gGroupCount > 0 && e.gi == gExpanded ? G_CLOSE : G_OPEN,
-                 gGroups[e.gi]);
+        snprintf(text, sizeof(text), "%s %s  [%s]", gGroupCount > 0 && e.gi == gExpanded ? G_CLOSE : G_OPEN,
+                 gGroups[e.gi], ucxapp_ui_runs_on(gGroups[e.gi]));
         out(idx == gSel && gListFocus ? "\033[7;1m" : "\033[1m");
         outCell(text, width, 0, false);
         out("\033[0m");
@@ -518,8 +518,8 @@ static void drawFrame(int rows, bool busy)
         const ucxapp_cmd_t *cmd = hintCommand();
 
         if (cmd != NULL) {
-            snprintf(text, sizeof(text), "%s%s%s  -  %s", cmd->name, cmd->usage[0] != '\0' ? " " : "", cmd->usage,
-                     cmd->help);
+            snprintf(text, sizeof(text), "[%s] %s%s%s  -  %s", ucxapp_ui_cmd_runs_on(cmd), cmd->name,
+                     cmd->usage[0] != '\0' ? " " : "", cmd->usage, cmd->help);
             outCell(text, W_CMD + W_LOG + W_EVT + 4, 0, false);
         } else if (busy) {
             outCell("running...", W_CMD + W_LOG + W_EVT + 4, 33, false);

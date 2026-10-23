@@ -15,6 +15,7 @@
 #include "u_cx_socket.h"
 #include "u_cx_http.h"
 #include "u_cx_wifi.h"
+#include "u_cx_network_time.h"
 #include "u_port.h"
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -459,8 +460,77 @@ static int cmdNetIperf(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+static int cmdNetNtp(ucxapp_t *app, int argc, char *argv[])
+{
+    const char *sub = argc >= 2 ? argv[1] : "status";
+
+    if (strcmp(sub, "status") == 0 && argc <= 2) {
+        uNtpClientStatus_t status = U_NTP_CLIENT_STATUS_DISABLE;
+        int32_t err = uCxNetworkTimeGetClientEnabled(app->ucx, &status);
+        if (err < 0) {
+            ucxapp_print("ERROR: cannot read NTP client status (%d%s)\n", (int)err, ucxapp_errname(err));
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("NTP client: %s\n", status == U_NTP_CLIENT_STATUS_ENABLE_AUTO ? "enabled, DHCP servers" :
+                     status == U_NTP_CLIENT_STATUS_ENABLE_MANUAL ? "enabled, configured servers" : "disabled");
+        uCxNtpGetNtpServer_t srv;
+        if (uCxNetworkTimeGetNtpServerBegin(app->ucx, &srv)) {
+            char ip[64] = "-";
+            uCxIpAddressToString(&srv.ntp_server_ip, ip, sizeof(ip));
+            ucxapp_print("server %d: %s  ip %s  reachable %d\n", (int)srv.ntp_server_id,
+                         srv.ntp_server_address != NULL ? srv.ntp_server_address : "-", ip, (int)srv.reachable);
+        }
+        uCxEnd(app->ucx);
+        return UCXAPP_OK;
+    }
+    if (strcmp(sub, "on") == 0 && argc <= 3) {
+        uNtpClientStatus_t mode = U_NTP_CLIENT_STATUS_ENABLE_MANUAL;
+        if (argc == 3) {
+            if (strcmp(argv[2], "manual") == 0) {
+                mode = U_NTP_CLIENT_STATUS_ENABLE_MANUAL;
+            } else if (strcmp(argv[2], "auto") == 0) {
+                mode = U_NTP_CLIENT_STATUS_ENABLE_AUTO;
+            } else {
+                return UCXAPP_ERR_USAGE;
+            }
+        }
+        int32_t err = uCxNetworkTimeSetClientEnabled(app->ucx, mode);
+        if (err < 0) {
+            ucxapp_print("ERROR: cannot enable NTP (%d%s)\n", (int)err, ucxapp_errname(err));
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("NTP client enabled (%s)\n", mode == U_NTP_CLIENT_STATUS_ENABLE_AUTO ? "auto" : "manual");
+        return UCXAPP_OK;
+    }
+    if (strcmp(sub, "off") == 0 && argc == 2) {
+        int32_t err = uCxNetworkTimeSetClientEnabled(app->ucx, U_NTP_CLIENT_STATUS_DISABLE);
+        if (err < 0) {
+            ucxapp_print("ERROR: cannot disable NTP (%d%s)\n", (int)err, ucxapp_errname(err));
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("NTP client disabled\n");
+        return UCXAPP_OK;
+    }
+    if (strcmp(sub, "server") == 0 && argc == 4) {
+        int32_t id;
+        if (!ucxapp_parse_int(argv[2], &id) || id < 0 || id > 1) {
+            return UCXAPP_ERR_USAGE;
+        }
+        const char *host = strcmp(argv[3], "-") == 0 ? "" : argv[3];
+        int32_t err = uCxNetworkTimeSetNtpServer(app->ucx, id, host);
+        if (err < 0) {
+            ucxapp_print("ERROR: cannot set NTP server %d (%d%s)\n", (int)id, (int)err, ucxapp_errname(err));
+            return UCXAPP_ERR_FAILED;
+        }
+        ucxapp_print("NTP server %d: %s\n", (int)id, *host != '\0' ? host : "removed");
+        return UCXAPP_OK;
+    }
+    return UCXAPP_ERR_USAGE;
+}
+
 static const ucxapp_cmd_t gNetCmds[] = {
     { "net.ping", "<host> [count]",    "ICMP ping (count 1-10, default 4)",     UCXAPP_CMD_NEEDS_DEVICE, cmdNetPing },
+    { "net.ntp", "<status|on|off|server> [args...]", "NTP client: 'status', 'on [manual|auto]', 'off', 'server <0|1> <host|->' ('-' removes)", UCXAPP_CMD_NEEDS_DEVICE, cmdNetNtp },
     { "net.iperf", "<server|client|stop> [args...]", "iperf throughput: 'server [tcp|udp] [port]', 'client <ip> [tcp|udp] [seconds] [port]', 'stop'", UCXAPP_CMD_NEEDS_DEVICE, cmdNetIperf },
     { "net.dns",  "<host>",            "Resolve a host name to an IP address",  UCXAPP_CMD_NEEDS_DEVICE, cmdNetDns },
     { "http.get", "<url> [show_bytes]", "HTTP/HTTPS GET, prints status and body", UCXAPP_CMD_NEEDS_DEVICE, cmdHttpGet },

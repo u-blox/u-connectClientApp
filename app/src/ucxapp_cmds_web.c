@@ -120,8 +120,12 @@ static const char kPage[] =
     "const g=document.createElement('button');g.textContent='Run';g.title=c.h;"
     "g.onclick=()=>run(c.n,ins.map(e=>e.value.trim()),raw);d.appendChild(g);return d}"
     "fetch('/api/groups',{headers:K}).then(r=>r.json()).then(gs=>{"
-    "gs.forEach(g=>{const d=document.createElement('details'),s=document.createElement('summary');let l=0;"
-    "s.textContent=g;d.appendChild(s);d.ontoggle=()=>{if(d.open&&!l){l=1;"
+    "function hdr(t){const h=document.createElement('div');h.textContent=t;h.style.cssText='font-weight:bold;margin:8px 0 2px;color:#888';return h}"
+    "let mh=0,hh=0;gs.forEach(x=>{const p=x.split(':'),g=p[0],w=p[1];"
+    "if(w==='module'&&!mh){mh=1;$('side').appendChild(hdr('MODULE: runs on the NORA module'))}"
+    "if(w==='host'&&!hh){hh=1;$('side').appendChild(hdr('HOST: runs on this PC'))}"
+    "const d=document.createElement('details'),s=document.createElement('summary');let l=0;"
+    "s.textContent=g+'  ['+w+']';d.appendChild(s);d.ontoggle=()=>{if(d.open&&!l){l=1;"
     "fetch('/api/commands?g='+g,{headers:K}).then(r=>r.json()).then(cs=>cs.forEach(c=>d.appendChild(mk(c))))}};"
     "$('side').appendChild(d)})});"
     "const kh=$('keys');kh.textContent='/ command   Up/Down select   Enter open or run   Left/Right fold   PgUp/PgDn log   End bottom   Ctrl-L clear   Esc back';"
@@ -522,10 +526,14 @@ static void routeList(const uHttpRequest_t *req, uHttpResponse_t *resp, void *us
     if (strcmp(req->path, "/api/groups") == 0) {
         int count = ucxapp_ui_groups(groups, UCXAPP_UI_MAX_GROUPS);
 
-        for (int i = 0; i < count; i++) {
-            if (strcmp(groups[i], "web") != 0) {
-                n += (size_t)snprintf(buf + n, API_BUF - n, "%s\"%s\"", first ? "" : ",", groups[i]);
-                first = false;
+        for (int pass = 0; pass < 2; pass++) {
+            const char *where = pass == 0 ? "module" : "host";
+
+            for (int i = 0; i < count; i++) {
+                if (strcmp(groups[i], "web") != 0 && strcmp(ucxapp_ui_runs_on(groups[i]), where) == 0) {
+                    n += (size_t)snprintf(buf + n, API_BUF - n, "%s\"%s:%s\"", first ? "" : ",", groups[i], where);
+                    first = false;
+                }
             }
         }
     } else {

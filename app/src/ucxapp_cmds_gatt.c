@@ -605,7 +605,11 @@ static bool setCccd(ucxapp_t *app, int32_t conn, int32_t valueHandle, uint8_t mo
     uGattClientConfig_t cfg = mode == 0 ? U_GATT_CLIENT_CONFIG_NONE
                             : mode == 1 ? U_GATT_CLIENT_CONFIG_ENABLE_NOTIFICATIONS
                                         : U_GATT_CLIENT_CONFIG_ENABLE_INDICATIONS;
-    return uCxGattClientConfigWrite(app->ucx, conn, valueHandle + 1, cfg) == 0;
+    int32_t r = uCxGattClientConfigWrite(app->ucx, conn, valueHandle + 1, cfg);
+    if (r != 0) {
+        ucxapp_print("  CCCD write to handle 0x%04X failed (%d%s)\n", (unsigned)(valueHandle + 1), (int)r, ucxapp_errname(r));
+    }
+    return r == 0;
 }
 
 static int cmdGattServices(ucxapp_t *app, int argc, char *argv[])
@@ -1009,11 +1013,11 @@ static const srvChar_t kCtsChars[] = {
 };
 static const srvChar_t kNusChars[] = {
     { "nus.tx", 0, kNusTx, PROP_NOTIFY,   1, { 0x00 }, 244, 0, false, NULL },
-    { "nus.rx", 0, kNusRx, PROP_WRITE_NR, 1, { 0x00 }, 244, 0, true, NULL },
+    { "nus.rx", 0, kNusRx, PROP_WRITE_NR, 1, { 0x00 }, 244, 0, false, NULL },
 };
 static const srvChar_t kSpsChars[] = {
-    { "sps.fifo",    0, kSpsFifo, PROP_INDICATE | PROP_NOTIFY | PROP_WRITE | PROP_WRITE_NR, 1, { 0x00 }, 244, 0, true, NULL },
-    { "sps.credits", 0, kSpsCred, PROP_INDICATE | PROP_NOTIFY | PROP_WRITE | PROP_WRITE_NR, 1, { 0x00 }, 4,   0, true, NULL },
+    { "sps.fifo",    0, kSpsFifo, PROP_INDICATE | PROP_NOTIFY | PROP_WRITE | PROP_WRITE_NR, 1, { 0x00 }, 244, 0, false, NULL },
+    { "sps.credits", 0, kSpsCred, PROP_INDICATE | PROP_NOTIFY | PROP_WRITE | PROP_WRITE_NR, 1, { 0x00 }, 4,   0, false, NULL },
 };
 
 static const srvChar_t kWpsChars[] = {

@@ -267,6 +267,72 @@ static int cmdFileHash(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+static int cmdHashText(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    char hex[UCXAPP_SHA256_HEX_LEN];
+    char text[512];
+    size_t len = 0;
+
+    if (argc < 3 || (strcmp(argv[1], "md5") != 0 && strcmp(argv[1], "sha256") != 0)) {
+        return UCXAPP_ERR_USAGE;
+    }
+    for (int i = 2; i < argc; i++) {
+        int n = snprintf(&text[len], sizeof(text) - len, "%s%s", i > 2 ? " " : "", argv[i]);
+        if (n < 0 || (size_t)n >= sizeof(text) - len) {
+            ucxapp_print("ERROR: text too long (max %d bytes)\n", (int)sizeof(text) - 1);
+            return UCXAPP_ERR_FAILED;
+        }
+        len += (size_t)n;
+    }
+    if (argv[1][0] == 'm') {
+        ucxapp_md5_hex(text, len, hex);
+    } else {
+        ucxapp_sha256_hex(text, len, hex);
+    }
+    ucxapp_print("%s\n", hex);
+    return UCXAPP_OK;
+}
+
+/* Known-answer vectors from RFC 1321 and FIPS 180-2. */
+static int cmdHashSelftest(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    (void)argv;
+    static const struct { bool md5; const char *in; const char *out; } kVec[] = {
+        { true,  "",    "d41d8cd98f00b204e9800998ecf8427e" },
+        { true,  "abc", "900150983cd24fb0d6963f7d28e17f72" },
+        { true,  "12345678901234567890123456789012345678901234567890123456789012345678901234567890",
+                 "57edf4a22be3c955ac49da2e2107b67a" },
+        { false, "",    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+        { false, "abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" },
+        { false, "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
+                 "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1" },
+    };
+    char hex[UCXAPP_SHA256_HEX_LEN];
+    int fails = 0;
+
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    for (size_t i = 0; i < sizeof(kVec) / sizeof(kVec[0]); i++) {
+        if (kVec[i].md5) {
+            ucxapp_md5_hex(kVec[i].in, strlen(kVec[i].in), hex);
+        } else {
+            ucxapp_sha256_hex(kVec[i].in, strlen(kVec[i].in), hex);
+        }
+        if (strcmp(hex, kVec[i].out) != 0) {
+            ucxapp_print("FAIL %s vector %u\n", kVec[i].md5 ? "md5" : "sha256", (unsigned)i);
+            fails++;
+        }
+    }
+    if (fails != 0) {
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("hash selftest: md5 and sha256 ok\n");
+    return UCXAPP_OK;
+}
+
 #define VIEW_DEFAULT_LINES 40
 #define VIEW_LINE_MAX      120
 
@@ -481,6 +547,8 @@ static const ucxapp_cmd_t gSysCmds[] = {
     { "log.stop", "", "Finish and write the log file started by log.save", 0, cmdLogStop },
     { "log.clear", "", "Clear the log", 0, cmdLogClear },
     { "file.hash", "<md5|sha256> <file>", "Print the hash of a file", 0, cmdFileHash },
+    { "hash.text", "<md5|sha256> <text...>", "Print the hash of a text", 0, cmdHashText },
+    { "hash.selftest", "", "Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors", 0, cmdHashSelftest },
     { "file.view", "<file> [lines]", "Show the first lines of a text file (read only, default 40 lines)", 0, cmdFileView },
     { "file.list", "", "List the files in the working folder with numbers and sizes", 0, cmdFileList },
     { "file.remove", "<file|number>", "Delete a file, by name or by its number from file.list", 0, cmdFileRemove },

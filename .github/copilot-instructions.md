@@ -24,7 +24,7 @@ Customer-facing skills for each target are in `.github/skills/`. Releases are bu
 
 ## Use the same scripts every time
 
-- Find hardware with `.\ucxapp --detect`: ports with their role, NORA modules, GNSS receiver (port and baud), IMU, and the `UCX_*` test variables. `--detect --test tests/test_hardware.py` runs the hardware tests on what it found.
+- Find hardware with `.\ucxapp --detect`: ports with their role, NORA modules, GNSS receiver (port and baud), IMU, and the `UCX_*` test variables. `--detect --test tests/hardware` runs the hardware tests (split per area: device, wifi, net, ble, bridges) on what it found.
 - Do not write one-off probe, port-scan or test scripts (no temporary `.ps1`/`.py` files, no ad-hoc loops over COM ports). If the launcher, the app detectors (`gnss.detect`, `imu.detect`, `cell.detect`, `--list-modules`, `--list-ports`) or the tests miss something, improve them and add a test in `tests/`.
 - New launcher features go into `ucxapp.py`, never into the `.cmd` callers.
 
@@ -93,7 +93,7 @@ python -m pip install pytest ruff
 .\ucxapp --test
 
 # Hardware tests on the detected modules, GNSS receiver and IMU
-.\ucxapp --detect --test tests/test_hardware.py
+.\ucxapp --detect --test tests/hardware
 ```
 
 CI (`.github/workflows/build.yml`) runs pytest and a Windows Release build on every push.
@@ -111,6 +111,12 @@ New code goes into `app/src/` as separate command modules.
 ## Release Process
 
 `python scripts/release.py` (or `.\ucxapp --release`) rebuilds, signs, tags and uploads; `--dry-run` only builds and signs. Signing alone: `.\ucxapp --rebuild --sign CERT_THUMBPRINT`.
+
+## Performance Priorities
+
+- Latency and throughput are the main requirements for every bridge (UART, UDP, TCP, BLE, CAN, GNSS, IMU). Batch per datagram or write, avoid per-byte calls, and never block a data path with a long sleep (idle polls use 1 ms).
+- SPI for AT and DATA (instead of UART) is coming in u-connectClient. Keep the transport behind the port layer so the command code in `app/src/` does not change when SPI lands.
+- CAN frames use the fixed 17-byte record in `app/src/ucxapp_can.h` (ts_ms, id, dlc, data[8]), batched per UDP datagram. CAN code stays out of the AT, UART and `hw.*` paths; `ucxapp_cmds_can.c` owns the controller and `can.bridge`.
 
 ## Version Numbering
 

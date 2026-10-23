@@ -6,11 +6,11 @@ after that heap. Flash is code, read-only data and the initial values of `.data`
 
 | Board | Name | Flash used | Flash size | Flash % | RAM used | RAM size | RAM % |
 |---|---|---|---|---|---|---|---|
-| `h753` | NUCLEO-H753ZI | 491 KB | 2048 KB | 24% | 285 KB | 512 KB | 56% |
-| `f767` | NUCLEO-F767ZI | 470 KB | 2048 KB | 23% | 308 KB | 368 KB | 84% |
-| `f439` | NUCLEO-F439ZI | 463 KB | 2048 KB | 23% | 102 KB | 192 KB | 53% |
-| `f407` | STM32F4DISCOVERY | 461 KB | 1024 KB | 45% | 102 KB | 128 KB | 80% |
-| `f401` | NUCLEO-F401RE | 420 KB | 512 KB | 82% | 85 KB | 96 KB | 89% |
-| `f446` | NUCLEO-F446RE | 420 KB | 512 KB | 82% | 101 KB | 128 KB | 80% |
-| `f103` | NUCLEO-F103RB | 115 KB | 128 KB | 90% | 15 KB | 20 KB | 78% |
-| `g071` | NUCLEO-G071RB | 120 KB | 128 KB | 94% | 25 KB | 36 KB | 71% |
+| `h753` | NUCLEO-H753ZI | 410 KB | 2048 KB | 20% | 284 KB | 512 KB | 56% |
+| `f767` | NUCLEO-F767ZI | 397 KB | 2048 KB | 19% | 299 KB | 368 KB | 81% |
+| `f439` | NUCLEO-F439ZI | 400 KB | 2048 KB | 20% | 102 KB | 192 KB | 53% |
+| `f407` | STM32F4DISCOVERY | 397 KB | 1024 KB | 39% | 102 KB | 128 KB | 80% |
+| `f401` | NUCLEO-F401RE | 378 KB | 512 KB | 74% | 85 KB | 96 KB | 89% |
+| `f446` | NUCLEO-F446RE | 378 KB | 512 KB | 74% | 101 KB | 128 KB | 79% |
+| `f103` | NUCLEO-F103RB | 116 KB | 128 KB | 91% | 15 KB | 20 KB | 78% |
+| `g071` | NUCLEO-G071RB | 121 KB | 128 KB | 95% | 25 KB | 36 KB | 71% |
