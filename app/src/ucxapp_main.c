@@ -22,7 +22,7 @@
 #pragma warning(pop)
 #endif
 
-#define MAX_EXEC 16
+#define MAX_EXEC 64
 #define MAX_POS 16
 #define UART_BAUD 115200
 
@@ -110,12 +110,144 @@ static const ucxapp_cmd_t gConnectCmds[] = {
 
 static void printUsage(const char *prog)
 {
-    ucxapp_print("usage: %s [port] [--exec \"<command>\"]... [--shell] [--tui] [--list-ports] [--list-modules] [--version]\n", prog);
+    ucxapp_print("usage: %s [port] [--exec \"<command>\"]... [--json] [--shell] [--tui] [--list-ports] [--list-modules] [--version]\n", prog);
     ucxapp_print("  a command can also be given directly: %s [port] device.info (no spaces inside the command)\n", prog);
     ucxapp_print("  without a port, --exec/--shell use the first NORA EVK found\n");
     ucxapp_print("  with no --exec/--shell the text UI starts (command shell if not on a terminal); 'help' lists the commands\n");
     ucxapp_print("  --tui forces the three-pane text UI (commands, log, events), --shell the plain command shell\n");
     ucxapp_print("  --offline skips the module auto-detection (commands that need no device)\n");
+    ucxapp_print("  --json prints one JSON object per command: command, success, code, error, output lines, data\n");
+    ucxapp_print("  ${NAME} in --exec and shell commands is replaced by the environment variable (keeps secrets off the command line)\n");
+}
+
+/* --json: command output is captured here and printed as one JSON line per command. */
+static char gCapture[16384];
+static size_t gCaptureLen;
+
+static void captureWrite(const char *text, size_t len)
+{
+    if (len > sizeof(gCapture) - 1 - gCaptureLen) {
+        len = sizeof(gCapture) - 1 - gCaptureLen;
+    }
+    memcpy(gCapture + gCaptureLen, text, len);
+    gCaptureLen += len;
+    gCapture[gCaptureLen] = '\0';
+}
+
+static int captureReadline(char *buf, size_t size)
+{
+    return ucxapp_io_stdio.readline(buf, size);
+}
+
+static const ucxapp_io_t gCaptureIo = { captureWrite, captureReadline };
+
+/* "Key name:   value" -> "key_name"; false for lines that are not a key/value pair. */
+static bool jsonKey(const char *line, char *key, size_t size, const char **value)
+{
+    const char *colon = strstr(line, ": ");
+    size_t n = 0;
+
+    if (colon == NULL || colon == line || colon - line > 32 || !isalpha((unsigned char)line[0]) ||
+        strncmp(line, "ERROR: ", 7) == 0 || strncmp(line, "usage: ", 7) == 0) {
+        return false;
+    }
+    for (const char *p = line; p < colon && n + 1 < size; p++) {
+        if (isalnum((unsigned char)*p)) {
+            key[n++] = (char)tolower((unsigned char)*p);
+        } else if (*p == ' ' || *p == '-' || *p == '_') {
+            if (n > 0 && key[n - 1] != '_') {
+                key[n++] = '_';
+            }
+        } else {
+            return false;
+        }
+    }
+    while (n > 0 && key[n - 1] == '_') {
+        n--;
+    }
+    key[n] = '\0';
+    *value = colon + 1;
+    while (**value == ' ') {
+        (*value)++;
+    }
+    return n > 0;
+}
+
+static void printJsonResult(const char *command, int rc)
+{
+    const char *error = NULL;
+    char *lines[256];
+    int count = 0;
+    bool anyData = false;
+
+    for (char *p = gCapture; *p != '\0' && count < 256;) {
+        char *nl = strchr(p, '\n');
+        if (nl != NULL) {
+            *nl = '\0';
+        }
+        size_t len = strlen(p);
+        if (len > 0 && p[len - 1] == '\r') {
+            p[len - 1] = '\0';
+        }
+        if (error == NULL && strncmp(p, "ERROR: ", 7) == 0) {
+            error = p + 7;
+        }
+        lines[count++] = p;
+        if (nl == NULL) {
+            break;
+        }
+        p = nl + 1;
+    }
+    ucxapp_io_set(&ucxapp_io_stdio);
+    ucxapp_print("{\"command\":");
+    ucxapp_print_json_string(command);
+    ucxapp_print(",\"success\":%s,\"code\":\"%s\"", rc == UCXAPP_OK ? "true" : "false", ucxapp_err_code(rc));
+    if (rc != UCXAPP_OK) {
+        ucxapp_print(",\"error\":");
+        ucxapp_print_json_string(error != NULL ? error : ucxapp_err_code(rc));
+    }
+    ucxapp_print(",\"output\":[");
+    for (int i = 0; i < count; i++) {
+        ucxapp_print("%s", i > 0 ? "," : "");
+        ucxapp_print_json_string(lines[i]);
+    }
+    ucxapp_print("]");
+    for (int i = 0; i < count; i++) {
+        char key[40];
+        const char *value;
+        if (jsonKey(lines[i], key, sizeof(key), &value)) {
+            ucxapp_print("%s\"%s\":", anyData ? "," : ",\"data\":{", key);
+            ucxapp_print_json_string(value);
+            anyData = true;
+        }
+    }
+    ucxapp_print("%s}\n", anyData ? "}" : "");
+    gCaptureLen = 0;
+    gCapture[0] = '\0';
+    ucxapp_io_set(&gCaptureIo);
+}
+
+/* Runs one local command line: ${NAME} expansion, then the command; in --json mode one JSON result line. */
+static int runLine(ucxapp_t *app, const char *command, bool json)
+{
+    char line[512];
+    int rc = UCXAPP_ERR_USAGE;
+
+    if (json && strncmp(command, "help --json", 11) == 0) {
+        /* Already JSON: printed as is. */
+        snprintf(line, sizeof(line), "%s", command);
+        ucxapp_io_set(&ucxapp_io_stdio);
+        rc = ucxapp_cmd_exec(app, line);
+        ucxapp_io_set(&gCaptureIo);
+        return rc;
+    }
+    if (ucxapp_expand_env(command, line, sizeof(line))) {
+        rc = ucxapp_cmd_exec(app, line);
+    }
+    if (json) {
+        printJsonResult(command, rc);
+    }
+    return rc;
 }
 
 static bool looksLikePort(const char *name)
@@ -173,6 +305,7 @@ int main(int argc, char *argv[])
     bool shellMode = false;
     bool tuiMode = false;
     bool offline = false;
+    bool json = false;
     const char *pos[MAX_POS];
     int posCount = 0;
 
@@ -189,6 +322,8 @@ int main(int argc, char *argv[])
             tuiMode = true;
         } else if (strcmp(argv[i], "--offline") == 0) {
             offline = true;
+        } else if (strcmp(argv[i], "--json") == 0) {
+            json = true;
         } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
 #ifdef APP_VERSION_STRING
             ucxapp_print("%s\n", ucxapp_version_text());
@@ -259,21 +394,31 @@ int main(int argc, char *argv[])
     ucxapp_t app = { NULL };
     int rc = 0;
     char detected[8][32];
-    if (port == NULL && !offline && ucxapp_find_modules(detected, 8) > 0) {
+    bool needDevice = execCount == 0 || shellMode || tuiMode;
+    json = json && execCount > 0 && !shellMode && !tuiMode;
+    if (json) {
+        ucxapp_io_set(&gCaptureIo);
+    }
+    for (int i = 0; i < execCount && !needDevice; i++) {
+        char name[64];
+        size_t len = strcspn(execCmds[i], " \t");
+        snprintf(name, sizeof(name), "%.*s", (int)(len < sizeof(name) ? len : sizeof(name) - 1), execCmds[i]);
+        const ucxapp_cmd_t *cmd = ucxapp_cmd_find(name);
+        needDevice = cmd == NULL || (cmd->flags & UCXAPP_CMD_NEEDS_DEVICE) != 0;
+    }
+    if (port == NULL && !offline && needDevice && ucxapp_find_modules(detected, 8) > 0) {
         port = detected[0];
         ucxapp_print("auto-detected module on %s\n", port);
     }
     if (port != NULL) {
         char line[128];
         snprintf(line, sizeof(line), "device.connect %s", port);
-        if (ucxapp_cmd_exec(&app, line) != UCXAPP_OK) {
+        if (runLine(&app, line, json) != UCXAPP_OK && !json) {
             ucxapp_print("continuing without a device\n");
         }
     }
     for (int i = 0; i < execCount && rc == 0; i++) {
-        char line[256];
-        snprintf(line, sizeof(line), "%s", execCmds[i]);
-        if (ucxapp_cmd_exec(&app, line) != UCXAPP_OK) {
+        if (runLine(&app, execCmds[i], json) != UCXAPP_OK) {
             rc = 1;
         }
     }
@@ -291,5 +436,8 @@ int main(int argc, char *argv[])
         ucxapp_cmd_exec(&app, stopLine);
     }
     disconnectModule();
+    if (json) {
+        ucxapp_io_set(&ucxapp_io_stdio);
+    }
     return rc;
 }

@@ -1,0 +1,6 @@
+# Join a network with the password from the environment, then reach the internet.
+#   ucxapp --script examples/wifi/connect.ucx
+wifi.scan
+wifi.connect ${UCX_WIFI_SSID} ${UCX_WIFI_PASS}
+wifi.status
+http.get https://www.u-blox.com

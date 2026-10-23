@@ -81,8 +81,8 @@ static bool resolveImage(const char *arg, char *binPath, size_t binSize)
         char dir[512];
         snprintf(dir, sizeof(dir), "%.*s_extracted", (int)(strlen(arg) - 4), arg);
         ucxapp_print("extracting %s\n", arg);
-        if (!ucxapp_platform_extract_zip(arg, dir)) {
-            ucxapp_print("ERROR: cannot extract %s (needs tar on Windows, unzip elsewhere)\n", arg);
+        if (!ucxapp_unzip(arg, dir)) {
+            ucxapp_print("ERROR: cannot extract %s\n", arg);
             return false;
         }
         if (!ucxapp_platform_find_file(dir, ".bin", binPath, binSize)) {
@@ -294,13 +294,11 @@ static bool findLatestAsset(const char *json, const char *family, char *path, si
     return false;
 }
 
-/* Downloads the newest firmware for the connected module family from the u-connectXpress GitHub releases. */
-static int fwDownloadLatest(ucxapp_t *app, int argc, char *argv[])
+/* Finds the newest GitHub firmware zip for the connected module family. */
+static bool fwLookupLatest(ucxapp_t *app, char *path, size_t pathSize, char *name, size_t nameSize)
 {
     char model[64] = "";
     char family[16];
-    char path[512];
-    char name[128];
     const char *text = NULL;
 
     if (uCxGeneralGetDeviceModelIdentificationBegin(app->ucx, &text) && text != NULL) {
@@ -309,7 +307,7 @@ static int fwDownloadLatest(ucxapp_t *app, int argc, char *argv[])
     uCxEnd(app->ucx);
     if (strncmp(model, "NORA-", 5) != 0 || strlen(model) < 8) {
         ucxapp_print("ERROR: unknown module model '%s'\n", model);
-        return UCXAPP_ERR_FAILED;
+        return false;
     }
     snprintf(family, sizeof(family), "%.8s", model);
 
@@ -317,28 +315,132 @@ static int fwDownloadLatest(ucxapp_t *app, int argc, char *argv[])
     char *json = ucxapp_platform_https_get_text(FW_API_HOST, FW_RELEASES_PATH);
     if (json == NULL) {
         ucxapp_print("ERROR: cannot query GitHub (needs the Windows build and internet access)\n");
-        return UCXAPP_ERR_FAILED;
+        return false;
     }
-    bool found = findLatestAsset(json, family, path, sizeof(path), name, sizeof(name));
+    bool found = findLatestAsset(json, family, path, pathSize, name, nameSize);
     free(json);
     if (!found) {
         ucxapp_print("ERROR: no release found for %s\n", family);
-        return UCXAPP_ERR_FAILED;
     }
+    return found;
+}
 
-    const char *file = argc == 3 ? argv[2] : name;
-    ucxapp_print("downloading %s\n", name);
+static bool fwFetch(const char *path, const char *name, const char *file)
+{
     size_t size = 0;
+    char hex[UCXAPP_SHA256_HEX_LEN];
+
+    ucxapp_print("downloading %s\n", name);
     char *data = ucxapp_platform_https_get_binary(FW_GITHUB_HOST, path, &size);
     if (data == NULL || !ucxapp_store_save(file, data, size)) {
         ucxapp_print("ERROR: download of %s failed\n", name);
         free(data);
-        return UCXAPP_ERR_FAILED;
+        return false;
     }
-    char hex[UCXAPP_SHA256_HEX_LEN];
     ucxapp_sha256_hex((const uint8_t *)data, size, hex);
     free(data);
-    ucxapp_print("saved %s (%u bytes)\nsha256: %s\nflash it with: fw.flash %s\n", file, (unsigned)size, hex, file);
+    ucxapp_print("saved %s (%u bytes)\nsha256: %s\n", file, (unsigned)size, hex);
+    return true;
+}
+
+/* Downloads the newest firmware for the connected module family from the u-connectXpress GitHub releases. */
+static int fwDownloadLatest(ucxapp_t *app, int argc, char *argv[])
+{
+    char path[512];
+    char name[128];
+
+    if (!fwLookupLatest(app, path, sizeof(path), name, sizeof(name))) {
+        return UCXAPP_ERR_FAILED;
+    }
+    const char *file = argc == 3 ? argv[2] : name;
+    if (!fwFetch(path, name, file)) {
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("flash it with: fw.flash %s\n", file);
+    return UCXAPP_OK;
+}
+
+/* "3.5.0-156" or "NORA-W36-3.5.0.zip" -> major/minor/patch; false if no x.y.z found. */
+static bool parseVersion(const char *s, int v[3])
+{
+    for (; *s != '\0'; s++) {
+        if (*s >= '0' && *s <= '9' && sscanf(s, "%d.%d.%d", &v[0], &v[1], &v[2]) == 3) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void currentVersion(ucxapp_t *app, char *out, size_t size)
+{
+    const char *text = NULL;
+
+    out[0] = '\0';
+    if (uCxGeneralGetSoftwareVersionBegin(app->ucx, &text) && text != NULL) {
+        snprintf(out, size, "%s", text);
+    }
+    uCxEnd(app->ucx);
+}
+
+/* Current vs newest GitHub release; downloads (unless already in the store), flashes and verifies. */
+static int cmdFwUpdate(ucxapp_t *app, int argc, char *argv[])
+{
+    char path[512];
+    char name[128];
+    char current[64];
+    int cur[3];
+    int latest[3];
+    bool force = false;
+    char *flashArgv[3];
+    int flashArgc = 2;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "force") == 0) {
+            force = true;
+        } else if (flashArgc == 2) {
+            flashArgv[2] = argv[i];
+            flashArgc = 3;
+        } else {
+            return UCXAPP_ERR_USAGE;
+        }
+    }
+    currentVersion(app, current, sizeof(current));
+    ucxapp_print("current firmware: %s\n", current[0] != '\0' ? current : "unknown");
+    if (!fwLookupLatest(app, path, sizeof(path), name, sizeof(name))) {
+        return UCXAPP_ERR_FAILED;
+    }
+    if (!parseVersion(name, latest)) {
+        ucxapp_print("ERROR: cannot read the version of %s\n", name);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("latest firmware:  %d.%d.%d (%s)\n", latest[0], latest[1], latest[2], name);
+    if (!force && parseVersion(current, cur) &&
+        (cur[0] > latest[0] || (cur[0] == latest[0] && (cur[1] > latest[1] || (cur[1] == latest[1] && cur[2] >= latest[2]))))) {
+        ucxapp_print("already up to date; use 'fw.update force' to flash anyway\n");
+        return UCXAPP_OK;
+    }
+
+    size_t len = 0;
+    uint8_t *existing = ucxapp_store_load(name, &len);
+    free(existing);
+    if (existing != NULL && len > 0) {
+        ucxapp_print("using %s already in the store\n", name);
+    } else if (!fwFetch(path, name, name)) {
+        return UCXAPP_ERR_FAILED;
+    }
+
+    flashArgv[0] = "fw.flash";
+    flashArgv[1] = name;
+    int rc = cmdFwFlash(app, flashArgc, flashArgv);
+    if (rc != UCXAPP_OK || app->ucx == NULL) {
+        return rc != UCXAPP_OK ? rc : UCXAPP_ERR_FAILED;
+    }
+    currentVersion(app, current, sizeof(current));
+    if (!parseVersion(current, cur) || cur[0] != latest[0] || cur[1] != latest[1] || cur[2] != latest[2]) {
+        ucxapp_print("ERROR: module reports %s, expected %d.%d.%d\n", current, latest[0], latest[1], latest[2]);
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print("updated to %s\n", current);
     return UCXAPP_OK;
 }
 
@@ -379,8 +481,9 @@ static int cmdFwDownload(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gFwCmds[] = {
     { "fw.download", "[latest [file]] | <url> <file> [sha256]", "Download the newest GitHub firmware for this module (default), or a file via the module with SHA-256 check (latest needs Windows)", UCXAPP_CMD_NEEDS_DEVICE, cmdFwDownload },
-    { "fw.bootloader", "<port> <file.bin|file.zip> [baud]", "Flash a module that is in bootloader mode (no AT interface); disconnect first", 0, cmdFwBootloader },
-    { "fw.flash",    "<file.bin|file.zip> [baud]", "Update the module firmware over XMODEM (default 921600 baud)", UCXAPP_CMD_NEEDS_DEVICE, cmdFwFlash },
+    { "fw.bootloader", "<port> <file.bin|file.zip> [baud]", "Flash a module that is in bootloader mode (no AT interface); disconnect first", UCXAPP_CMD_DANGER, cmdFwBootloader },
+    { "fw.flash",    "<file.bin|file.zip> [baud]", "Update the module firmware over XMODEM (default 921600 baud)", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdFwFlash },
+    { "fw.update",   "[force] [baud]", "Compare with the newest GitHub firmware; if newer, download to the store, flash and verify the version (needs Windows)", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdFwUpdate },
 };
 
 void ucxapp_register_fw_cmds(void)

@@ -18,7 +18,7 @@ def _run_in(app_exe, cwd, *commands):
 @pytest.fixture
 def dtls_dir(app_exe, tmp_path):
     """A store with the local CA and a server certificate for localhost."""
-    out = _run_in(app_exe, tmp_path, "tls.ca.create", "tls.server.create server localhost 127.0.0.1")
+    out = _run_in(app_exe, tmp_path, "utils.tls.ca.create", "utils.tls.server.create server localhost 127.0.0.1")
     assert out.returncode == 0, out.stdout
     return tmp_path
 
@@ -31,7 +31,7 @@ def test_dtls_selftest_handshake_and_echo(app_exe, dtls_dir):
 
 
 def test_dtls_selftest_needs_the_server_certificate(app_exe, tmp_path):
-    out = _run_in(app_exe, tmp_path, "tls.ca.create", "dtls.selftest missing")
+    out = _run_in(app_exe, tmp_path, "utils.tls.ca.create", "dtls.selftest missing")
     assert out.returncode != 0
     assert "ERROR" in out.stdout
 

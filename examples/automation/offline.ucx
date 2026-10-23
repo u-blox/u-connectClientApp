@@ -1,0 +1,5 @@
+# Runs without a module (CI): checks the app and the script runner.
+#   ucxapp --script examples/automation/offline.ucx --offline
+app.version
+expect u-connectXpressApp \d+\.\d+
+app.uptime

@@ -19,12 +19,11 @@ UNTESTED = {
     "bt.passkey": "needs a pairing peer waiting for an answer",
     "hid.key": "needs a HID host (a PC or phone) connected",
     "hid.text": "needs a HID host (a PC or phone) connected",
-    "gatt.client.example.wit": "needs a WitMotion BLE IMU",
+    "gatt.client.wit": "needs a WitMotion BLE IMU",
     "gatt.server.hostchar": "needs a scripted peer reading/writing at the right moment",
     "gatt.server.readresp": "needs a scripted peer reading/writing at the right moment",
     "gatt.server.writeresp": "needs a scripted peer reading/writing at the right moment",
     "gatt.server.error": "needs a scripted peer reading/writing at the right moment",
-    "gatt.server.indicate": "needs a peer that enables indications; the SPS test peer enables notifications",
 }
 
 
@@ -39,7 +38,7 @@ def module_commands():
 
 def covered(cmds):
     text = "\n".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / "tests" / "hardware").glob("*.py")))
-    # Expand f-string commands such as gatt.client.example.{key} with their parametrize values.
+    # Expand f-string commands such as gatt.client.{key} with their parametrize values.
     for name, values in re.findall(r'parametrize\("(\w+)", \[([^\]]*)\]', text):
         for value in re.findall(r'"([\w.-]+)"', values):
             text += "\n" + text.replace("{" + name + "}", value)

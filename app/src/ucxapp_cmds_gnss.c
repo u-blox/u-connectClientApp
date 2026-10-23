@@ -484,17 +484,40 @@ static bool probe(const char *port, int32_t baud, parser_t *p)
     memset(p, 0, sizeof(*p));
     (void)sendFrame(&kUart, h, 0x0A, 0x04, NULL, 0);
     start = ucxapp_platform_tick_ms();
-    while (ucxapp_platform_tick_ms() - start < 500u) {
-        int32_t n = kUart.read(h, buf, sizeof(buf), 20);
+    while (ucxapp_platform_tick_ms() - start < 300u) {
+        int32_t n = kUart.read(h, buf, sizeof(buf), 10);
         if (n > 0) {
             feed(p, buf, (size_t)n);
         }
-        if (p->st.sw[0] != '\0' || (p->st.nmea + p->st.ubx > 0 && ucxapp_platform_tick_ms() - start > 250u)) {
+        if (p->st.sw[0] != '\0' || (p->st.nmea + p->st.ubx > 0 && ucxapp_platform_tick_ms() - start > 150u)) {
             break;
         }
     }
     kUart.close(h);
     return p->st.nmea + p->st.ubx > 0;
+}
+
+/* Moves a receiver that runs at a slow UART rate to 115200 baud (RAM only, so a power cycle restores it). */
+static void raiseBaud(const char *port, int32_t *baud, parser_t *p)
+{
+    static const int32_t kFast = 115200;
+    const uint8_t pl[12] = { 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x52, 0x40,
+                             (uint8_t)kFast, (uint8_t)(kFast >> 8), (uint8_t)(kFast >> 16), 0x00 };
+    void *h;
+
+    if (*baud >= kFast || strtol(p->st.proto, NULL, 10) < 23) {
+        return;
+    }
+    h = kUart.open(port, *baud);
+    if (h == NULL) {
+        return;
+    }
+    (void)sendFrame(&kUart, h, 0x06, 0x8A, pl, sizeof(pl));
+    ucxapp_platform_sleep_ms(100);
+    kUart.close(h);
+    if (probe(port, kFast, p)) {
+        *baud = kFast;
+    }
 }
 
 static void describe(const parser_t *p)
@@ -584,6 +607,11 @@ static int detect(const char *only, char *outPort, size_t outPortSize, int32_t *
         found++;
     }
     if (best >= 0) {
+        int32_t was = results[best].baud;
+        raiseBaud(names[best], &results[best].baud, &results[best].p);
+        if (results[best].baud != was) {
+            ucxapp_print("  %s switched to %d baud\n", names[best], (int)results[best].baud);
+        }
         ucxapp_last_port_save("gnss", names[best], results[best].baud);
         if (outPort != NULL) {
             snprintf(outPort, outPortSize, "%s", names[best]);

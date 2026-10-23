@@ -15,6 +15,8 @@
 
 /* Command needs a connected module (app->ucx != NULL). */
 #define UCXAPP_CMD_NEEDS_DEVICE  0x01
+/* Command changes or erases module/host state irreversibly (firmware, factory reset, removals). */
+#define UCXAPP_CMD_DANGER        0x02
 
 /* argv[0] is the command name. Return UCXAPP_OK, UCXAPP_ERR_USAGE or another negative code. */
 typedef int (*ucxapp_cmd_fn_t)(ucxapp_t *app, int argc, char *argv[]);
@@ -35,8 +37,29 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line);
 
 void ucxapp_cmd_print_help(const char *prefix);
 
+/* Every command as a JSON array (name, usage, help, needsDevice, danger); "help --json". */
+void ucxapp_cmd_print_json(const char *prefix);
+
+/* JSON string literal of s, with quotes and escapes. */
+void ucxapp_print_json_string(const char *s);
+
+/* Stable name of a command result: "OK", "USAGE", "NOT_CONNECTED", "UNKNOWN_CMD", "FAILED". */
+const char *ucxapp_err_code(int rc);
+
+/* One aligned memory row, same look for module stacks and app memory:
+   "<kind>:<name>  <sizeLabel>: <size>  used: <used>  usage(%): <pct>". size 0 prints "?". */
+void ucxapp_print_usage_row(const char *kind, const char *name, const char *sizeLabel,
+                            uint64_t size, uint64_t used);
+
+/* Copy in to out with ${NAME} replaced by the environment variable; false (message printed) if one is unset
+   or out is too small. Only for local input (--exec, shell), never for web commands. */
+bool ucxapp_expand_env(const char *in, char *out, size_t size);
+
 /* Visit every registered command in registration order. */
 void ucxapp_cmd_foreach(void (*visit)(const ucxapp_cmd_t *cmd, void *user), void *user);
+
+/* Longest common completion of prefix into out; returns the number of matching commands. */
+int ucxapp_cmd_complete(const char *prefix, char *out, size_t size);
 
 /* Exact name lookup; NULL if unknown. */
 const ucxapp_cmd_t *ucxapp_cmd_find(const char *name);
@@ -91,6 +114,9 @@ void ucxapp_register_imu_cmds(void);     /* imu.* (ucxapp_cmds_imu.c) */
 void ucxapp_register_hw_cmds(void);      /* hw.* GPIO/I2C/SPI/ADC/PWM/CAN (ucxapp_cmds_hw.c) */
 void ucxapp_register_cell_cmds(void);    /* cell.* (ucxapp_cmds_cell.c) */
 void ucxapp_register_utils_cmds(void);   /* utils.zip, utils.unzip (ucxapp_cmds_utils.c) */
+
+/* Built-in zip extraction (stored and deflate); prints each file. */
+bool ucxapp_unzip(const char *zipPath, const char *dir);
 void ucxapp_register_hid_cmds(void);
 void ucxapp_register_web_cmds(void);
 

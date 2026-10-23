@@ -47,7 +47,7 @@ def test_hid_and_gatt_server_definitions(app_exe, port_a):
 
 @pytest.mark.hardware
 def test_gatt_server_example_runs_and_stops(app_exe, port_a):
-    out = _run(app_exe, port_a, "gatt.server.example.nus 3", "device.reboot")
+    out = _run(app_exe, port_a, "gatt.server.nus 3", "device.reboot")
     assert out.returncode == 0, out.stdout
 
 
@@ -67,10 +67,10 @@ def test_ble_module_b_discovers_module_a(app_exe, port_a, port_b):
 def test_gatt_example_server_and_client_between_two_modules(app_exe, port_a, port_b, key):
     """A serves the example service; B discovers it, runs the matching client example and listens."""
     proc, seen, lines = _gatt_server(app_exe, port_a, key)
-    extra = ["gatt.wps status"] if key == "wps" else ["gatt.client.example.dis"]
+    extra = ["gatt.wps status"] if key == "wps" else ["gatt.client.dis"]
     try:
         out = _run(app_exe, port_b, "bt.scan", f"bt.connect {GATT_NAME}", "gatt.services", "gatt.chars",
-                   f"gatt.client.example.{key}", *extra, "gatt.listen 5", "bt.disconnect", timeout=240)
+                   f"gatt.client.{key}", *extra, "gatt.listen 5", "bt.disconnect", timeout=240)
     finally:
         _finish(proc, seen, lines)
     assert out.returncode == 0, out.stdout
@@ -81,14 +81,14 @@ def test_gatt_read_write_notify_between_two_modules(app_exe, port_a, port_b):
     """A serves SPS from a shell and pushes values; B reads, writes, sends and grants credits."""
     _run(app_exe, port_a, "device.reboot")
     time.sleep(5)
-    server = subprocess.Popen(_args(app_exe, port_a, f'at +UBTLN="{GATT_NAME}"', "gatt.server.example.sps",
-                                    "gatt.server.example.bas") + ["--shell"],
+    server = subprocess.Popen(_args(app_exe, port_a, f'at +UBTLN="{GATT_NAME}"', "gatt.server.sps",
+                                    "gatt.server.bas") + ["--shell"],
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                               errors="replace")
     lines = queue.Queue()
     threading.Thread(target=lambda: [lines.put(line) for line in server.stdout], daemon=True).start()
-    client = subprocess.Popen(_args(app_exe, port_b, "bt.scan", f"bt.connect {GATT_NAME}", "gatt.client.example.sps",
-                                    "gatt.client.example.bas", "gatt.send 0 sps ucx-sps", "gatt.credits 0 10",
+    client = subprocess.Popen(_args(app_exe, port_b, "bt.scan", f"bt.connect {GATT_NAME}", "gatt.client.sps",
+                                    "gatt.client.bas", "gatt.send 0 sps ucx-sps", "gatt.credits 0 10",
                                     "gatt.listen 60", "bt.disconnect"),
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
     seen = ""
@@ -118,16 +118,71 @@ def test_gatt_read_write_notify_between_two_modules(app_exe, port_a, port_b):
 
 
 @pytest.mark.two_devices
+def test_gatt_server_indication_between_two_modules(app_exe, port_a, port_b):
+    """B enables indications on A's SPS FIFO; A sends one and B receives it."""
+    _run(app_exe, port_a, "device.reboot")
+    time.sleep(5)
+    server = subprocess.Popen(_args(app_exe, port_a, f'at +UBTLN="{GATT_NAME}"', "gatt.server.sps",
+                                    "gatt.server.list") + ["--shell"],
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                              errors="replace")
+    lines = queue.Queue()
+    threading.Thread(target=lambda: [lines.put(line) for line in server.stdout], daemon=True).start()
+    client = None
+    seen = ""
+
+    def wait_for(pattern, seconds):
+        nonlocal seen
+        deadline = time.time() + seconds
+        while not re.search(pattern, seen) and time.time() < deadline:
+            try:
+                seen += lines.get(timeout=1)
+            except queue.Empty:
+                pass
+        return re.search(pattern, seen)
+
+    try:
+        fifo = wait_for(r"sps\.fifo\s+value handle (\d+)", 60)
+        assert fifo, seen
+        client = subprocess.Popen(_args(app_exe, port_b, "bt.scan", f"bt.connect {GATT_NAME}",
+                                        f"gatt.subscribe 0 {fifo.group(1)} indicate", "gatt.listen 30",
+                                        "bt.disconnect"),
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+        client_lines = queue.Queue()
+        threading.Thread(target=lambda: [client_lines.put(line) for line in client.stdout], daemon=True).start()
+        out = ""
+        deadline = time.time() + 120
+        while "indications enabled" not in out and client.poll() is None and time.time() < deadline:
+            try:
+                out += client_lines.get(timeout=1)
+            except queue.Empty:
+                pass
+        assert "indications enabled" in out, out
+        server.stdin.write("gatt.server.indicate 0 sps.fifo text:ucx-indication\n")
+        server.stdin.flush()
+        client.wait(timeout=120)
+        time.sleep(0.5)
+        while not client_lines.empty():
+            out += client_lines.get()
+    finally:
+        _stop(server)
+        if client:
+            client.kill()
+    assert client.returncode == 0, out
+    assert "ucx-indication" in out or "7563782d696e6469636174696f6e" in out.lower(), f"server:\n{seen}\nclient:\n{out}"
+
+
+@pytest.mark.two_devices
 def test_gatt_raw_handles_between_two_modules(app_exe, port_a, port_b):
     """B uses the raw handle commands on A's Battery service."""
     proc, seen, lines = _gatt_server(app_exe, port_a, "bas")
     try:
         chars = _run(app_exe, port_b, "bt.scan", f"bt.connect {GATT_NAME}", "gatt.chars", timeout=240)
-        handle = re.search(r"2a19\D*?(?:handle|value)[ =:]*(\d+)", chars.stdout, re.I | re.S)
+        handle = re.search(r"handle\s+(0x[0-9a-f]+|\d+)\s+\S*\s+0x2a19\b", chars.stdout, re.I)
         assert handle, chars.stdout
-        h = handle.group(1)
-        out = _run(app_exe, port_b, f"gatt.read {h}", f"gatt.subscribe {h} notify", "gatt.listen 3",
-                   f"gatt.subscribe {h} off", f"gatt.write {h} 01", f"gatt.writelong {h} 01", "bt.disconnect")
+        h = int(handle.group(1), 0)
+        out = _run(app_exe, port_b, f"gatt.read {h}", f"gatt.subscribe 0 {h} notify", "gatt.listen 3",
+                   f"gatt.subscribe 0 {h} off", f"gatt.write {h} 01", f"gatt.writelong {h} 01", "bt.disconnect")
     finally:
         _finish(proc, seen, lines)
     assert out.returncode == 0, out.stdout

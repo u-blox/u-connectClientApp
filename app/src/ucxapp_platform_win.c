@@ -19,6 +19,7 @@
 #include <devguid.h>
 #include <cfgmgr32.h>
 #include <devpropdef.h>
+#include <psapi.h>
 
 #include "u_cx_log.h"
 
@@ -246,6 +247,44 @@ int ucxapp_platform_list_files(const char *dir, void (*cb)(const char *name, uin
     } while (FindNextFileA(h, &fd));
     FindClose(h);
     return count;
+}
+
+static int memRow(ucxapp_mem_t *rows, int n, int max, const char *name, uint64_t size, uint64_t used)
+{
+    if (n < max && size > 0) {
+        snprintf(rows[n].name, sizeof(rows[n].name), "%s", name);
+        rows[n].size = size;
+        rows[n].used = used;
+        n++;
+    }
+    return n;
+}
+
+int ucxapp_platform_memory(ucxapp_mem_t *areas, int max)
+{
+    MEMORYSTATUSEX sys = { sizeof(sys) };
+    PROCESS_MEMORY_COUNTERS pmc = { sizeof(pmc) };
+    ULARGE_INTEGER freeBytes, totalBytes;
+    int n = 0;
+
+    GlobalMemoryStatusEx(&sys);
+    if (K32GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
+        n = memRow(areas, n, max, "App RAM", sys.ullTotalPhys, pmc.WorkingSetSize);
+        n = memRow(areas, n, max, "App RAM peak", sys.ullTotalPhys, pmc.PeakWorkingSetSize);
+        n = memRow(areas, n, max, "App committed", sys.ullTotalPageFile, pmc.PagefileUsage);
+    }
+    n = memRow(areas, n, max, "System RAM", sys.ullTotalPhys, sys.ullTotalPhys - sys.ullAvailPhys);
+    if (GetDiskFreeSpaceExA(NULL, &freeBytes, &totalBytes, NULL)) {
+        n = memRow(areas, n, max, "Disk", totalBytes.QuadPart, totalBytes.QuadPart - freeBytes.QuadPart);
+    }
+    return n;
+}
+
+int ucxapp_platform_tasks(ucxapp_mem_t *tasks, int max)
+{
+    (void)tasks;
+    (void)max;
+    return 0;
 }
 
 void ucxapp_platform_exe_dir(char *buffer, size_t bufferSize)

@@ -67,6 +67,8 @@ int ucxapp_readline(const char *prompt, char *buf, size_t size);
 
 /* Registers minimal URC handlers (ucxapp_urc.c) that raise the flags below; for hosts without their own. */
 void ucxapp_urc_register(uCxHandle_t *ucx);
+/* Tick of the last +STARTUP; *exact is false when none was seen and the time is the connect time instead. */
+uint32_t ucxapp_module_boot_ms(bool *exact);
 
 /* Event flags set by URC handlers. Direct access to the flags requires the lock. */
 extern volatile uint32_t gUcxappEventFlags;

@@ -8,6 +8,8 @@ and STM32.
   ucxapp --stm32 --board f767 --build --flash --log
   ucxapp --detect                           find NORA modules, GNSS receivers and IMUs
   ucxapp --detect --test tests/hardware   hardware tests on what was found
+  ucxapp --doctor                           first-run checks: tools, serial access, modules
+  ucxapp --script examples/automation/smoke-test.ucx --junit report.xml
 
 Arguments the launcher does not know go to the app (to pytest with --test); everything after "--" too.
 Windows: ucxapp.cmd calls this script. Linux: ./ucxapp.py or python3 ucxapp.py.
@@ -16,6 +18,7 @@ Windows: ucxapp.cmd calls this script. Linux: ./ucxapp.py or python3 ucxapp.py.
 import argparse
 import concurrent.futures
 import glob
+import json
 import os
 import platform
 import re
@@ -116,6 +119,12 @@ def parse(argv):
     g.add_argument("--detect", action="store_true", help="find NORA modules, GNSS receivers and IMUs")
     g.add_argument("--test", action="store_true", help="run pytest (with --detect: on the detected hardware)")
     g.add_argument("--selftest", action="store_true", help="check the workspace and the built executables")
+    g.add_argument("--doctor", action="store_true",
+                   help="--selftest plus Python, serial access and the attached modules (first-run troubleshooting)")
+    g.add_argument("--script", metavar="FILE",
+                   help="run a command script (one command per line, 'expect <regex>', 'expect-fail') and report "
+                        "PASS/FAIL per step; ${NAME} takes environment variables")
+    g.add_argument("--junit", metavar="FILE", help="with --script: also write a JUnit XML report")
     g.add_argument("--update", action="store_true", help=f"update u-connectClient to {SUBMODULE_BRANCH}")
     g.add_argument("--sign", metavar="THUMBPRINT", help="sign the Release exe into app/release (Windows)")
     g.add_argument("--release", action="store_true", help="run scripts/release.py with the remaining arguments")
@@ -739,6 +748,138 @@ def selftest():
     return 1 if errors else 0
 
 
+def json_results(output):
+    """The JSON result objects of an app run with --json; other lines (driver logs) are ignored."""
+    results = []
+    for line in output.splitlines():
+        if line.startswith('{"command":'):
+            try:
+                results.append(json.loads(line))
+            except ValueError:
+                pass
+    return results
+
+
+def doctor():
+    errors = selftest()
+    print("Doctor:")
+    ok = sys.version_info >= (3, 10)
+    errors += not ok
+    print(f"[{'OK' if ok else 'ERROR'}] Python {platform.python_version()} (3.10+ needed)")
+    try:
+        import serial  # noqa: F401
+        print("[OK] pyserial installed")
+    except ImportError:
+        print("[INFO] pyserial missing (optional, better port names): pip install pyserial")
+    if not IS_WINDOWS:
+        groups = subprocess.run(["id", "-Gn"], capture_output=True, text=True).stdout.split()
+        ok = "dialout" in groups or os.geteuid() == 0
+        errors += not ok
+        print(f"[{'OK' if ok else 'ERROR'}] serial access"
+              f"{'' if ok else ': add yourself to dialout: sudo usermod -aG dialout $USER, then log in again'}")
+        wsl_serial_hint()
+    exe = host_exe(False)
+    if not exe.exists():
+        print("[INFO] app not built; ports and modules not checked (run: ucxapp --build)")
+        return 1 if errors else 0
+    ports = list_ports(exe)
+    print(f"[{'OK' if ports else 'WARNING'}] {len(ports)} serial port(s)")
+    modules = module_ports(app_output(exe, "--list-modules", timeout=30))
+    if not modules:
+        print("[WARNING] no NORA module found: check the USB cable, the EVK power and the FTDI driver")
+    for port in modules:
+        res = json_results(app_output(exe, port, "--json", "--exec", "device.caps", timeout=30))
+        caps = next((r for r in res if r["command"] == "device.caps"), None)
+        if caps and caps["success"]:
+            d = caps.get("data", {})
+            print(f"[OK] {port}: {d.get('model', '?')} firmware {d.get('firmware', '?')}, Wi-Fi {d.get('wi_fi', '?')}")
+        else:
+            errors += 1
+            print(f"[ERROR] {port}: no answer ({caps['error'] if caps else 'no output'}); "
+                  "is another program using the port, or is the module in bootloader mode?")
+    print("Doctor: no problems found" if errors == 0 else f"Doctor: {errors} problem(s)")
+    return 1 if errors else 0
+
+
+def parse_script(path):
+    """[(command, [expect regex...], expect_fail)] from a script file."""
+    steps = []
+    for n, raw in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith(("expect ", "expect-fail")):
+            if not steps:
+                fail(f"{path}:{n}: '{line}' before the first command")
+            if line == "expect-fail":
+                steps[-1][2] = True
+            else:
+                steps[-1][1].append(line[len("expect "):].strip())
+            continue
+        steps.append([line, [], False])
+    if not steps:
+        fail(f"{path}: no commands")
+    if len(steps) > 64:
+        fail(f"{path}: {len(steps)} commands, the app takes at most 64 per run")
+    return steps
+
+
+def write_junit(path, name, cases):
+    from xml.sax.saxutils import escape, quoteattr
+
+    failures = sum(1 for c in cases if c[1] == "FAIL")
+    skipped = sum(1 for c in cases if c[1] == "SKIP")
+    out = [f'<testsuite name={quoteattr(name)} tests="{len(cases)}" failures="{failures}" skipped="{skipped}">']
+    for command, status, detail in cases:
+        out.append(f"  <testcase name={quoteattr(command)}>")
+        if status == "FAIL":
+            out.append(f"    <failure message={quoteattr(detail)}/>")
+        elif status == "SKIP":
+            out.append("    <skipped/>")
+        out.append(f"    <system-out>{escape(detail)}</system-out>")
+        out.append("  </testcase>")
+    out.append("</testsuite>")
+    Path(path).write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+def run_script(exe, path, app_args, junit=None):
+    steps = parse_script(path)
+    cmd = [str(exe), *app_args, "--json"]
+    for command, _, _ in steps:
+        cmd += ["--exec", command]
+    r = subprocess.run(cmd, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    results = json_results(r.stdout)
+    if results and results[0]["command"].startswith("device.connect") and not steps[0][0].startswith("device.connect"):
+        connect = results.pop(0)
+        if not connect["success"]:
+            print(f"connect: {connect.get('error', '')}")
+    cases = []
+    stopped = False
+    for i, (command, expects, expect_fail) in enumerate(steps):
+        res = results[i] if i < len(results) and not stopped else None
+        if res is None:
+            cases.append((command, "SKIP", "not run (an earlier command failed)"))
+            continue
+        text = "\n".join(res["output"])
+        problems = []
+        if res["success"] == expect_fail:
+            problems.append(f"expected failure, got {res['code']}" if expect_fail else
+                            f"{res['code']}: {res.get('error', '')}")
+        problems += [f"no match for '{e}'" for e in expects if not re.search(e, text, re.MULTILINE)]
+        cases.append((command, "FAIL" if problems else "PASS", "; ".join(problems) or text))
+        # The app stops at the first failing command; an expected failure stops it too.
+        stopped = not res["success"]
+    for command, status, detail in cases:
+        print(f"{status:<5} {command}" + (f"\n      {detail}" if status == "FAIL" else ""))
+    passed = sum(1 for c in cases if c[1] == "PASS")
+    print(f"{passed}/{len(cases)} passed")
+    if junit:
+        write_junit(junit, Path(path).stem, cases)
+        print("JUnit report:", junit)
+    return 0 if passed == len(cases) else 1
+
+
 def main(argv):
     args, extra, parsed_argv = parse(argv)
     if args.release:
@@ -747,6 +888,13 @@ def main(argv):
         return update()
     if args.selftest:
         return selftest()
+    if args.doctor:
+        return doctor()
+    if args.script:
+        exe = host_exe(args.debug)
+        if stale(exe):
+            host_build(["Debug" if args.debug else "Release"])
+        return run_script(exe, args.script, extra, args.junit)
     if args.everything:
         return everything(args)
     if args.linux and IS_WINDOWS:

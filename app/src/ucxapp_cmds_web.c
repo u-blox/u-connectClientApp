@@ -640,7 +640,7 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
     if (cert != NULL) {
         tls = ucxapp_tls_server_new(cert, false, err, sizeof(err));
         if (tls == NULL) {
-            ucxapp_print("ERROR: TLS certificate '%s': %s (try tls.ca.create, then tls.server.create %s %s)\n",
+            ucxapp_print("ERROR: TLS certificate '%s': %s (try utils.tls.ca.create, then utils.tls.server.create %s %s)\n",
                          cert, err, cert, ip);
             return UCXAPP_ERR_FAILED;
         }
@@ -708,7 +708,7 @@ static int cmdWebStart(ucxapp_t *app, int argc, char *argv[])
     }
     ucxapp_print("web server on %s: %s://%s:%d/#t=%s\n", ssid, gHttps ? "https" : "http", ip, (int)port, gToken);
     if (gHttps) {
-        ucxapp_print("trust tls-ca.crt in the browser (tls.pem ca) to avoid the certificate warning\n");
+        ucxapp_print("trust tls-ca.crt in the browser (utils.tls.pem ca) to avoid the certificate warning\n");
     }
     return UCXAPP_OK;
 }

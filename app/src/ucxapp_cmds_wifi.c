@@ -494,6 +494,14 @@ static int cmdWifiConnect(ucxapp_t *app, int argc, char *argv[])
     }
     count = loadProfiles(list);
     idx = findProfileBySsid(list, count, ssid);
+    if (argc == 3 && strcmp(argv[2], "-") == 0) {
+        /* Password from a prompt (or piped stdin), so it is not on the command line. */
+        static char typed[PASS_LEN];
+        if (ucxapp_readline("password: ", typed, sizeof(typed)) < 0) {
+            return UCXAPP_ERR_FAILED;
+        }
+        argv[2] = typed;
+    }
     if (argc == 3) {
         int rc = connectTo(app, ssid, argv[2], 20);
 
@@ -937,14 +945,14 @@ static int cmdWifiRoaming(ucxapp_t *app, int argc, char *argv[])
 
 static const ucxapp_cmd_t gWifiCmds[] = {
     { "wifi.scan",       "",                    "Scan for networks: strongest first with band, signal and security, channel usage and a quiet channel for an AP", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiScan },
-    { "wifi.connect",    "[ssid|n] [password]", "Connect by SSID or number from wifi.scan; a saved profile supplies the password; with no argument: the best known network (same as wifi.profile.auto)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiConnect },
+    { "wifi.connect",    "[ssid|n] [password|-]", "Connect by SSID or number from wifi.scan; '-' prompts for the password; a saved profile supplies the password; with no argument: the best known network (same as wifi.profile.auto)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiConnect },
     { "wifi.disconnect", "",                    "Disconnect from Wi-Fi",            UCXAPP_CMD_NEEDS_DEVICE, cmdWifiDisconnect },
     { "wifi.status",     "",                    "Show connection, SSID, RSSI, IP",  UCXAPP_CMD_NEEDS_DEVICE, cmdWifiStatus },
     { "wifi.rssi",       "[count] [interval_s]", "Read the signal strength (repeatedly)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRssi },
     { "wifi.ip",         "[dhcp | <ip> <mask> <gw> [dns1 [dns2]]]", "Show or set DHCP / static IP (applies on next connect)", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiIp },
     { "wifi.profile.add", "<name> <ssid> [password]", "Save or update a Wi-Fi profile", 0, cmdProfileAdd },
     { "wifi.profile.list", "",                   "List saved Wi-Fi profiles",        0, cmdProfileList },
-    { "wifi.profile.remove", "<name>",           "Delete a saved Wi-Fi profile",     0, cmdProfileRemove },
+    { "wifi.profile.remove", "<name>",           "Delete a saved Wi-Fi profile",     UCXAPP_CMD_DANGER, cmdProfileRemove },
     { "wifi.profile.connect", "<name>",          "Connect using a saved Wi-Fi profile", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileConnect },
     { "wifi.profile.auto", "",                   "Connect: the last used profile, else scan and pick the strongest known", UCXAPP_CMD_NEEDS_DEVICE, cmdProfileAuto },
     { "wifi.regdomain",  "[world|etsi|fcc|ic|nz|mkk|ncc|acma|kcc|sa|br]", "Show or set (and save) the regulatory domain", UCXAPP_CMD_NEEDS_DEVICE, cmdWifiRegDomain },

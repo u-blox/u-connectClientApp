@@ -82,6 +82,19 @@ bool ucxapp_platform_find_file(const char *dir, const char *ext, char *out, size
 /** Calls cb(name, size, ctx) for every file directly in dir (folders skipped); returns the count, -1 on error. */
 int ucxapp_platform_list_files(const char *dir, void (*cb)(const char *name, uint64_t size, void *ctx), void *ctx);
 
+/** A memory area or task stack: size and used, in bytes. */
+typedef struct {
+    char name[24];
+    uint64_t size;
+    uint64_t used;
+} ucxapp_mem_t;
+
+/** RAM, heap, flash/disk areas of this program; returns the count. */
+int ucxapp_platform_memory(ucxapp_mem_t *areas, int max);
+
+/** Stack of each task (RTOS targets; 0 on hosts); returns the count. */
+int ucxapp_platform_tasks(ucxapp_mem_t *tasks, int max);
+
 #ifdef __cplusplus
 }
 #endif

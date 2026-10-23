@@ -247,7 +247,7 @@ def test_gnss_and_imu_detect_without_hardware_do_not_crash(app_exe, tmp_path):
 
 
 @pytest.mark.parametrize("command", [
-    "gatt.listen", "gatt.listen off", "gatt.listen 1", "gatt.client.example.wit", "gatt.client.example.hrs",
+    "gatt.listen", "gatt.listen off", "gatt.listen 1", "gatt.client.wit", "gatt.client.hrs",
 ])
 def test_gatt_listen_and_examples_need_a_device(app_exe, tmp_path, command):
     out = _run(app_exe, tmp_path, "COM255", command)
@@ -256,7 +256,7 @@ def test_gatt_listen_and_examples_need_a_device(app_exe, tmp_path, command):
 
 
 def test_gatt_listen_help_mentions_off(app_exe, tmp_path):
-    out = _run(app_exe, tmp_path, "COM255", "help gatt.listen", "help gatt.client.example.wit")
+    out = _run(app_exe, tmp_path, "COM255", "help gatt.listen", "help gatt.client.wit")
     assert "[seconds|off]" in out.stdout
     assert "WitMotion" in out.stdout
 
@@ -535,8 +535,8 @@ def _handshake_once(ssl, ca, cert, key, hostname, client_cert, require_client):
 
 
 def test_tls_certificates_form_a_valid_chain(app_exe, tmp_path):
-    out = _run_in(app_exe, tmp_path, "tls.ca.create", "tls.server.create server localhost 127.0.0.1",
-                  "tls.client.create alice", "tls.list")
+    out = _run_in(app_exe, tmp_path, "utils.tls.ca.create", "utils.tls.server.create server localhost 127.0.0.1",
+                  "utils.tls.client.create alice", "utils.tls.list")
     assert out.returncode == 0, out.stdout
     store = _store(tmp_path)
     for name in ("ca", "server", "alice"):
@@ -551,22 +551,22 @@ def test_tls_certificates_form_a_valid_chain(app_exe, tmp_path):
 
 
 def test_tls_commands_protect_the_ca_and_reject_bad_names(app_exe, tmp_path):
-    out = _run_in(app_exe, tmp_path, "tls.server.create web 10.0.0.1")
+    out = _run_in(app_exe, tmp_path, "utils.tls.server.create web 10.0.0.1")
     assert out.returncode == 1
-    assert "run tls.ca.create first" in out.stdout
+    assert "run utils.tls.ca.create first" in out.stdout
 
-    assert _run_in(app_exe, tmp_path, "tls.ca.create").returncode == 0
+    assert _run_in(app_exe, tmp_path, "utils.tls.ca.create").returncode == 0
     before = (_store(tmp_path) / "tls-ca.crt").read_text()
-    out = _run_in(app_exe, tmp_path, "tls.ca.create")
+    out = _run_in(app_exe, tmp_path, "utils.tls.ca.create")
     assert out.returncode == 1
     assert "already exists" in out.stdout
     assert (_store(tmp_path) / "tls-ca.crt").read_text() == before
 
-    for bad in ("tls.server.create ../x host", "tls.server.create ca host", "tls.server.create web a,b",
-                "tls.client.create bob extra"):
+    for bad in ("utils.tls.server.create ../x host", "utils.tls.server.create ca host",
+                "utils.tls.server.create web a,b", "utils.tls.client.create bob extra"):
         assert _run_in(app_exe, tmp_path, bad).returncode == 1, bad
 
-    out = _run_in(app_exe, tmp_path, "tls.pem ca", "tls.remove ca", "tls.pem ca")
+    out = _run_in(app_exe, tmp_path, "utils.tls.pem ca", "utils.tls.remove ca", "utils.tls.pem ca")
     assert "-----BEGIN CERTIFICATE-----" in out.stdout
     assert "tls-ca.crt not found" in out.stdout
 
@@ -582,8 +582,8 @@ def test_https_needs_a_device(app_exe, tmp_path):
 @pytest.fixture
 def tls_dir(app_exe, tmp_path):
     """A store with the local CA, a server certificate for gnss.local + 192.168.1.42 and a client 'rover'."""
-    out = _run_in(app_exe, tmp_path, "tls.ca.create", "tls.server.create server gnss.local 192.168.1.42",
-                  "tls.client.create rover")
+    out = _run_in(app_exe, tmp_path, "utils.tls.ca.create", "utils.tls.server.create server gnss.local 192.168.1.42",
+                  "utils.tls.client.create rover")
     assert out.returncode == 0, out.stdout
     return tmp_path
 
@@ -626,41 +626,41 @@ def test_tls_client_auth_accepts_only_certificates_from_the_ca(app_exe, tls_dir,
     assert _try_handshake(ca, *server, "gnss.local", require_client=ca)   # no client certificate
 
     other = tmp_path_factory.mktemp("other")
-    assert _run_in(app_exe, other, "tls.ca.create", "tls.client.create mallory").returncode == 0
+    assert _run_in(app_exe, other, "utils.tls.ca.create", "utils.tls.client.create mallory").returncode == 0
     assert _try_handshake(ca, *server, "gnss.local", client_cert=_files(other, "mallory"), require_client=ca)
 
 
 def test_tls_ca_force_invalidates_old_certificates(app_exe, tls_dir):
     old = (_store(tls_dir) / "tls-ca.crt").read_text()
-    out = _run_in(app_exe, tls_dir, "tls.ca.create my-ca force", "tls.list")
+    out = _run_in(app_exe, tls_dir, "utils.tls.ca.create my-ca force", "utils.tls.list")
     assert out.returncode == 0, out.stdout
     assert (_store(tls_dir) / "tls-ca.crt").read_text() != old
     assert re.search(r"^ca\s+CN=my-ca", out.stdout, re.M)
     assert _try_handshake(_store(tls_dir) / "tls-ca.crt", *_files(tls_dir, "server"), "gnss.local")
-    assert _run_in(app_exe, tls_dir, "tls.server.create server gnss.local").returncode == 0
+    assert _run_in(app_exe, tls_dir, "utils.tls.server.create server gnss.local").returncode == 0
     assert not _try_handshake(_store(tls_dir) / "tls-ca.crt", *_files(tls_dir, "server"), "gnss.local")
 
 
 def test_tls_pem_prints_the_key_only_when_asked(app_exe, tls_dir):
-    out = _run_in(app_exe, tls_dir, "tls.pem rover")
+    out = _run_in(app_exe, tls_dir, "utils.tls.pem rover")
     assert "BEGIN CERTIFICATE" in out.stdout and "PRIVATE KEY" not in out.stdout
-    out = _run_in(app_exe, tls_dir, "tls.pem rover key")
+    out = _run_in(app_exe, tls_dir, "utils.tls.pem rover key")
     assert "PRIVATE KEY" in out.stdout and "BEGIN CERTIFICATE" not in out.stdout
-    assert _run_in(app_exe, tls_dir, "tls.pem rover cert").returncode == 1
+    assert _run_in(app_exe, tls_dir, "utils.tls.pem rover cert").returncode == 1
 
 
 def test_tls_remove_and_list(app_exe, tls_dir):
-    out = _run_in(app_exe, tls_dir, "tls.remove rover", "tls.list")
+    out = _run_in(app_exe, tls_dir, "utils.tls.remove rover", "utils.tls.list")
     assert out.returncode == 0, out.stdout
     assert not (_store(tls_dir) / "tls-rover.crt").exists() and not (_store(tls_dir) / "tls-rover.key").exists()
     assert "rover" not in out.stdout.split("removed rover", 1)[1]
-    assert _run_in(app_exe, tls_dir, "tls.remove rover").returncode == 1
+    assert _run_in(app_exe, tls_dir, "utils.tls.remove rover").returncode == 1
 
 
 def test_tls_list_on_an_empty_store(app_exe, tmp_path):
-    out = _run_in(app_exe, tmp_path, "tls.list")
+    out = _run_in(app_exe, tmp_path, "utils.tls.list")
     assert out.returncode == 0
-    assert "no certificates, start with tls.ca.create" in out.stdout
+    assert "no certificates, start with utils.tls.ca.create" in out.stdout
 
 
 @pytest.mark.parametrize("command, expected", [

@@ -1,4 +1,5 @@
 #include "ucxapp_cmd.h"
+#include "ucxapp_store.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -708,25 +709,20 @@ static void makeDirs(char *path, size_t from)
     }
 }
 
-static int cmdUnzip(ucxapp_t *app, int argc, char *argv[])
+bool ucxapp_unzip(const char *zipPath, const char *dir)
 {
-    const char *dir = (argc > 2) ? argv[2] : ".";
     size_t size = 0;
     uint8_t *zip;
     const uint8_t *end = NULL;
     const uint8_t *c;
     uint32_t count;
     int extracted = 0;
-    int rc = UCXAPP_ERR_FAILED;
+    bool rc = false;
 
-    (void)app;
-    if (argc < 2 || argc > 3) {
-        return UCXAPP_ERR_USAGE;
-    }
-    zip = readWholeFile(argv[1], &size);
+    zip = ucxapp_store_load(zipPath, &size);
     if (zip == NULL) {
-        ucxapp_print("ERROR: cannot read %s\n", argv[1]);
-        return UCXAPP_ERR_FAILED;
+        ucxapp_print("ERROR: cannot read %s\n", zipPath);
+        return false;
     }
     for (size_t i = size; i >= 22 && i + 65535u + 22u >= size; i--) {
         if (get32(zip + i - 22) == ZIP_SIG_END) {
@@ -831,11 +827,20 @@ static int cmdUnzip(ucxapp_t *app, int argc, char *argv[])
         extracted++;
     }
     ucxapp_print("Extracted %d file%s to %s\n", extracted, extracted == 1 ? "" : "s", dir);
-    rc = UCXAPP_OK;
+    rc = true;
 
 done:
     free(zip);
     return rc;
+}
+
+static int cmdUnzip(ucxapp_t *app, int argc, char *argv[])
+{
+    (void)app;
+    if (argc < 2 || argc > 3) {
+        return UCXAPP_ERR_USAGE;
+    }
+    return ucxapp_unzip(argv[1], argc > 2 ? argv[2] : ".") ? UCXAPP_OK : UCXAPP_ERR_FAILED;
 }
 
 static const ucxapp_cmd_t gUtilsCmds[] = {

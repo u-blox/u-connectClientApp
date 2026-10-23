@@ -274,7 +274,7 @@ static const ucxapp_cmd_t gCertCmds[] = {
     { "cert.list",   "",                                  "List installed certificates and keys",             UCXAPP_CMD_NEEDS_DEVICE, cmdCertList },
     { "cert.info",   "<name>",                            "Show size and SHA-256 fingerprint", UCXAPP_CMD_NEEDS_DEVICE, cmdCertInfo },
     { "cert.upload", "<ca|client|key> <file> [name] [pw]", "Upload a PEM file (max 8192 bytes); pw is for encrypted keys", UCXAPP_CMD_NEEDS_DEVICE, cmdCertUpload },
-    { "cert.remove", "<name>",                            "Remove a certificate or key",                      UCXAPP_CMD_NEEDS_DEVICE, cmdCertRemove },
+    { "cert.remove", "<name>",                            "Remove a certificate or key",                      UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdCertRemove },
 };
 
 void ucxapp_register_cert_cmds(void)

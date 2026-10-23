@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "app"
 SRC = APP / "src"
 ENTRY = re.compile(
-    r'^\s*\{ "([a-z][a-z0-9.]*)",\s*"[^"]*",\s*"(?:[^"\\]|\\.)*",\s*(?:UCXAPP_CMD_NEEDS_DEVICE|0),\s*\w+\s*\},',
+    r'^\s*\{ "([a-z][a-z0-9.]*)",\s*"[^"]*",\s*"(?:[^"\\]|\\.)*",\s*'
+    r'(?:UCXAPP_CMD_\w+(?:\s*\|\s*UCXAPP_CMD_\w+)*|0),\s*\w+\s*\},',
     re.M,
 )
 
@@ -39,8 +40,8 @@ def registered_commands():
 
 
 def _doc_name(name):
-    # The reference documents the per-service examples as gatt.client.example.<svc>.
-    return re.sub(r"^(gatt\.(?:client|server)\.example\.)[a-z]+$", r"\1<svc>", name)
+    # The reference documents the per-service examples as gatt.client.<svc>.
+    return re.sub(r"^(gatt\.(?:client|server)\.)(?:hrs|cts|ess|lns|aio|bas|dis|nus|sps|wit|wps)$", r"\1<svc>", name)
 
 
 def test_command_scan_finds_the_new_packs():

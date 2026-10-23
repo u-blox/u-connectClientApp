@@ -655,7 +655,7 @@ bool ucxapp_stream_bridge_tls(ucxapp_stream_t *s, ucxapp_t *app, int32_t port, c
     }
     srv = ucxapp_tls_server_new(certName, clientAuth, err, sizeof(err));
     if (srv == NULL) {
-        ucxapp_print("ERROR: TLS certificate '%s': %s (see tls.ca.create / tls.server.create)\n", certName, err);
+        ucxapp_print("ERROR: TLS certificate '%s': %s (see utils.tls.ca.create / utils.tls.server.create)\n", certName, err);
         return false;
     }
     s->tlsSrv = srv;   /* set before the sender starts so no client is ever served in clear text */

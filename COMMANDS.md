@@ -26,6 +26,9 @@ ucxapp device.info
 - Arguments are whitespace separated; use double quotes for values with spaces
   (`wifi.connect "My Network" "my password"`). `\"` and `\\` escape inside quotes.
 - Lines starting with `#` are comments. Maximum 8 arguments per command.
+- `--json` prints one JSON line per command: `command`, `success`, `code` (`OK`, `USAGE`, `NOT_CONNECTED`,
+  `UNKNOWN_CMD`, `FAILED`), `error`, `output` lines and `data` (the `Key: value` lines).
+- `${NAME}` in `--exec` and shell commands is replaced by the environment variable (not in the web UI).
 
 ## Command reference
 
@@ -37,7 +40,7 @@ network, sockets, MQTT, HTTP, security, then the app's own tools. `help <prefix>
 
 | Command | Arguments | Description |
 |---|---|---|
-| `help` | `[prefix]` | List commands, optionally filtered (`help wifi`) |
+| `help` | `[prefix]` | List commands, optionally filtered (`help wifi`); `help --json [prefix]` gives name, usage, help, `needsDevice` and `danger` per command |
 | `at` | `[command]` | Send a raw AT command; the `AT` prefix is optional (`at +GMI`). With no command it enters AT mode: every line is sent as typed (quotes kept) until you type `back` |
 
 ### System
@@ -45,14 +48,20 @@ network, sockets, MQTT, HTTP, security, then the app's own tools. `help <prefix>
 | Command | Arguments | Description |
 |---|---|---|
 | `device.info` | | Manufacturer, model, firmware version |
+| `device.caps` | | Capabilities: model, firmware, Wi-Fi, Bluetooth LE, and the sockets/MQTT/TLS/HTTP/GATT features this module and build support |
+| `device.uptime` | | Time since the module started, counted from its last `+STARTUP` |
+| `device.stack` | | Developer: stack size, used bytes and usage % of every module task |
+| `device.crash` | | Developer: last crash info stored in module flash; reading it clears it |
+| `device.diagnose` | `[host]` | Support report: `device.caps`, uptime, Wi-Fi, DNS and ping of the host (default u-blox.com), certificates; ends with `Result: PASS` or `FAIL` |
 | `device.status` | | Overview: module info, Wi-Fi state and IP, open sockets, BLE connections, certificates |
 | `device.reboot` | | Reboot the module (clears GATT services and connections); use as the last command |
 | `device.factory` | `<confirm>` | Reset the module to factory settings (erases Wi-Fi, Bluetooth and certificate settings) and reboot; the word `confirm` is required |
 | `device.connect` | `[port]` | Connect to the module (default: saved port). Windows only |
 | `device.disconnect` | | Disconnect. Windows only |
 | `fw.download` | `[latest [file]]` or `<url> <file> [sha256]` | With no arguments (same as `latest`) looks up the newest u-connectXpress GitHub release for the connected module family (e.g. NORA-W36) and saves its zip (Windows only); flash it with `fw.flash`. With a URL: download via the module (follows redirects), print SHA-256, delete the file on mismatch |
+| `fw.update` | `[force] [baud]` | Compares the module firmware with the newest GitHub release for its family; if that is newer (or `force`), downloads the zip into the app store (reused if already there), flashes it and checks the module reports the new version. Download needs Windows |
 | `fw.bootloader` | `<port> <file.bin\|file.zip> [baud]` | Flash a module that is in bootloader mode (no AT interface): waits for the `>` prompt, sends `x`, then XMODEM; run `device.disconnect` first |
-| `fw.flash` | `<file.bin\|file.zip> [baud]` | XMODEM firmware update (default 921600 baud); a zip is only extracted (needs `tar` on Windows, `unzip` elsewhere), and only the `.bin` inside is flashed |
+| `fw.flash` | `<file.bin\|file.zip> [baud]` | XMODEM firmware update (default 921600 baud); a zip is only extracted (built-in unzip), and only the `.bin` inside is flashed |
 
 ```powershell
 ucxapp COM13 --exec "device.info"
@@ -104,12 +113,12 @@ ucxapp COM13 --exec "bt.defaults secure" --exec "bt.connect 11:22:33:44:55:66"
 | `gatt.writelong` | `[conn] <handle> <hex\|text:abc> [offset] [reliable] [more]` | Long write (prepare/execute) |
 | `gatt.subscribe` | `[conn] <handle> [notify\|indicate\|off]` | Set the CCCD (assumed at value handle + 1) |
 | `gatt.listen` | `[seconds\|off]` | Client examples keep listening after they subscribe: notifications are printed parsed and mirrored to the Events pane until `gatt.listen off` unsubscribes. Without arguments it shows the state; with seconds it waits (needed for `gatt.wps` and server examples) |
-| `gatt.client.example.<svc>` | `[conn]` (`sps`: `[flow]`) | Discover a predefined service, read, decode and subscribe; `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `dis`, `nus`, `sps` or `wit` (WitMotion BLE IMU; decodes the 0x55 0x61 packets) |
+| `gatt.client.<svc>` | `[conn]` (`sps`: `[flow]`) | Discover a predefined service, read, decode and subscribe; `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `dis`, `nus`, `sps` or `wit` (WitMotion BLE IMU; decodes the 0x55 0x61 packets) |
 | `gatt.send` | `[conn] <nus\|sps> <text>` | Send text to the remote NUS or SPS service |
 | `gatt.credits` | `[conn] <1-127>` | Send SPS credits |
 | `gatt.wps` | `[conn] <status\|scan\|connect\|forget\|config <ssid> <pw> [OPEN\|WPA2\|WPA3]\|raw <text>>` | Send a Wi-Fi provisioning command to a remote device and wait for the response |
-| `gatt.server.example.<svc>` | `[seconds]` | Define a predefined local service (once per module restart); with seconds, simulate values for a connected client. `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `nus` or `sps` |
-| `gatt.server.example.nus` / `.sps` / `.wps` | `[seconds]` | Nordic UART, u-blox Serial Port and Wi-Fi Provisioning servers; with seconds, serve a client for that long (client writes are printed, WPS commands are executed) |
+| `gatt.server.<svc>` | `[seconds]` | Define a predefined local service (once per module restart); with seconds, simulate values for a connected client. `<svc>` is `hrs`, `cts`, `ess`, `lns`, `aio`, `bas`, `nus` or `sps` |
+| `gatt.server.nus` / `.sps` / `.wps` | `[seconds]` | Nordic UART, u-blox Serial Port and Wi-Fi Provisioning servers; with seconds, serve a client for that long (client writes are printed, WPS commands are executed) |
 | `gatt.server.list` |  | List the local characteristics defined by the server examples |
 | `gatt.server.set` | `<name\|handle> <hex\|text:abc>` | Set a local characteristic value |
 | `gatt.server.notify` | `[conn] <name\|handle> <data>` | Send a notification |
@@ -126,13 +135,13 @@ ucxapp COM13 --exec "bt.defaults secure" --exec "bt.connect 11:22:33:44:55:66"
 
 ```powershell
 # Client: read a heart rate sensor (connection handle 0 from bt.connect)
-ucxapp COM13 --exec "bt.connect 11:22:33:44:55:66,random" --exec "gatt.client.example.hrs 0" --exec "gatt.listen 20"
+ucxapp COM13 --exec "bt.connect 11:22:33:44:55:66,random" --exec "gatt.client.hrs 0" --exec "gatt.listen 20"
 
 # Server: act as a battery service and push simulated values for 60 s once a phone connects
-ucxapp COM13 --exec "gatt.server.example.bas 60"
+ucxapp COM13 --exec "gatt.server.bas 60"
 
 # Send text to a Nordic UART peer
-ucxapp COM13 --exec "gatt.client.example.nus 0" --exec "gatt.send 0 nus hello"
+ucxapp COM13 --exec "gatt.client.nus 0" --exec "gatt.send 0 nus hello"
 
 # Use the module as a Bluetooth keyboard
 ucxapp COM13 --exec "hid.setup" --exec "hid.text Hello from NORA"
@@ -143,7 +152,7 @@ ucxapp COM13 --exec "hid.setup" --exec "hid.text Hello from NORA"
 | Command | Arguments | Description |
 |---|---|---|
 | `wifi.scan` | | List networks strongest first with BSSID, channel and band, signal, security (Open, WPA, WPA2, WPA3) and any saved profile; then channel usage with congestion and the quietest channel for `wifi.ap.enable`. The results are kept for `wifi.connect` |
-| `wifi.connect` | `[ssid\|n] [password]` | With no argument: connect like `wifi.profile.auto` (the last used profile, else the strongest known network). Otherwise connect by SSID or by the number from the last `wifi.scan`; waits up to 20 s and shows IP, mask, gateway, channel and signal. A saved profile for the SSID supplies the password; open networks need none |
+| `wifi.connect` | `[ssid\|n] [password\|-]` | With no argument: connect like `wifi.profile.auto` (the last used profile, else the strongest known network). Otherwise connect by SSID or by the number from the last `wifi.scan`; `-` prompts for the password; waits up to 20 s and shows IP, mask, gateway, channel and signal. A saved profile for the SSID supplies the password; open networks need none |
 | `wifi.status` | | Connection state, SSID, RSSI, IP |
 | `wifi.disconnect` | | Leave the network |
 | `wifi.ip` | `[dhcp \| <ip> <mask> <gw> [dns1 [dns2]]]` | Show, or set, DHCP or static IP; applies on the next `wifi.connect` |
@@ -291,19 +300,19 @@ app store as `tls-<name>.crt` / `tls-<name>.key` (PEM, ECDSA P-256, SHA-256). No
 
 | Command | Arguments | Description |
 |---|---|---|
-| `tls.ca.create` | `[cn] [force]` | Create the local CA (`tls-ca.*`, valid 20 years). `force` replaces it; certificates it issued stop working |
-| `tls.server.create` | `<name> <host\|ip> [...]` | Server certificate signed by the CA for up to 8 host names / IPv4 addresses (the first is the common name), valid 10 years |
-| `tls.client.create` | `<name>` | Client certificate for `clientauth` bridges |
-| `tls.list` | | Certificates with subject, issuer and validity |
-| `tls.pem` | `<name> [key]` | Print a certificate, or its key, in PEM (copy `tls.pem ca` to clients) |
-| `tls.remove` | `<name>` | Remove a certificate and its key |
+| `utils.tls.ca.create` | `[cn] [force]` | Create the local CA (`tls-ca.*`, valid 20 years). `force` replaces it; certificates it issued stop working |
+| `utils.tls.server.create` | `<name> <host\|ip> [...]` | Server certificate signed by the CA for up to 8 host names / IPv4 addresses (the first is the common name), valid 10 years |
+| `utils.tls.client.create` | `<name>` | Client certificate for `clientauth` bridges |
+| `utils.tls.list` | | Certificates with subject, issuer and validity |
+| `utils.tls.pem` | `<name> [key]` | Print a certificate, or its key, in PEM (copy `utils.tls.pem ca` to clients) |
+| `utils.tls.remove` | `<name>` | Remove a certificate and its key |
 
 ```powershell
 ucxapp COM13 --shell
-> tls.ca.create
-> tls.server.create server 192.168.1.42 nora.local
+> utils.tls.ca.create
+> utils.tls.server.create server 192.168.1.42 nora.local
 > web.start https                 # https://192.168.1.42/#t=<token>
-> tls.client.create laptop
+> utils.tls.client.create laptop
 > gnss.bridge tls 2947 server clientauth
 ```
 
@@ -439,14 +448,16 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 | `log.stop` | | Finish and write the file started by `log.save` |
 | `log.clear` | | Clear the log (in the text UI the Log pane) |
 | `file.hash` | `<md5\|sha256> <file>` | Print the hash of a file (no device needed) |
-| `hash.text` | `<md5\|sha256> <text...>` | Print the hash of a text |
-| `hash.selftest` | | Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors |
+| `utils.hash.text` | `<md5\|sha256> <text...>` | Print the hash of a text |
+| `utils.hash.selftest` | | Offline check of md5 and sha256 against RFC 1321 / FIPS 180-2 vectors |
 | `file.view` | `<file> [lines]` | Show the first lines of a text file, read only (default 40 lines; non-printable bytes shown as dots) |
 | `file.list` | | List the files in the working folder, numbered, with sizes |
 | `file.remove` | `<file\|number>` | Delete a file by name or by its number from `file.list` |
 | `stats.show` | `[tcp\|udp\|sps\|gatt\|http\|mqtt\|web] [rx\|tx]` | Payload bytes sent and received per channel; `stats.show tcp rx` prints just the number |
 | `stats.clear` | `[tcp\|udp\|sps\|gatt\|http\|mqtt\|web]` | Reset one channel's counters, or all |
 | `app.info` | | About this app: maker, platform and links |
+| `app.complete` | `<prefix>` | Tab completion of a command prefix: number of matches and the completed text |
+| `app.memory` | | App RAM, heap and flash (disk on PC) use, plus task stacks on STM32; same rows as `device.stack` |
 | `app.version` | | App version, build time, platform and compiler |
 | `app.uptime` | | Time since the app started (`days hh:mm:ss`) |
 | `app.sbom` | | Software bill of materials: components, versions, licences and sources |

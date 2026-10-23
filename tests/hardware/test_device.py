@@ -15,6 +15,20 @@ def test_connects_and_reports_model(app_exe, port_a):
     assert re.search(r"NORA-(W36|B2\d)", out.stdout), out.stdout
 
 
+@pytest.mark.hardware
+def test_uptime_counts_from_reboot(app_exe, port_a):
+    out = _run(app_exe, port_a, "device.reboot", "device.uptime", timeout=60)
+    assert out.returncode == 0, out.stdout
+    assert re.search(r"^0 days 00:00:\d\d$", out.stdout, re.M), out.stdout
+
+
+@pytest.mark.hardware
+def test_diagnostic_commands_run(app_exe, port_a):
+    out = _run(app_exe, port_a, "device.caps", "device.stack", "device.crash", "device.diagnose", timeout=120)
+    assert out.returncode == 0, out.stdout
+    assert "ERROR" not in out.stdout, out.stdout
+
+
 @pytest.mark.app
 def test_imu_detect_probes_usb_uart_adapters(app_exe):
     # "USB-SERIAL CH340" was once parsed as an EVK port with a label and silently skipped.

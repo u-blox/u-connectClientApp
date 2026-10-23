@@ -44,8 +44,8 @@ def test_secure_bridge_over_wifi_between_two_modules(app_exe, port_a, port_b, so
     """A serves the source over TLS with a certificate from the app's local CA; B trusts that CA and reads."""
     wifi = _wifi_connect_command(tmp_path)
     ip_a, _ = _join_wifi(app_exe, port_a, wifi)
-    out = subprocess.run(_args(app_exe, port_a, "tls.ca.create", f"tls.server.create server {ip_a}",
-                               "tls.client.create rover"), capture_output=True, text=True, timeout=60,
+    out = subprocess.run(_args(app_exe, port_a, "utils.tls.ca.create", f"utils.tls.server.create server {ip_a}",
+                               "utils.tls.client.create rover"), capture_output=True, text=True, timeout=60,
                          errors="replace", cwd=tmp_path)
     assert out.returncode == 0, out.stdout
     bridge = f"{source}.bridge tls 2947 server" + (" clientauth" if clientauth else "")
@@ -82,7 +82,7 @@ def test_bridge_over_ble_between_two_modules(app_exe, port_a, port_b, source, re
     proc, _ = _start_bridge(app_exe, port_a, source, request.getfixturevalue(source), [f'at +UBTLN="{name}"'],
                             f"{source}.bridge ble nus")
     try:
-        out = _run(app_exe, port_b, "bt.scan", f"bt.connect {name}", "gatt.client.example.nus", "gatt.listen 15",
+        out = _run(app_exe, port_b, "bt.scan", f"bt.connect {name}", "gatt.client.nus", "gatt.listen 15",
                    "bt.disconnect", timeout=240)
     finally:
         _stop(proc)

@@ -101,11 +101,185 @@ static int cmdDeviceFactory(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+static int cmdDeviceUptime(ucxapp_t *app, int argc, char *argv[])
+{
+    bool exact;
+    uint32_t s = (ucxapp_platform_tick_ms() - ucxapp_module_boot_ms(&exact)) / 1000u;
+
+    (void)app;
+    (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    /* The module has no uptime command; the app times it from the last +STARTUP it saw. */
+    ucxapp_print("%s%u days %02u:%02u:%02u%s\n", exact ? "" : "at least ", (unsigned)(s / 86400),
+                 (unsigned)(s / 3600 % 24), (unsigned)(s / 60 % 60), (unsigned)(s % 60),
+                 exact ? "" : " (no +STARTUP seen since connect; device.reboot gives an exact count)");
+    return UCXAPP_OK;
+}
+
+/* Developer command AT+USYTS: +USYTS:"<task>",<stack size>,<used>,<usage %> per task. */
+static int cmdDeviceStack(ucxapp_t *app, int argc, char *argv[])
+{
+    uCxAtClient_t *client = app->ucx->pAtClient;
+    char *line;
+    int rows = 0;
+
+    (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    uCxAtClientCmdBeginF(client, "AT+USYTS", "", NULL);
+    while ((line = uCxAtClientCmdGetRspParamLine(client, "+USYTS:", NULL, NULL)) != NULL) {
+        char name[32] = "";
+        unsigned long size = 0;
+        unsigned long used = 0;
+        const char *p = line;
+        size_t n = 0;
+
+        if (*p == '"') {
+            p++;
+        }
+        while (*p != '\0' && *p != '"' && *p != ',' && n < sizeof(name) - 1) {
+            name[n++] = *p++;
+        }
+        name[n] = '\0';
+        p = strchr(p, ',');
+        if (p == NULL || sscanf(p, ",%lu,%lu", &size, &used) != 2) {
+            ucxapp_print("%s\n", line);
+            continue;
+        }
+        ucxapp_print_usage_row("Task", name, "stack", size, used);
+        rows++;
+    }
+    if (uCxAtClientCmdEnd(client) != 0) {
+        ucxapp_print("ERROR: task stack info not supported by this firmware\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    if (rows == 0) {
+        ucxapp_print("no task information\n");
+    }
+    return UCXAPP_OK;
+}
+
+/* Developer command AT+USYCI?: crash info stored in module flash; the module clears it once read. */
+static int cmdDeviceCrash(ucxapp_t *app, int argc, char *argv[])
+{
+    uCxAtClient_t *client = app->ucx->pAtClient;
+    char *line;
+    int rows = 0;
+
+    (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    uCxAtClientCmdBeginF(client, "AT+USYCI?", "", NULL);
+    while ((line = uCxAtClientCmdGetRspParamLine(client, NULL, NULL, NULL)) != NULL) {
+        ucxapp_print("%s\n", line);
+        rows++;
+    }
+    if (uCxAtClientCmdEnd(client) != 0) {
+        ucxapp_print("ERROR: crash info not supported by this firmware\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    ucxapp_print(rows == 0 ? "no crash information stored\n" : "(crash information cleared on the module)\n");
+    return UCXAPP_OK;
+}
+
+static int cmdDeviceCaps(ucxapp_t *app, int argc, char *argv[])
+{
+    char model[48] = "";
+    char fw[48] = "";
+    const char *text = NULL;
+    bool wifi;
+
+    (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    if (uCxGeneralGetDeviceModelIdentificationBegin(app->ucx, &text) && text != NULL) {
+        snprintf(model, sizeof(model), "%s", text);
+    }
+    uCxEnd(app->ucx);
+    text = NULL;
+    if (uCxGeneralGetSoftwareVersionBegin(app->ucx, &text) && text != NULL) {
+        snprintf(fw, sizeof(fw), "%s", text);
+    }
+    uCxEnd(app->ucx);
+    if (model[0] == '\0') {
+        ucxapp_print("ERROR: no answer to the model query\n");
+        return UCXAPP_ERR_FAILED;
+    }
+    /* NORA-B26 is Bluetooth LE only; NORA-W36 has Wi-Fi and Bluetooth LE. */
+    wifi = strstr(model, "B26") == NULL;
+    ucxapp_print("Model:            %s\n", model);
+    ucxapp_print("Firmware:         %s\n", fw);
+    ucxapp_print("Wi-Fi:            %s\n", wifi ? "yes" : "no");
+    ucxapp_print("Bluetooth LE:     yes\n");
+    ucxapp_print("Sockets:          %s\n", wifi ? "yes" : "no");
+    ucxapp_print("MQTT:             %s\n", wifi && ucxapp_cmd_find("mqtt.connect") != NULL ? "yes" : "no");
+    ucxapp_print("TLS:              %s\n", wifi && ucxapp_cmd_find("cert.list") != NULL ? "yes" : "no");
+    ucxapp_print("HTTP:             %s\n", wifi && ucxapp_cmd_find("http.get") != NULL ? "yes" : "no");
+    ucxapp_print("GATT:             %s\n", ucxapp_cmd_find("gatt.read") != NULL ? "yes" : "no");
+    return UCXAPP_OK;
+}
+
+/* Runs a check command if this build has it; prints the outcome line and counts failures. */
+static void diagRun(ucxapp_t *app, const char *title, const char *line, int *failed)
+{
+    char buf[128];
+    size_t nameLen = strcspn(line, " ");
+    char name[48];
+    int rc;
+
+    snprintf(name, sizeof(name), "%.*s", (int)(nameLen < sizeof(name) ? nameLen : sizeof(name) - 1), line);
+    if (ucxapp_cmd_find(name) == NULL) {
+        return;
+    }
+    ucxapp_print("--- %s (%s)\n", title, line);
+    snprintf(buf, sizeof(buf), "%s", line);
+    rc = ucxapp_cmd_exec(app, buf);
+    ucxapp_print("Check %-11s %s\n", title, rc == UCXAPP_OK ? "OK" : ucxapp_err_code(rc));
+    *failed += rc != UCXAPP_OK;
+}
+
+static int cmdDeviceDiagnose(ucxapp_t *app, int argc, char *argv[])
+{
+    char ssid[64], ip[48];
+    char host[96];
+    int failed = 0;
+
+    if (argc > 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    snprintf(host, sizeof(host), "%s", argc == 2 ? argv[1] : "u-blox.com");
+    diagRun(app, "device", "device.caps", &failed);
+    diagRun(app, "uptime", "device.uptime", &failed);
+    if (ucxapp_wifi_get_status(app->ucx, ssid, sizeof(ssid), ip, sizeof(ip))) {
+        char line[128];
+        diagRun(app, "wifi", "wifi.status", &failed);
+        snprintf(line, sizeof(line), "net.dns %s", host);
+        diagRun(app, "dns", line, &failed);
+        snprintf(line, sizeof(line), "net.ping %s 2", host);
+        diagRun(app, "internet", line, &failed);
+    } else {
+        ucxapp_print("Check %-11s not connected (network checks skipped)\n", "wifi");
+    }
+    diagRun(app, "certificates", "cert.list", &failed);
+    ucxapp_print("Result:           %s (%d failed)\n", failed == 0 ? "PASS" : "FAIL", failed);
+    return failed == 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+}
+
 static const ucxapp_cmd_t gDeviceCmds[] = {
+    { "device.caps", "", "Module capabilities: model, firmware, Wi-Fi, Bluetooth LE and the features this build has", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCaps },
+    { "device.diagnose", "[host]", "One support report: module, uptime, Wi-Fi, DNS and ping (default u-blox.com), certificates; PASS/FAIL", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceDiagnose },
     { "device.reboot", "", "Reboot the module (clears GATT services and connections); use as the last command", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceReboot },
-    { "device.factory", "<confirm>", "Erase all settings (Wi-Fi, Bluetooth, certificates) and reboot; type 'confirm' to proceed", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceFactory },
+    { "device.factory", "<confirm>", "Erase all settings (Wi-Fi, Bluetooth, certificates) and reboot; type 'confirm' to proceed", UCXAPP_CMD_NEEDS_DEVICE | UCXAPP_CMD_DANGER, cmdDeviceFactory },
     { "device.info", "", "Show manufacturer, model and firmware version", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceInfo },
     { "device.status", "", "Overview: module info, Wi-Fi, open sockets, BLE connections, certificates", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStatus },
+    { "device.uptime", "", "Time since the module started (counted from its last +STARTUP)", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceUptime },
+    { "device.stack", "", "Developer: stack size, used and usage % of every module task", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceStack },
+    { "device.crash", "", "Developer: last crash info stored in module flash; reading clears it", UCXAPP_CMD_NEEDS_DEVICE, cmdDeviceCrash },
 };
 
 int ucxapp_find_modules(char names[][UCXAPP_PLATFORM_PORT_NAME_LEN], int maxNames)

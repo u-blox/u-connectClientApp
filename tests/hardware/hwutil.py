@@ -155,5 +155,5 @@ def _gatt_server(exe, port, key, seconds=40):
     """A fresh module A serving one example service under GATT_NAME."""
     _run(exe, port, "device.reboot")
     time.sleep(5)
-    return _background(exe, port, f'at +UBTLN="{GATT_NAME}"', f"gatt.server.example.{key} {seconds}",
+    return _background(exe, port, f'at +UBTLN="{GATT_NAME}"', f"gatt.server.{key} {seconds}",
                        ready=r"^(serving|simulating) ")

@@ -121,6 +121,37 @@ void ucxapp_cmd_foreach(void (*visit)(const ucxapp_cmd_t *cmd, void *user), void
     }
 }
 
+int ucxapp_cmd_complete(const char *prefix, char *out, size_t size)
+{
+    size_t plen = strlen(prefix);
+    int count = 0;
+
+    if (size == 0) {
+        return 0;
+    }
+    out[0] = '\0';
+    for (size_t p = 0; p < gPackCount; p++) {
+        for (size_t i = 0; i < gPacks[p].count; i++) {
+            const char *name = gPacks[p].table[i].name;
+
+            if (strncmp(name, prefix, plen) != 0) {
+                continue;
+            }
+            if (count++ == 0) {
+                snprintf(out, size, "%s", name);
+            } else {
+                size_t k = 0;
+
+                while (out[k] != '\0' && out[k] == name[k]) {
+                    k++;
+                }
+                out[k] = '\0';
+            }
+        }
+    }
+    return count;
+}
+
 void ucxapp_cmd_print_help(const char *prefix)
 {
     size_t prefixLen = prefix != NULL ? strlen(prefix) : 0;
@@ -139,6 +170,144 @@ void ucxapp_cmd_print_help(const char *prefix)
     if (!any) {
         ucxapp_print("No commands match '%s'\n", prefix);
     }
+}
+
+void ucxapp_print_json_string(const char *s)
+{
+    char chunk[64];
+    size_t n = 0;
+
+    chunk[n++] = '"';
+    for (; *s != '\0'; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (n > sizeof(chunk) - 8) {
+            chunk[n] = '\0';
+            ucxapp_print("%s", chunk);
+            n = 0;
+        }
+        if (c == '"' || c == '\\') {
+            chunk[n++] = '\\';
+            chunk[n++] = (char)c;
+        } else if (c == '\n') {
+            chunk[n++] = '\\';
+            chunk[n++] = 'n';
+        } else if (c == '\t') {
+            chunk[n++] = '\\';
+            chunk[n++] = 't';
+        } else if (c < 0x20) {
+            n += (size_t)snprintf(&chunk[n], sizeof(chunk) - n, "\\u%04x", c);
+        } else {
+            chunk[n++] = (char)c;
+        }
+    }
+    chunk[n++] = '"';
+    chunk[n] = '\0';
+    ucxapp_print("%s", chunk);
+}
+
+void ucxapp_cmd_print_json(const char *prefix)
+{
+    size_t prefixLen = prefix != NULL ? strlen(prefix) : 0;
+    bool first = true;
+
+    ucxapp_print("[");
+    for (size_t p = 0; p < gPackCount; p++) {
+        for (size_t i = 0; i < gPacks[p].count; i++) {
+            const ucxapp_cmd_t *c = &gPacks[p].table[i];
+            if (prefixLen > 0 && strncmp(c->name, prefix, prefixLen) != 0) {
+                continue;
+            }
+            ucxapp_print("%s\n{\"name\":", first ? "" : ",");
+            ucxapp_print_json_string(c->name);
+            ucxapp_print(",\"usage\":");
+            ucxapp_print_json_string(c->usage);
+            ucxapp_print(",\"help\":");
+            ucxapp_print_json_string(c->help);
+            ucxapp_print(",\"needsDevice\":%s,\"danger\":%s}", (c->flags & UCXAPP_CMD_NEEDS_DEVICE) ? "true" : "false",
+                         (c->flags & UCXAPP_CMD_DANGER) ? "true" : "false");
+            first = false;
+        }
+    }
+    ucxapp_print("\n]\n");
+}
+
+const char *ucxapp_err_code(int rc)
+{
+    switch (rc) {
+    case UCXAPP_OK:                return "OK";
+    case UCXAPP_ERR_UNKNOWN_CMD:   return "UNKNOWN_CMD";
+    case UCXAPP_ERR_USAGE:         return "USAGE";
+    case UCXAPP_ERR_NOT_CONNECTED: return "NOT_CONNECTED";
+    default:                       return "FAILED";
+    }
+}
+
+/* Bytes up to 10 MB, then M or G, so 32-bit printf (newlib nano) is enough. */
+static void fmtSize(char *out, size_t size, uint64_t v)
+{
+    if (v < 10ull * 1024 * 1024) {
+        snprintf(out, size, "%lu", (unsigned long)v);
+    } else if (v < 10ull * 1024 * 1024 * 1024) {
+        snprintf(out, size, "%luM", (unsigned long)(v >> 20));
+    } else {
+        snprintf(out, size, "%luG", (unsigned long)(v >> 30));
+    }
+}
+
+void ucxapp_print_usage_row(const char *kind, const char *name, const char *sizeLabel,
+                            uint64_t size, uint64_t used)
+{
+    char label[40];
+    char sizeText[16];
+    char usedText[16];
+    char pctText[8] = "?";
+
+    snprintf(label, sizeof(label), "%s:%s", kind, name);
+    fmtSize(usedText, sizeof(usedText), used);
+    if (size == 0) {
+        snprintf(sizeText, sizeof(sizeText), "?");
+    } else {
+        fmtSize(sizeText, sizeof(sizeText), size);
+        snprintf(pctText, sizeof(pctText), "%u", (unsigned)((used * 100u) / size));
+    }
+    ucxapp_print("%-24s %s: %-8s used: %-8s usage(%%): %s\n", label, sizeLabel, sizeText, usedText, pctText);
+}
+
+bool ucxapp_expand_env(const char *in, char *out, size_t size)
+{
+    size_t n = 0;
+
+    while (*in != '\0') {
+        const char *end = in[0] == '$' && in[1] == '{' ? strchr(in + 2, '}') : NULL;
+        const char *value = NULL;
+        size_t len;
+
+        if (end != NULL && end > in + 2 && (size_t)(end - in - 2) < 64) {
+            char name[64];
+            snprintf(name, sizeof(name), "%.*s", (int)(end - in - 2), in + 2);
+            value = getenv(name);
+            if (value == NULL) {
+                ucxapp_print("ERROR: environment variable %s is not set\n", name);
+                return false;
+            }
+            in = end + 1;
+        } else {
+            end = NULL;
+        }
+        len = value != NULL ? strlen(value) : 1;
+        if (n + len >= size) {
+            ucxapp_print("ERROR: command too long\n");
+            return false;
+        }
+        if (value != NULL) {
+            memcpy(out + n, value, len);
+        } else {
+            out[n] = *in++;
+        }
+        n += len;
+    }
+    out[n] = '\0';
+    return true;
 }
 
 #define HANDLE_MAX 8
@@ -217,6 +386,7 @@ static void insertCurrentHandle(const ucxapp_cmd_t *cmd, int *argc, char *argv[]
     ucxapp_handle_kind_t kind;
     const char *u = cmd->usage;
     int required = 0;
+    int total = 0;
     int depth = 0;
     int32_t id;
 
@@ -232,13 +402,26 @@ static void insertCurrentHandle(const ucxapp_cmd_t *cmd, int *argc, char *argv[]
     for (; *u != '\0'; u++) {
         if (*u == '<' || *u == '[') {
             required += (*u == '<' && depth == 0);
+            total += (depth == 0);
             depth++;
         } else if (*u == '>' || *u == ']') {
             depth--;
         }
     }
-    if (*argc >= UCXAPP_MAX_ARGS || (*argc - 1 > required && ucxapp_parse_int(argv[1], &id))) {
+    if (*argc >= UCXAPP_MAX_ARGS) {
         return;
+    }
+    /* A leading number is the connection/socket only if it is an open one or the rest would not fit. */
+    if (*argc - 1 > required && ucxapp_parse_int(argv[1], &id)) {
+        int32_t open[HANDLE_MAX];
+        int n = ucxapp_handle_list(kind, open, HANDLE_MAX);
+        bool known = false;
+        for (int i = 0; i < n; i++) {
+            known = known || open[i] == id;
+        }
+        if (known || *argc - 1 > total) {
+            return;
+        }
     }
     id = ucxapp_handle_current(kind);
     if (id < 0) {
@@ -290,6 +473,10 @@ int ucxapp_cmd_exec(ucxapp_t *app, char *line)
         return UCXAPP_OK;
     }
 
+    if (strcmp(argv[0], "help") == 0 && argc > 1 && strcmp(argv[1], "--json") == 0) {
+        ucxapp_cmd_print_json(argc > 2 ? argv[2] : NULL);
+        return UCXAPP_OK;
+    }
     if (strcmp(argv[0], "help") == 0) {
         ucxapp_cmd_print_help(argc > 1 ? argv[1] : NULL);
         return UCXAPP_OK;
@@ -337,6 +524,11 @@ void ucxapp_shell_run(ucxapp_t *app)
         if (strcmp(line, "exit") == 0 || strcmp(line, "quit") == 0) {
             break;
         }
-        ucxapp_cmd_exec(app, line);
+        char expanded[sizeof(line)];
+        if (ucxapp_at_mode_active()) {
+            ucxapp_cmd_exec(app, line);
+        } else if (ucxapp_expand_env(line, expanded, sizeof(expanded))) {
+            ucxapp_cmd_exec(app, expanded);
+        }
     }
 }

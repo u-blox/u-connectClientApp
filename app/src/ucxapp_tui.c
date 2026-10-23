@@ -329,6 +329,43 @@ static entry_t entryAt(int i)
     return e;
 }
 
+static int gHostStart;   /* index of the first host group; groups are sorted module first */
+
+static int hostHeadingRow(void)
+{
+    if (gHostStart >= gGroupCount) {
+        return -1;
+    }
+    return 1 + gHostStart + (gExpanded >= 0 && gExpanded < gHostStart ? gGrpCmdCount : 0);
+}
+
+/* Display row of an entry; row 0 and hostHeadingRow() are the section headings. */
+static int rowOfEntry(int idx)
+{
+    int host = hostHeadingRow();
+    int row = idx + 1;
+
+    return host >= 0 && row >= host ? row + 1 : row;
+}
+
+static void sortGroupsBySide(void)
+{
+    char tmp[UCXAPP_UI_MAX_GROUPS][UCXAPP_UI_GROUP_LEN];
+    int n = 0;
+
+    for (int pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+            gHostStart = n;
+        }
+        for (int i = 0; i < gGroupCount; i++) {
+            if ((strcmp(ucxapp_ui_runs_on(gGroups[i]), "host") == 0) == (pass == 1)) {
+                memcpy(tmp[n++], gGroups[i], UCXAPP_UI_GROUP_LEN);
+            }
+        }
+    }
+    memcpy(gGroups, tmp, sizeof(tmp[0]) * (size_t)gGroupCount);
+}
+
 static void expandGroup(int gi)
 {
     if (gExpanded == gi) {
@@ -367,49 +404,20 @@ static void inDelete(int at)
 
 /* ---- tab completion ------------------------------------------------------------ */
 
-typedef struct {
-    const char *prefix;
-    size_t plen;
-    int count;
-    char common[48];
-} complete_t;
-
-static void completeVisit(const ucxapp_cmd_t *cmd, void *user)
-{
-    complete_t *c = (complete_t *)user;
-
-    if (strncmp(cmd->name, c->prefix, c->plen) != 0) {
-        return;
-    }
-    if (c->count++ == 0) {
-        snprintf(c->common, sizeof(c->common), "%s", cmd->name);
-    } else {
-        size_t i = 0;
-
-        while (c->common[i] != '\0' && c->common[i] == cmd->name[i]) {
-            i++;
-        }
-        c->common[i] = '\0';
-    }
-}
-
 static void tabComplete(void)
 {
-    complete_t c;
+    char common[64];
+    int count;
 
     if (gInLen == 0 || strchr(gIn, ' ') != NULL) {
         return;
     }
-    c.prefix = gIn;
-    c.plen = (size_t)gInLen;
-    c.count = 0;
-    c.common[0] = '\0';
-    ucxapp_cmd_foreach(completeVisit, &c);
-    if (c.count == 0) {
+    count = ucxapp_cmd_complete(gIn, common, sizeof(common));
+    if (count == 0) {
         return;
     }
-    setInput(c.common);
-    if (c.count == 1) {
+    setInput(common);
+    if (count == 1) {
         inInsert(' ');
     }
 }
@@ -418,8 +426,18 @@ static void tabComplete(void)
 
 static void drawCommandCell(int row, int bodyRows, int width)
 {
-    int idx = gTop + row;
+    int disp = gTop + row;
+    int host = hostHeadingRow();
+    int idx = disp - 1 - (host >= 0 && disp > host ? 1 : 0);
 
+    if (row < bodyRows && (disp == 0 || disp == host)) {
+        const char *title = disp == 0 ? " Module " : " Host ";
+
+        out("\033[90m" G_H G_H "%s", title);
+        outRepeat(G_H, width - 2 - (int)strlen(title));
+        out("\033[0m");
+        return;
+    }
     if (idx >= entryCount() || row >= bodyRows) {
         outCell("", width, 0, false);
         return;
@@ -432,8 +450,11 @@ static void drawCommandCell(int row, int bodyRows, int width)
         return;
     }
     if (e.isGroup) {
-        snprintf(text, sizeof(text), "%s %s  [%s]", gGroupCount > 0 && e.gi == gExpanded ? G_CLOSE : G_OPEN,
-                 gGroups[e.gi], ucxapp_ui_runs_on(gGroups[e.gi]));
+        const ucxapp_cmd_t *only[2];
+        bool single = ucxapp_ui_group_cmds(gGroups[e.gi], only, 2) == 1;
+
+        snprintf(text, sizeof(text), "%s %s", single ? " " : gGroupCount > 0 && e.gi == gExpanded ? G_CLOSE : G_OPEN,
+                 gGroups[e.gi]);
         out(idx == gSel && gListFocus ? "\033[7;1m" : "\033[1m");
         outCell(text, width, 0, false);
         out("\033[0m");
@@ -517,9 +538,17 @@ static void drawFrame(int rows, bool busy)
         char text[256];
         const ucxapp_cmd_t *cmd = hintCommand();
 
-        if (cmd != NULL) {
+        if (ucxapp_at_mode_active() && !busy) {
+            outCell("AT terminal: type AT commands (AT prefix optional), Up/Down history, Esc or 'back' returns to commands",
+                    W_CMD + W_LOG + W_EVT + 4, 96, false);
+        } else if (cmd != NULL) {
             snprintf(text, sizeof(text), "[%s] %s%s%s  -  %s", ucxapp_ui_cmd_runs_on(cmd), cmd->name,
                      cmd->usage[0] != '\0' ? " " : "", cmd->usage, cmd->help);
+            outCell(text, W_CMD + W_LOG + W_EVT + 4, 0, false);
+        } else if (gListFocus && gSel >= 0 && gSel < entryCount() && entryAt(gSel).isGroup) {
+            const char *g = gGroups[entryAt(gSel).gi];
+
+            snprintf(text, sizeof(text), "[%s] %s  -  %s", ucxapp_ui_runs_on(g), g, ucxapp_ui_group_help(g));
             outCell(text, W_CMD + W_LOG + W_EVT + 4, 0, false);
         } else if (busy) {
             outCell("running...", W_CMD + W_LOG + W_EVT + 4, 33, false);
@@ -533,15 +562,17 @@ static void drawFrame(int rows, bool busy)
     }
 
     /* input line */
-    out("\033[%d;1H\033[1m> \033[0m", body + 4);
     {
-        int avail = 77, start = gInPos >= avail ? gInPos - avail + 1 : 0;
+        bool atMode = ucxapp_at_mode_active();
+        int promptLen = atMode ? 4 : 2;
+        int avail = 79 - promptLen, start = gInPos >= avail ? gInPos - avail + 1 : 0;
         char view[IN_LEN];
 
+        out("\033[%d;1H\033[1m%s\033[0m", body + 4, atMode ? "\033[96mAT> " : "> ");
         snprintf(view, sizeof(view), "%s", gIn + start);
         outCell(view, avail, busy ? 90 : 0, false);
         if (!gListFocus) {
-            out("\033[%d;%dH\033[?25h", body + 4, 3 + gInPos - start);
+            out("\033[%d;%dH\033[?25h", body + 4, promptLen + 1 + gInPos - start);
         }
     }
     fwrite(gFrame, 1, gFrameLen, stdout);
@@ -584,7 +615,7 @@ static bool submitLine(void)
         setInput("");
         return false;
     }
-    snprintf(echo, sizeof(echo), "> %s", line);
+    snprintf(echo, sizeof(echo), "%s%s", ucxapp_at_mode_active() ? "AT> " : "> ", line);
     if (ucxapp_ui_submit(line)) {
         logLocal(echo);
         setInput("");
@@ -624,6 +655,20 @@ static bool activateEntry(void)
         return true;
     }
     if (e.isGroup) {
+        const ucxapp_cmd_t *only[2];
+
+        if (ucxapp_ui_group_cmds(gGroups[e.gi], only, 2) == 1) {
+            char text[64];
+
+            snprintf(text, sizeof(text), "%s ", only[0]->name);
+            setInput(text);
+            if (only[0]->usage[0] == '\0' && !(only[0]->flags & UCXAPP_CMD_DANGER)) {
+                submitLine();
+            } else {
+                gListFocus = false;
+            }
+            return false;
+        }
         expandGroup(e.gi);
         return false;
     }
@@ -631,8 +676,8 @@ static bool activateEntry(void)
 
     snprintf(text, sizeof(text), "%s ", gGrpCmds[e.ci]->name);
     setInput(text);
-    if (strchr(gGrpCmds[e.ci]->usage, '<') == NULL && strchr(gGrpCmds[e.ci]->usage, '[') == NULL) {
-        submitLine();   /* no arguments at all, run it right away and stay in the list */
+    if (gGrpCmds[e.ci]->usage[0] == '\0' && !(gGrpCmds[e.ci]->flags & UCXAPP_CMD_DANGER)) {
+        submitLine();   /* no arguments at all: run it right away and stay in the list */
         return false;
     }
     gListFocus = false;
@@ -691,11 +736,19 @@ static bool handleKey(int key, int rows)
     case 10: {
         bool quitNow = submitLine();
 
-        gListFocus = true;
+        gListFocus = !ucxapp_at_mode_active();
         return quitNow;
     }
-    case 27:              gListFocus = true; return false;
-    case 9:               tabComplete(); return false;
+    case 27:
+        if (ucxapp_at_mode_active()) {
+            setInput("back");
+            (void)submitLine();
+            gListFocus = true;
+            return false;
+        }
+        gListFocus = true;
+        return false;
+    case 9:               if (!ucxapp_at_mode_active()) { tabComplete(); } return false;
     case 8:               if (gInPos > 0) { inDelete(--gInPos); } return false;
     case UCXAPP_KEY_DEL:  inDelete(gInPos); return false;
     case UCXAPP_KEY_LEFT: if (gInPos > 0) { gInPos--; } return false;
@@ -812,6 +865,7 @@ int ucxapp_tui_run(ucxapp_t *app)
     gEvents.width = W_EVT;
     gEvents.classify = classifyEvent;
     gGroupCount = ucxapp_ui_groups(gGroups, UCXAPP_UI_MAX_GROUPS);
+    sortGroupsBySide();
     gExpanded = -1;
     gGrpCmdCount = 0;
     gSel = gTop = 0;
@@ -838,6 +892,10 @@ int ucxapp_tui_run(ucxapp_t *app)
             dirty = true;
         }
         if (pumpStreams(&logCur, &evCur, &doneSeen)) {
+            dirty = true;
+        }
+        if (ucxapp_at_mode_active() && gListFocus && !ucxapp_ui_busy()) {
+            gListFocus = false;   /* the AT terminal lives on the input line */
             dirty = true;
         }
         if (busy != ucxapp_ui_busy()) {
@@ -888,10 +946,13 @@ int ucxapp_tui_run(ucxapp_t *app)
         {
             int body = rows - 4;
 
-            if (gSel < gTop) {
-                gTop = gSel;
-            } else if (gSel >= gTop + body) {
-                gTop = gSel - body + 1;
+            int r = rowOfEntry(gSel);
+            int top = (r - 1 == 0 || r - 1 == hostHeadingRow()) ? r - 1 : r;   /* keep a heading above its first group */
+
+            if (top < gTop) {
+                gTop = top;
+            } else if (r >= gTop + body) {
+                gTop = r - body + 1;
             }
         }
         if (dirty && !quit) {

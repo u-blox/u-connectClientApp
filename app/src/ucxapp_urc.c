@@ -31,7 +31,23 @@ static void evt(const char *fmt, ...)
     ucxapp_ui_event(text);
 }
 
-static void startupUrc(struct uCxHandle *h)                                            { (void)h; evt("device: startup"); ucxapp_events_signal(URC_FLAG_STARTUP); }
+static uint32_t gBootMs;
+static bool gBootSeen;
+
+uint32_t ucxapp_module_boot_ms(bool *exact)
+{
+    *exact = gBootSeen;
+    return gBootMs;
+}
+
+static void startupUrc(struct uCxHandle *h)
+{
+    (void)h;
+    gBootMs = ucxapp_platform_tick_ms();
+    gBootSeen = true;
+    evt("device: startup");
+    ucxapp_events_signal(URC_FLAG_STARTUP);
+}
 static void networkUpUrc(struct uCxHandle *h)                                          { (void)h; evt("net: network up"); ucxapp_events_signal(URC_FLAG_NETWORK_UP); }
 static void networkDownUrc(struct uCxHandle *h)                                        { (void)h; evt("net: network down"); ucxapp_events_signal(URC_FLAG_NETWORK_DOWN); }
 static void linkUpUrc(struct uCxHandle *h, int32_t wlan, uMacAddress_t *bssid, int32_t ch)
@@ -104,6 +120,8 @@ static void pingCompleteUrc(struct uCxHandle *h, int32_t sent, int32_t received,
 
 void ucxapp_urc_register(uCxHandle_t *ucx)
 {
+    gBootMs = ucxapp_platform_tick_ms();
+    gBootSeen = false;
     ucx->callbacks.STARTUP = startupUrc;
 
     uCxWifiRegisterLinkUp(ucx, linkUpUrc);

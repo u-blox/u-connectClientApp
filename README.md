@@ -2,6 +2,22 @@
 
 **Talk to your u-connectXpress module in one line.** Scan Wi-Fi, join a network, open sockets, publish over MQTT, fetch HTTPS pages, pair Bluetooth devices and update firmware, from an interactive shell, a script or a web page. The same commands run on Windows, Linux and on an STM32 board.
 
+One command set from development to production: interactive shell, web console, CI scripts with JSON output, diagnostics, firmware update and an embedded host.
+
+```
+   Shell / TUI      Web UI       --exec / --json / --script (CI, production test)
+        \             |             /
+         +------ command engine ---+      one table of commands (app/src/ucxapp_cmds_*.c)
+                      |
+               u-connectClient            AT client library
+                      |
+                UART (SPI coming)
+                      |
+           NORA-W36 / NORA-B26 module
+```
+
+Every interface runs the same commands, so what works in the shell works in a script, in the browser and on an STM32 board.
+
 Supported modules: **NORA-W36** (Wi-Fi + Bluetooth LE) and **NORA-B26** (Bluetooth LE). NORA-W40 is not supported yet.
 
 | Windows | Linux | STM32 firmware |
@@ -54,11 +70,32 @@ It prints `http://<module-ip>:<port>/#t=<token>`. Open it on your phone or lapto
 
 **Secure GNSS data bridge**: the app runs its own small CA and serves the receiver stream over TLS (add `clientauth` to require client certificates); `web.start https` does the same for the web UI
 ```powershell
-ucxapp COM13 --exec "tls.ca.create" --exec "tls.server.create server 192.168.1.42" --exec "wifi.connect MySsid MyPassword" --exec "gnss.open" --exec "gnss.bridge tls 2947" --shell
+ucxapp COM13 --exec "utils.tls.ca.create" --exec "utils.tls.server.create server 192.168.1.42" --exec "wifi.connect MySsid MyPassword" --exec "gnss.open" --exec "gnss.bridge tls 2947" --shell
 ```
 Clients trust `tls-ca.crt`; another module connects with `cert.upload ca tls-ca.crt` and `sock.tls`.
 
 **Use it in CI and test scripts**: every `--exec` runs in order and the app exits with code 1 on the first failure.
+
+## Automation and diagnostics
+
+**Machine-readable output**: `--json` prints one JSON object per command with `success`, a stable `code` (`OK`, `USAGE`, `NOT_CONNECTED`, `UNKNOWN_CMD`, `FAILED`), the `error` text, the `output` lines and the `Key: value` lines as `data`.
+```powershell
+ucxapp --json device.info
+{"command":"device.info","success":true,"code":"OK","output":[...],"data":{"manufacturer":"u-blox","model":"NORA-W36","firmware_version":"3.1.0"}}
+```
+`help --json` lists every command with its arguments and whether it needs a module or is destructive (`danger`).
+
+**Keep secrets off the command line**: `${NAME}` in `--exec` and shell commands takes an environment variable, and `wifi.connect <ssid> -` prompts for the password.
+```powershell
+$env:UCX_WIFI_PASS = "..."; ucxapp --exec 'wifi.connect MySsid ${UCX_WIFI_PASS}'
+```
+
+**Test scripts with a report**: one command per line, `expect <regex>` checks the output of the command above, `expect-fail` expects it to fail. Steps print PASS/FAIL; `--junit` writes a report for CI. See [examples/](examples/).
+```powershell
+ucxapp --script examples/automation/production-test.ucx --junit production.xml
+```
+
+**Support report**: `device.caps` shows what the module and this build can do; `device.diagnose` checks the module, Wi-Fi, DNS, internet and certificates and ends with PASS or FAIL. `ucxapp --doctor` checks the PC side: tools, Python, serial access and the attached modules.
 
 ## Highlights
 
@@ -81,9 +118,9 @@ Type `help` in the shell, or `help wifi` to filter by prefix. Full list with arg
 | Network | `net.ping <host>`, `net.dns <host>`, `http.get <url>`, `http.download <url> <file>` |
 | Sockets | `sock.open`, `sock.tls`, `sock.connect`, `sock.send`, `sock.read`, `sock.listen`, `sock.accept`, `sock.sendto`, `sock.recvfrom`, `sock.close` |
 | MQTT | `mqtt.connect`, `mqtt.subscribe`, `mqtt.publish`, `mqtt.read`, `mqtt.disconnect` |
-| App TLS | `tls.ca.create`, `tls.server.create`, `tls.client.create`, `tls.list`, `tls.pem`, `tls.remove` (HTTPS and TLS bridges) |
+| App TLS | `utils.tls.ca.create`, `utils.tls.server.create`, `utils.tls.client.create`, `utils.tls.list`, `utils.tls.pem`, `utils.tls.remove` (HTTPS and TLS bridges) |
 | Bluetooth | `bt.scan`, `bt.connect`, `bt.pairing`, `bt.bonds`, `bt.profile.*`, `bt.list` |
-| GATT | `gatt.services`, `gatt.read`, `gatt.write`, `gatt.subscribe`, `gatt.client.example.*`, `gatt.server.example.*` (heart rate, battery, NUS, SPS, Wi-Fi provisioning and more) |
+| GATT | `gatt.services`, `gatt.read`, `gatt.write`, `gatt.subscribe`, `gatt.client.*`, `gatt.server.*` (heart rate, battery, NUS, SPS, Wi-Fi provisioning and more) |
 | HID | `hid.setup`, `hid.text`, `hid.key` (act as a Bluetooth keyboard) |
 | Utilities | `utils.qr.text`, `utils.qr.wifi`, `utils.qr.geo`, `utils.zip`, `utils.unzip` |
 | Sensors | `gnss.detect`, `gnss.open`, `gnss.status`, `gnss.sats`, `gnss.bridge`, `imu.detect`, `imu.open`, `imu.status`, `imu.bridge` (PC serial sensors, bridged over TCP, UDP or BLE) |

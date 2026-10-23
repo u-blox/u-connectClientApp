@@ -274,14 +274,59 @@ void ucxapp_ui_release(void)
 
 /* ---- catalog ---------------------------------------------------------------- */
 
+/* Module groups follow the AT command manual; host groups go from general tools to peripherals. */
 static const char *const kOrder[] = {
-    "general", "device", "bt", "gatt", "wifi", "net", "sock", "mqtt", "http", "cert", "fw", "gnss", "imu", "cell", "hw", "utils", "file", "web"
+    "at", "device", "log", "stats", "fw", "bt", "gatt", "wifi", "net", "sock", "mqtt", "http", "cert",
+    "app", "utils", "file", "dtls", "coap", "web", "qr",
+    "gnss", "imu", "cell", "can", "hw", "hid"
 };
 
-/* Groups whose work is done by this PC (crypto, local sockets, files, the web UI, sensors on USB).
+static const struct {
+    const char *group;
+    const char *help;
+} kGroupHelp[] = {
+    { "at",     "Raw AT commands and the AT terminal" },
+    { "device", "Module info, settings, reboot, factory reset and diagnostics" },
+    { "log",    "Module log output" },
+    { "stats",  "Module statistics" },
+    { "fw",     "Module firmware: download, bootloader, flash and update from GitHub" },
+    { "bt",     "Bluetooth LE: scan, advertise, connect and bond" },
+    { "gatt",   "GATT client and server, including predefined services" },
+    { "wifi",   "Wi-Fi station and access point" },
+    { "net",    "Network status, DNS and ping" },
+    { "sock",   "TCP and UDP sockets on the module" },
+    { "mqtt",   "MQTT client on the module" },
+    { "http",   "HTTP client on the module" },
+    { "cert",   "Certificates and keys stored on the module" },
+    { "app",    "About this app: version, memory, licences" },
+    { "utils",  "Host tools: zip, unzip, hashes and app TLS certificates" },
+    { "file",   "Files in the app store on this PC or board" },
+    { "dtls",   "DTLS client and server over module UDP sockets" },
+    { "coap",   "CoAP requests over module UDP sockets" },
+    { "web",    "Web page to control the app from a browser" },
+    { "qr",     "QR codes" },
+    { "gnss",   "GNSS receiver: detect, position and bridge" },
+    { "imu",    "IMU sensor: detect, read and bridge" },
+    { "cell",   "Cellular modem" },
+    { "can",    "CAN bus controller and bridge" },
+    { "hw",     "Board I/O bridge: GPIO, I2C and more" },
+};
+
+const char *ucxapp_ui_group_help(const char *group)
+{
+    for (size_t i = 0; i < sizeof(kGroupHelp) / sizeof(kGroupHelp[0]); i++) {
+        if (strcmp(kGroupHelp[i].group, group) == 0) {
+            return kGroupHelp[i].help;
+        }
+    }
+    return "";
+}
+
+/* Groups whose work is done by this PC (crypto, local sockets, files, the web UI, peripherals on USB).
  * Every other group sends AT commands that the NORA module executes. */
 static const char *const kHostGroups[] = {
-    "general", "file", "web", "cert", "tls", "dtls", "coap", "qr", "utils", "gnss", "imu", "hid"
+    "app", "file", "web", "dtls", "coap", "qr", "utils", "gnss", "imu", "cell",
+    "can", "hid"
 };
 
 static void groupOf(const char *name, char *out)
@@ -289,7 +334,7 @@ static void groupOf(const char *name, char *out)
     const char *dot = strchr(name, '.');
 
     if (dot == NULL) {
-        snprintf(out, UCXAPP_UI_GROUP_LEN, "general");
+        snprintf(out, UCXAPP_UI_GROUP_LEN, "at");
     } else {
         size_t len = (size_t)(dot - name);
         snprintf(out, UCXAPP_UI_GROUP_LEN, "%.*s", (int)(len < UCXAPP_UI_GROUP_LEN - 1 ? len : UCXAPP_UI_GROUP_LEN - 1), name);

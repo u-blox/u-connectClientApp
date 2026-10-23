@@ -48,6 +48,9 @@ int ucxapp_ui_group_cmds(const char *group, const ucxapp_cmd_t **out, int max);
 const char *ucxapp_ui_runs_on(const char *group);
 const char *ucxapp_ui_cmd_runs_on(const ucxapp_cmd_t *cmd);
 
+/* One-line description of a command group; "" if none. */
+const char *ucxapp_ui_group_help(const char *group);
+
 /* Splits a usage string into fields; -1 when it is too complex (use one free-text field). */
 int ucxapp_ui_parse_usage(const char *usage, ucxapp_ui_field_t *fields, int max);
 

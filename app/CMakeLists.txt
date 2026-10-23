@@ -237,7 +237,7 @@ target_include_directories(ucxapp PUBLIC
   ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_link_libraries(ucxapp PRIVATE setupapi ${UCXAPP_MBEDTLS_LIBS})
+target_link_libraries(ucxapp PRIVATE setupapi psapi ${UCXAPP_MBEDTLS_LIBS})
 
 # Set different output names for Debug and Release builds
 set_target_properties(ucxapp PROPERTIES

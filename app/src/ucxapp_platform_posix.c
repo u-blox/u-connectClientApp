@@ -18,6 +18,7 @@
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
@@ -272,6 +273,62 @@ int ucxapp_platform_list_files(const char *dir, void (*cb)(const char *name, uin
     }
     closedir(d);
     return count;
+}
+
+/* Value in kB of "Key:   1234 kB" in a /proc file; 0 if missing. */
+static uint64_t procKb(const char *path, const char *key)
+{
+    char line[128];
+    size_t keyLen = strlen(key);
+    uint64_t kb = 0;
+    FILE *f = fopen(path, "r");
+
+    if (f == NULL) {
+        return 0;
+    }
+    while (fgets(line, sizeof(line), f) != NULL) {
+        if (strncmp(line, key, keyLen) == 0 && line[keyLen] == ':') {
+            kb = strtoull(line + keyLen + 1, NULL, 10);
+            break;
+        }
+    }
+    fclose(f);
+    return kb;
+}
+
+static int memRow(ucxapp_mem_t *rows, int n, int max, const char *name, uint64_t size, uint64_t used)
+{
+    if (n < max && size > 0) {
+        snprintf(rows[n].name, sizeof(rows[n].name), "%s", name);
+        rows[n].size = size;
+        rows[n].used = used;
+        n++;
+    }
+    return n;
+}
+
+int ucxapp_platform_memory(ucxapp_mem_t *areas, int max)
+{
+    uint64_t total = procKb("/proc/meminfo", "MemTotal") * 1024u;
+    uint64_t avail = procKb("/proc/meminfo", "MemAvailable") * 1024u;
+    struct statvfs fs;
+    int n = 0;
+
+    n = memRow(areas, n, max, "App RAM", total, procKb("/proc/self/status", "VmRSS") * 1024u);
+    n = memRow(areas, n, max, "App RAM peak", total, procKb("/proc/self/status", "VmHWM") * 1024u);
+    n = memRow(areas, n, max, "System RAM", total, total - avail);
+    if (statvfs(".", &fs) == 0) {
+        uint64_t size = (uint64_t)fs.f_blocks * fs.f_frsize;
+        n = memRow(areas, n, max, "Disk", size, size - (uint64_t)fs.f_bavail * fs.f_frsize);
+    }
+    return n;
+}
+
+int ucxapp_platform_tasks(ucxapp_mem_t *tasks, int max)
+{
+    (void)tasks;
+    (void)max;
+    return 0;
 }
 
 bool ucxapp_platform_find_file(const char *dir, const char *ext, char *out, size_t outSize)

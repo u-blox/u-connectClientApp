@@ -1,0 +1,70 @@
+"""--json output, ${NAME} expansion and the launcher's --script runner (no module needed)."""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+pytestmark = pytest.mark.app
+
+
+def _json(app_exe, *commands, env=None):
+    args = [str(app_exe), "--offline", "--json"]
+    for command in commands:
+        args += ["--exec", command]
+    out = subprocess.run(args, capture_output=True, text=True, timeout=60, errors="replace",
+                         stdin=subprocess.DEVNULL, env=env, cwd=ROOT)
+    return out, [json.loads(line) for line in out.stdout.splitlines() if line.startswith('{"command":')]
+
+
+def test_json_result_per_command(app_exe):
+    out, res = _json(app_exe, "app.version", "wifi.status")
+    assert out.returncode == 1
+    assert [r["command"] for r in res] == ["app.version", "wifi.status"]
+    assert res[0]["success"] and res[0]["code"] == "OK"
+    assert res[1]["code"] == "NOT_CONNECTED" and "not connected" in res[1]["error"]
+
+
+def test_json_codes(app_exe):
+    assert _json(app_exe, "no.such.command")[1][0]["code"] == "UNKNOWN_CMD"
+    assert _json(app_exe, "device.connect")[1][0]["code"] == "USAGE"
+
+
+def test_help_json_lists_metadata(app_exe):
+    out = subprocess.run([str(app_exe), "--offline", "--exec", "help --json device."], capture_output=True,
+                         text=True, timeout=60, errors="replace", stdin=subprocess.DEVNULL)
+    cmds = {c["name"]: c for c in json.loads(out.stdout[out.stdout.index("["):])}
+    assert cmds["device.factory"]["danger"] and cmds["device.factory"]["needsDevice"]
+    assert not cmds["device.info"]["danger"]
+    assert "device.caps" in cmds and "device.diagnose" in cmds
+
+
+def test_env_expansion(app_exe):
+    env = {**os.environ, "UCX_TEST_PREFIX": "device."}
+    _, res = _json(app_exe, "help ${UCX_TEST_PREFIX}", env=env)
+    assert res[0]["success"] and any("device.info" in line for line in res[0]["output"])
+    assert res[0]["command"] == "help ${UCX_TEST_PREFIX}"
+    _, res = _json(app_exe, "help ${UCX_TEST_UNSET_VAR}", env=env)
+    assert not res[0]["success"] and "UCX_TEST_UNSET_VAR" in res[0]["error"]
+
+
+def test_script_runner_offline(app_exe, tmp_path):
+    junit = tmp_path / "r.xml"
+    out = subprocess.run([sys.executable, "ucxapp.py", "--script", "examples/automation/offline.ucx",
+                          "--junit", str(junit), "--offline"], cwd=ROOT, capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "2/2 passed" in out.stdout
+    assert 'failures="0"' in junit.read_text()
+
+
+def test_script_runner_reports_failure(app_exe, tmp_path):
+    script = tmp_path / "s.ucx"
+    script.write_text("app.version\nexpect no-such-text\napp.uptime\n")
+    out = subprocess.run([sys.executable, "ucxapp.py", "--script", str(script), "--offline"], cwd=ROOT,
+                         capture_output=True, text=True, timeout=120)
+    assert out.returncode == 1
+    assert "FAIL  app.version" in out.stdout and "PASS  app.uptime" in out.stdout

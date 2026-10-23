@@ -216,8 +216,47 @@ static int cmdInfo(ucxapp_t *app, int argc, char *argv[])
     return UCXAPP_OK;
 }
 
+/* Same row look as device.stack: app RAM/heap/flash (disk on hosts), then task stacks on the RTOS. */
+static int cmdMemory(ucxapp_t *app, int argc, char *argv[])
+{
+    ucxapp_mem_t rows[16];
+    int n;
+
+    (void)app;
+    (void)argv;
+    if (argc != 1) {
+        return UCXAPP_ERR_USAGE;
+    }
+    n = ucxapp_platform_memory(rows, 16);
+    for (int i = 0; i < n; i++) {
+        ucxapp_print_usage_row("Memory", rows[i].name, "size", rows[i].size, rows[i].used);
+    }
+    n = ucxapp_platform_tasks(rows, 16);
+    for (int i = 0; i < n; i++) {
+        ucxapp_print_usage_row("Task", rows[i].name, "stack", rows[i].size, rows[i].used);
+    }
+    return UCXAPP_OK;
+}
+
+/* Same completion as Tab in the TUI; scriptable and testable. */
+static int cmdComplete(ucxapp_t *app, int argc, char *argv[])
+{
+    char common[64];
+    int count;
+
+    (void)app;
+    if (argc != 2) {
+        return UCXAPP_ERR_USAGE;
+    }
+    count = ucxapp_cmd_complete(argv[1], common, sizeof(common));
+    ucxapp_print("%d match%s: %s\n", count, count == 1 ? "" : "es", count > 0 ? common : argv[1]);
+    return count > 0 ? UCXAPP_OK : UCXAPP_ERR_FAILED;
+}
+
 static const ucxapp_cmd_t gAppCmds[] = {
+    { "app.complete", "<prefix>", "Tab completion of a command prefix: match count and completed text", 0, cmdComplete },
     { "app.info", "", "About this app: maker, platform and links", 0, cmdInfo },
+    { "app.memory", "", "App RAM, heap and flash (disk on PC) use; task stacks on STM32. Same look as device.stack", 0, cmdMemory },
     { "app.version", "", "App version, build time, platform and compiler", 0, cmdVersion },
     { "app.uptime", "", "Time since the app started (days hh:mm:ss)", 0, cmdUptime },
     { "app.sbom", "", "Software bill of materials: components, versions and licences", 0, cmdSbom },

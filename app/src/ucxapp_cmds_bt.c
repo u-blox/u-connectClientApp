@@ -939,7 +939,7 @@ static const ucxapp_cmd_t gBtCmds[] = {
     { "bt.unbond",     "<addr|all>",          "Remove one or all bonds",                        UCXAPP_CMD_NEEDS_DEVICE, cmdBtUnbond },
     { "bt.profile.add", "<name> <addr[,random]>", "Save a BLE device as a named profile",          0, cmdBtProfileAdd },
     { "bt.profile.list", "",                  "List saved BLE profiles",                        0, cmdBtProfileList },
-    { "bt.profile.remove", "<name>",          "Delete a BLE profile",                           0, cmdBtProfileRemove },
+    { "bt.profile.remove", "<name>",          "Delete a BLE profile",                           UCXAPP_CMD_DANGER, cmdBtProfileRemove },
     { "bt.profile.connect", "<name>",         "Connect to a saved BLE profile",                 UCXAPP_CMD_NEEDS_DEVICE, cmdBtProfileConnect },
     { "bt.profile.auto", "",                  "Connect to the last used profile, else scan and take the strongest known device", UCXAPP_CMD_NEEDS_DEVICE, cmdBtProfileAuto },
 };

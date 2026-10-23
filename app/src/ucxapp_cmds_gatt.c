@@ -918,7 +918,7 @@ static int cmdGattSend(ucxapp_t *app, int argc, char *argv[])
     bool sps = strcmp(argv[2], "sps") == 0;
     const chr_t *c = findChar128(sps ? kSpsFifo : kNusRx);
     if (c == NULL) {
-        ucxapp_print("ERROR: %s characteristic not found (run gatt.client.example.%s first)\n", sps ? "SPS FIFO" : "NUS RX", sps ? "sps" : "nus");
+        ucxapp_print("ERROR: %s characteristic not found (run gatt.client.%s first)\n", sps ? "SPS FIFO" : "NUS RX", sps ? "sps" : "nus");
         return UCXAPP_ERR_FAILED;
     }
     if (sps && gSpsFlow) {
@@ -955,7 +955,7 @@ static int cmdGattCredits(ucxapp_t *app, int argc, char *argv[])
     }
     const chr_t *c = findChar128(kSpsCred);
     if (c == NULL) {
-        ucxapp_print("ERROR: SPS Credits characteristic not found (run gatt.client.example.sps first)\n");
+        ucxapp_print("ERROR: SPS Credits characteristic not found (run gatt.client.sps first)\n");
         return UCXAPP_ERR_FAILED;
     }
     uint8_t v = (uint8_t)credits;
@@ -1362,7 +1362,7 @@ static int cmdServerDemo(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_USAGE;
     }
     if (!(gSrvDone & (1u << idx))) {
-        ucxapp_print("ERROR: %s is not defined; run gatt.server.example.%s first\n", p->title, p->key);
+        ucxapp_print("ERROR: %s is not defined; run gatt.server.%s first\n", p->title, p->key);
         return UCXAPP_ERR_FAILED;
     }
 
@@ -1632,7 +1632,7 @@ int ucxapp_gatt_server_custom(ucxapp_t *app, const uint8_t svc[16], const uint8_
 
 /* ---- per-service example commands --------------------------------------- */
 
-/* gatt.client.example.<svc> <conn> [flow] */
+/* gatt.client.<svc> <conn> [flow] */
 static int clientExample(ucxapp_t *app, int argc, char *argv[], const char *key)
 {
     char *av[4] = { argv[0], argv[1], (char *)key, argc > 2 ? argv[2] : NULL };
@@ -1643,7 +1643,7 @@ static int clientExample(ucxapp_t *app, int argc, char *argv[], const char *key)
     return cmdGattExample(app, argc + 1, av);
 }
 
-/* gatt.server.example.<svc> [seconds]: define the service, then simulate values for any connected client. */
+/* gatt.server.<svc> [seconds]: define the service, then simulate values for any connected client. */
 static int serverExample(ucxapp_t *app, int argc, char *argv[], const char *key)
 {
     char *av[2] = { argv[0], (char *)key };
@@ -1779,7 +1779,7 @@ static int cmdGattWps(ucxapp_t *app, int argc, char *argv[])
         }
     }
     if (gWpsResponses == before) {
-        ucxapp_print("no response (is the notification subscription active? run gatt.client.example.wps first)\n");
+        ucxapp_print("no response (is the notification subscription active? run gatt.client.wps first)\n");
         return UCXAPP_ERR_FAILED;
     }
     return UCXAPP_OK;
@@ -1979,28 +1979,28 @@ static const ucxapp_cmd_t gGattCmds[] = {
     { "gatt.read",       "[conn] <handle>",                      "Read a remote characteristic and decode known types",           UCXAPP_CMD_NEEDS_DEVICE, cmdGattRead },
     { "gatt.write",      "[conn] <handle> <hex|text:abc> [norsp]", "Write a remote characteristic",                            UCXAPP_CMD_NEEDS_DEVICE, cmdGattWrite },
     { "gatt.subscribe",  "[conn] <handle> [notify|indicate|off]", "Set the CCCD (assumed at value handle + 1)",                  UCXAPP_CMD_NEEDS_DEVICE, cmdGattSubscribe },
-    { "gatt.client.example.hrs", "[conn]", "Heart Rate client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_hrs },
-    { "gatt.client.example.cts", "[conn]", "Current Time client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_cts },
-    { "gatt.client.example.ess", "[conn]", "Environmental Sensing client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_ess },
-    { "gatt.client.example.lns", "[conn]", "Location and Navigation client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_lns },
-    { "gatt.client.example.aio", "[conn]", "Automation IO client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_aio },
-    { "gatt.client.example.bas", "[conn]", "Battery client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_bas },
-    { "gatt.client.example.dis", "[conn]", "Device Information client: discover and read", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_dis },
-    { "gatt.client.example.nus", "[conn]", "Nordic UART client: discover and subscribe (send with gatt.send)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_nus },
-    { "gatt.client.example.sps", "[conn] [flow]", "u-blox Serial Port client: discover and subscribe (flow: SPS credits)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_sps },
-    { "gatt.client.example.wit", "[conn]", "WitMotion IMU client: subscribe and print acceleration, gyro and angles", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_wit },
-    { "gatt.client.example.wps", "[conn]", "Wi-Fi Provisioning client: discover, read info and subscribe (control with gatt.wps)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_wps },
+    { "gatt.client.hrs", "[conn]", "Heart Rate client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_hrs },
+    { "gatt.client.cts", "[conn]", "Current Time client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_cts },
+    { "gatt.client.ess", "[conn]", "Environmental Sensing client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_ess },
+    { "gatt.client.lns", "[conn]", "Location and Navigation client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_lns },
+    { "gatt.client.aio", "[conn]", "Automation IO client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_aio },
+    { "gatt.client.bas", "[conn]", "Battery client: discover, read, decode and subscribe", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_bas },
+    { "gatt.client.dis", "[conn]", "Device Information client: discover and read", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_dis },
+    { "gatt.client.nus", "[conn]", "Nordic UART client: discover and subscribe (send with gatt.send)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_nus },
+    { "gatt.client.sps", "[conn] [flow]", "u-blox Serial Port client: discover and subscribe (flow: SPS credits)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_sps },
+    { "gatt.client.wit", "[conn]", "WitMotion IMU client: subscribe and print acceleration, gyro and angles", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_wit },
+    { "gatt.client.wps", "[conn]", "Wi-Fi Provisioning client: discover, read info and subscribe (control with gatt.wps)", UCXAPP_CMD_NEEDS_DEVICE, cmdClientEx_wps },
     { "gatt.wps", "[conn] <status|scan|connect|forget|config <ssid> <pw> [OPEN|WPA2|WPA3]|raw <text>>", "Send a Wi-Fi provisioning command and wait for the response", UCXAPP_CMD_NEEDS_DEVICE, cmdGattWps },
     { "gatt.writelong", "[conn] <handle> <hex|text:abc> [offset] [reliable] [more]", "Write a long characteristic value (prepare/execute write)", UCXAPP_CMD_NEEDS_DEVICE, cmdGattWriteLong },
-    { "gatt.server.example.hrs", "[seconds]", "Heart Rate server; with seconds, simulate values for a connected client", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_hrs },
-    { "gatt.server.example.cts", "[seconds]", "Current Time server; with seconds, simulate values for a connected client", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_cts },
-    { "gatt.server.example.ess", "[seconds]", "Environmental Sensing server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_ess },
-    { "gatt.server.example.lns", "[seconds]", "Location and Navigation server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_lns },
-    { "gatt.server.example.aio", "[seconds]", "Automation IO server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_aio },
-    { "gatt.server.example.bas", "[seconds]", "Battery server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_bas },
-    { "gatt.server.example.nus", "[seconds]", "Nordic UART server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_nus },
-    { "gatt.server.example.sps", "[seconds]", "u-blox Serial Port server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_sps },
-    { "gatt.server.example.wps", "[seconds]", "Wi-Fi Provisioning server; with seconds, run client commands for that long", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_wps },
+    { "gatt.server.hrs", "[seconds]", "Heart Rate server; with seconds, simulate values for a connected client", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_hrs },
+    { "gatt.server.cts", "[seconds]", "Current Time server; with seconds, simulate values for a connected client", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_cts },
+    { "gatt.server.ess", "[seconds]", "Environmental Sensing server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_ess },
+    { "gatt.server.lns", "[seconds]", "Location and Navigation server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_lns },
+    { "gatt.server.aio", "[seconds]", "Automation IO server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_aio },
+    { "gatt.server.bas", "[seconds]", "Battery server; with seconds, simulate values", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_bas },
+    { "gatt.server.nus", "[seconds]", "Nordic UART server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_nus },
+    { "gatt.server.sps", "[seconds]", "u-blox Serial Port server (writes from the client are printed)", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_sps },
+    { "gatt.server.wps", "[seconds]", "Wi-Fi Provisioning server; with seconds, run client commands for that long", UCXAPP_CMD_NEEDS_DEVICE, cmdServerEx_wps },
     { "gatt.server.servicechanged", "[conn] <start> <end>", "Send a Service Changed indication for a handle range", UCXAPP_CMD_NEEDS_DEVICE, cmdServerServiceChanged },
     { "gatt.server.error", "[conn] <read|write> <att-code>", "Answer a pending read or write request with an ATT error", UCXAPP_CMD_NEEDS_DEVICE, cmdServerError },
     { "gatt.server.readresp", "[conn] <hex|text:abc>", "Answer a pending host-characteristic read request", UCXAPP_CMD_NEEDS_DEVICE, cmdServerReadResp },

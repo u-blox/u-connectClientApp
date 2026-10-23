@@ -1,0 +1,7 @@
+# Quick module check, no network needed.
+#   ucxapp --script examples/automation/smoke-test.ucx [port] [--junit report.xml]
+device.info
+expect Model:\s+NORA-
+device.caps
+expect Bluetooth LE:\s+yes
+device.uptime

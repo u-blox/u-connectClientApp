@@ -1,0 +1,7 @@
+# Wi-Fi (saved profile) -> MQTT broker -> publish a reading.
+#   ucxapp --script examples/mqtt/publish-sensor-data.ucx
+wifi.connect
+mqtt.connect broker.emqx.io 1883
+mqtt.subscribe ucxapp/sensor
+mqtt.publish ucxapp/sensor {"temp":21.5}
+mqtt.disconnect

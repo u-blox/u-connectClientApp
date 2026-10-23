@@ -22,7 +22,7 @@ static int cmdCaCreate(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     ucxapp_print("created local CA tls-ca.crt / tls-ca.key\n");
-    ucxapp_print("install tls-ca.crt as a trusted root on clients (tls.pem ca prints it)\n");
+    ucxapp_print("install tls-ca.crt as a trusted root on clients (utils.tls.pem ca prints it)\n");
     return UCXAPP_OK;
 }
 
@@ -86,7 +86,7 @@ static int cmdList(ucxapp_t *app, int argc, char *argv[])
         return UCXAPP_ERR_FAILED;
     }
     if (count == 0) {
-        ucxapp_print("no certificates, start with tls.ca.create\n");
+        ucxapp_print("no certificates, start with utils.tls.ca.create\n");
     }
     return UCXAPP_OK;
 }
@@ -135,12 +135,12 @@ static int cmdRemove(ucxapp_t *app, int argc, char *argv[])
 }
 
 static const ucxapp_cmd_t gTlsCmds[] = {
-    { "tls.ca.create",     "[cn] [force]",            "Create the local CA (ECDSA P-256) that signs the app certificates", 0, cmdCaCreate },
-    { "tls.server.create", "<name> <host|ip> [...]",  "Create a server certificate for the given host names / IPv4 addresses", 0, cmdServerCreate },
-    { "tls.client.create", "<name>",                  "Create a client certificate (for tls clientauth)", 0, cmdClientCreate },
-    { "tls.list",          "",                        "List the app certificates", 0, cmdList },
-    { "tls.pem",           "<name> [key]",            "Print a certificate (or its key) in PEM", 0, cmdPem },
-    { "tls.remove",        "<name>",                  "Remove a certificate and its key", 0, cmdRemove },
+    { "utils.tls.ca.create",     "[cn] [force]",            "Create the local CA (ECDSA P-256) that signs the app certificates", 0, cmdCaCreate },
+    { "utils.tls.server.create", "<name> <host|ip> [...]",  "Create a server certificate for the given host names / IPv4 addresses", 0, cmdServerCreate },
+    { "utils.tls.client.create", "<name>",                  "Create a client certificate (for tls clientauth)", 0, cmdClientCreate },
+    { "utils.tls.list",          "",                        "List the app certificates", 0, cmdList },
+    { "utils.tls.pem",           "<name> [key]",            "Print a certificate (or its key) in PEM", 0, cmdPem },
+    { "utils.tls.remove",        "<name>",                  "Remove a certificate and its key", UCXAPP_CMD_DANGER, cmdRemove },
 };
 
 void ucxapp_register_tls_cmds(void)

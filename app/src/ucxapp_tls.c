@@ -323,7 +323,7 @@ bool ucxapp_tls_create_cert(const char *name, bool client, const char *const *sa
     mbedtls_pk_init(&caKey);
     if (!loadPair(UCXAPP_TLS_CA_NAME, &caCrt, &caKey, err, errLen)) {
         if (err && errLen) {
-            snprintf(err, errLen, "no local CA, run tls.ca.create first");
+            snprintf(err, errLen, "no local CA, run utils.tls.ca.create first");
         }
         goto out;
     }

@@ -1,0 +1,5 @@
+# Bluetooth LE scan (NORA-W36 and NORA-B26).
+#   ucxapp --script examples/bluetooth/scan.ucx
+device.caps
+expect Bluetooth LE:\s+yes
+bt.scan
