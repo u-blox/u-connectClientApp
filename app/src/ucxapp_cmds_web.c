@@ -24,7 +24,7 @@
 #endif
 
 #define DEFAULT_PORT   80
-#define TOKEN_LEN      32
+#define TOKEN_LEN      12
 #define MAX_EVENTS     64
 #define OUT_CHUNK_ESC  380      /* escaped bytes per SSE event; the engine caps an event at 512 */
 #define KEEPALIVE_MS   15000
@@ -119,7 +119,8 @@ static const char kPage[] =
     "ins.push(e);d.appendChild(e)});"
     "const g=document.createElement('button');g.textContent='Run';g.title=c.h;"
     "g.onclick=()=>run(c.n,ins.map(e=>e.value.trim()),raw);d.appendChild(g);return d}"
-    "fetch('/api/groups',{headers:K}).then(r=>r.json()).then(gs=>{"
+    "fetch('/api/groups',{headers:K}).then(r=>{if(r.status==403){const t=prompt('Access token (printed by web.start)');"
+    "if(t){sessionStorage.setItem('t',t.trim());location.reload()}throw 0}return r.json()}).then(gs=>{"
     "function hdr(t){const h=document.createElement('div');h.textContent=t;h.style.cssText='font-weight:bold;margin:8px 0 2px;color:#888';return h}"
     "let mh=0,hh=0;gs.forEach(x=>{const p=x.split(':'),g=p[0],w=p[1];"
     "if(w==='module'&&!mh){mh=1;$('side').appendChild(hdr('MODULE: runs on the NORA module'))}"

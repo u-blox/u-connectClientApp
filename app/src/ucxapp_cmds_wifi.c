@@ -668,7 +668,11 @@ static int cmdProfileAuto(ucxapp_t *app, int argc, char *argv[])
         ucxapp_print("ERROR: no known network found\n");
         return UCXAPP_ERR_FAILED;
     }
-    ucxapp_print("Strongest known network: '%s' (%d dBm)\n", list[best].name, bestRssi);
+    if (strcmp(list[best].name, list[best].ssid) != 0) {
+        ucxapp_print("Strongest known network: '%s (%s)' (%d dBm)\n", list[best].name, list[best].ssid, bestRssi);
+    } else {
+        ucxapp_print("Strongest known network: '%s' (%d dBm)\n", list[best].name, bestRssi);
+    }
     return connectProfile(app, list, best, 20, true);
 }
 

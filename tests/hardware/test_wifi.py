@@ -26,7 +26,7 @@ def test_wifi_profile_auto_falls_back_to_scan(app_exe, port_a, tmp_path):
               f"wifi.profile.add real {ssid} {password}", "wifi.profile.auto", "wifi.status"),
         capture_output=True, text=True, timeout=180, errors="replace", cwd=tmp_path)
     assert out.returncode == 0, out.stdout
-    assert "Strongest known network: 'real'" in out.stdout, out.stdout
+    assert f"Strongest known network: 'real ({ssid})'" in out.stdout, out.stdout
     assert (tmp_path / "storage" / "ucxapp.wifilast").read_text() == "real"
 
 
