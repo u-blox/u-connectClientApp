@@ -2,6 +2,10 @@
 
 import subprocess
 
+import pytest
+
+pytestmark = pytest.mark.app
+
 
 def _run(app_exe, cwd, *commands):
     args = [str(app_exe), "--offline"]

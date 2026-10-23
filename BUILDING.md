@@ -77,7 +77,7 @@ transparent console-to-module bridge (for AT debugging or XMODEM firmware update
 
 Every STM32 build prints its flash and RAM usage and updates the table in [docs/STM32_MEMORY.md](docs/STM32_MEMORY.md); commit it with the change that moved the numbers.
 
-The NUCLEO-F103RB (`f103`) and NUCLEO-G071RB (`g071`), both 128 KB flash, get a lite build with Wi-Fi, sockets, MQTT, Bluetooth and GATT but no net or cert commands, smaller scan/discovery tables and no Bluetooth company, appearance or characteristic names.
+The NUCLEO-F103RB (`f103`) and NUCLEO-G071RB (`g071`), both 128 KB flash, get a lite build with Wi-Fi, sockets, Bluetooth and GATT but no net, MQTT or cert commands, smaller scan/discovery tables and no Bluetooth company, appearance or characteristic names.
 Only official ST NUCLEO and Discovery boards are supported.
 
 The build needs the matching STM32Cube HAL (`STM32CUBEH7_PATH`, `STM32CUBEF7_PATH`, `STM32CUBEF4_PATH` or `STM32CUBEF1_PATH` or `STM32CUBEG0_PATH`, or the u-connectClient submodule).

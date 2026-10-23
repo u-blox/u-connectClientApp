@@ -25,7 +25,7 @@
 #ifndef UCXAPP_STACK_WORDS
 #define UCXAPP_STACK_WORDS 6144
 #endif
-/* UCXAPP_LITE (NUCLEO-F103RB, 20 KB RAM): no net or cert packs and small AT buffers. */
+/* UCXAPP_LITE (NUCLEO-F103RB, 20 KB RAM): no net, MQTT or cert packs and small AT buffers. */
 #ifndef UCXAPP_RX_BUFFER_SIZE
 #define UCXAPP_RX_BUFFER_SIZE 8192
 #endif
@@ -460,10 +460,10 @@ static void appTask(void *arg)
     ucxapp_register_sock_cmds();
     ucxapp_register_sys_cmds();
     ucxapp_register_app_cmds();
-    ucxapp_register_mqtt_cmds();
     ucxapp_register_bt_cmds();
     ucxapp_register_gatt_cmds();
 #ifndef UCXAPP_LITE
+    ucxapp_register_mqtt_cmds();
     ucxapp_register_net_cmds();
     ucxapp_register_cert_cmds();
 #endif

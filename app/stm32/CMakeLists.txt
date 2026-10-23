@@ -35,7 +35,6 @@ set(UCXAPP_STM32_SOURCES
     ${APP_SRC}/ucxapp_cmds_sock.c
     ${APP_SRC}/ucxapp_cmds_sys.c
     ${APP_SRC}/ucxapp_cmds_app.c
-    ${APP_SRC}/ucxapp_cmds_mqtt.c
     ${APP_SRC}/ucxapp_cmds_bt.c
     ${APP_SRC}/ucxapp_adv.c
     ${APP_SRC}/ucxapp_cmds_gatt.c
@@ -63,12 +62,13 @@ if(STM32_BOARD MATCHES "^(nucleo_h753zi|nucleo_f767zi|nucleo_f439zi|f407_disc)$"
         ${STM32_HAL_PATH}/Drivers/STM32${STM32_FAMILY_SHORT}xx_HAL_Driver/Src/stm32${_fam}xx_hal_flash_ex.c
         PROPERTIES COMPILE_OPTIONS "-w")
 endif()
-# The NUCLEO-F103RB and NUCLEO-G071RB (128 KB flash) get the lite command set: Wi-Fi and Bluetooth/GATT, no net or cert.
+# The NUCLEO-F103RB and NUCLEO-G071RB (128 KB flash) get the lite command set: Wi-Fi and Bluetooth/GATT, no net, MQTT or cert.
 set(UCXAPP_LITE OFF)
 if(STM32_BOARD STREQUAL "nucleo_f103rb" OR STM32_BOARD STREQUAL "nucleo_g071rb")
     set(UCXAPP_LITE ON)
 else()
     list(APPEND UCXAPP_STM32_SOURCES
+        ${APP_SRC}/ucxapp_cmds_mqtt.c
         ${APP_SRC}/ucxapp_cmds_net.c
         ${APP_SRC}/ucxapp_cmds_cert.c
     )
@@ -81,6 +81,14 @@ add_stm32_example(NAME ${UCXAPP_STM32_NAME} SOURCES ${UCXAPP_STM32_SOURCES})
 if(NOT UCXAPP_LITE)
     target_compile_options(${UCXAPP_STM32_NAME}.elf PRIVATE -O2 -ffunction-sections -fdata-sections)
     target_link_options(${UCXAPP_STM32_NAME}.elf PRIVATE -Wl,--gc-sections)
+else()
+    # 128 KB flash: LTO keeps the lite command set inside ROM.
+    target_compile_options(${UCXAPP_STM32_NAME}.elf PRIVATE -flto)
+    target_link_options(${UCXAPP_STM32_NAME}.elf PRIVATE -flto=auto -Os)
+    # The port's inline asm calls vTaskSwitchContext, which LTO cannot see.
+    set(_rtos ${STM32_HAL_PATH}/Middlewares/Third_Party/FreeRTOS/Source)
+    set_property(SOURCE ${_rtos}/tasks.c ${_rtos}/portable/GCC/ARM_CM0/port.c ${_rtos}/portable/GCC/ARM_CM3/port.c
+        APPEND PROPERTY COMPILE_OPTIONS -fno-lto)
 endif()
 
 target_include_directories(${UCXAPP_STM32_NAME}.elf PRIVATE ${APP_SRC} ${LITTLEFS_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${FATFS_DIR})

@@ -1,0 +1,134 @@
+"""Bluetooth LE: scan, profiles, bonding settings, HID and GATT server/client between the two modules."""
+
+import queue
+import re
+import subprocess
+import threading
+import time
+
+import pytest
+from hwutil import DEVICE_NAME, GATT_NAME, _args, _finish, _gatt_server, _run, _start_server, _stop
+
+
+@pytest.mark.hardware
+def test_ble_scan_completes(app_exe, port_a):
+    out = _run(app_exe, port_a, "bt.scan")
+    assert out.returncode == 0, out.stdout
+
+
+@pytest.mark.hardware
+def test_ble_profile_auto_falls_back_to_scan(app_exe, port_a, tmp_path):
+    (tmp_path / "storage").mkdir()
+    (tmp_path / "storage" / "ucxapp.blelast").write_text("ghost")
+    out = subprocess.run(
+        _args(app_exe, port_a, "bt.profile.add ghost 11:22:33:44:55:66", "bt.profile.list", "bt.profile.auto"),
+        capture_output=True, text=True, timeout=180, errors="replace", cwd=tmp_path)
+    assert "ghost: 11:22:33:44:55:66" in out.stdout, out.stdout
+    assert "Trying last used profile 'ghost'" in out.stdout, out.stdout
+    assert "Scanning for known devices" in out.stdout, out.stdout
+    assert "no known device found" in out.stdout, out.stdout
+    assert out.returncode != 0
+    out = _run(app_exe, port_a, "bt.profile.remove ghost")
+    assert "no profile 'ghost'" in out.stdout or out.returncode == 0
+
+
+@pytest.mark.hardware
+def test_bt_settings_and_bonds(app_exe, port_a):
+    out = _run(app_exe, port_a, "bt.defaults", "bt.pairing on", "bt.iocap none", "bt.security none",
+               "bt.autoconfirm on", "bt.bonds", "bt.list")
+    assert out.returncode == 0, out.stdout
+
+
+@pytest.mark.hardware
+def test_hid_and_gatt_server_definitions(app_exe, port_a):
+    out = _run(app_exe, port_a, "hid.setup", "hid.status", "gatt.server.list")
+    assert out.returncode == 0, out.stdout
+
+
+@pytest.mark.hardware
+def test_gatt_server_example_runs_and_stops(app_exe, port_a):
+    out = _run(app_exe, port_a, "gatt.server.example.nus 3", "device.reboot")
+    assert out.returncode == 0, out.stdout
+
+
+@pytest.mark.two_devices
+def test_ble_module_b_discovers_module_a(app_exe, port_a, port_b):
+    server = _start_server(app_exe, port_a)
+    try:
+        out = _run(app_exe, port_b, "gatt.listen 5", "bt.scan")
+        assert DEVICE_NAME in out.stdout, out.stdout
+    finally:
+        server.terminate()
+        server.wait(timeout=30)
+
+
+@pytest.mark.two_devices
+@pytest.mark.parametrize("key", ["hrs", "cts", "ess", "lns", "aio", "bas", "sps", "wps"])
+def test_gatt_example_server_and_client_between_two_modules(app_exe, port_a, port_b, key):
+    """A serves the example service; B discovers it, runs the matching client example and listens."""
+    proc, seen, lines = _gatt_server(app_exe, port_a, key)
+    extra = ["gatt.wps status"] if key == "wps" else ["gatt.client.example.dis"]
+    try:
+        out = _run(app_exe, port_b, "bt.scan", f"bt.connect {GATT_NAME}", "gatt.services", "gatt.chars",
+                   f"gatt.client.example.{key}", *extra, "gatt.listen 5", "bt.disconnect", timeout=240)
+    finally:
+        _finish(proc, seen, lines)
+    assert out.returncode == 0, out.stdout
+
+
+@pytest.mark.two_devices
+def test_gatt_read_write_notify_between_two_modules(app_exe, port_a, port_b):
+    """A serves SPS from a shell and pushes values; B reads, writes, sends and grants credits."""
+    _run(app_exe, port_a, "device.reboot")
+    time.sleep(5)
+    server = subprocess.Popen(_args(app_exe, port_a, f'at +UBTLN="{GATT_NAME}"', "gatt.server.example.sps",
+                                    "gatt.server.example.bas") + ["--shell"],
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                              errors="replace")
+    lines = queue.Queue()
+    threading.Thread(target=lambda: [lines.put(line) for line in server.stdout], daemon=True).start()
+    client = subprocess.Popen(_args(app_exe, port_b, "bt.scan", f"bt.connect {GATT_NAME}", "gatt.client.example.sps",
+                                    "gatt.client.example.bas", "gatt.send 0 sps ucx-sps", "gatt.credits 0 10",
+                                    "gatt.listen 60", "bt.disconnect"),
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+    seen = ""
+    deadline = time.time() + 90
+    while "handle=31" not in seen and time.time() < deadline:  # B subscribes to bas.level
+        try:
+            seen += lines.get(timeout=1)
+        except queue.Empty:
+            pass
+    try:
+        for command in ("gatt.server.set bas.level 42", "gatt.server.notify 0 bas.level 2a",
+                        "gatt.server.notify 0 sps.fifo text:ucx-ind", "gatt.server.servicechanged 0 1 65535",
+                        "gatt.server.demo 0 bas 2"):
+            server.stdin.write(command + "\n")
+            server.stdin.flush()
+            time.sleep(1)
+        out, _ = client.communicate(timeout=120)
+    finally:
+        _stop(server)
+        client.kill()
+    text = seen
+    while not lines.empty():
+        text += lines.get()
+    assert client.returncode == 0, out
+    assert "ucx-sps" in text, f"server:\n{text}\nclient:\n{out}"      # B -> A write
+    assert "ucx-ind" in out, f"server:\n{text}\nclient:\n{out}"        # A -> B indication
+
+
+@pytest.mark.two_devices
+def test_gatt_raw_handles_between_two_modules(app_exe, port_a, port_b):
+    """B uses the raw handle commands on A's Battery service."""
+    proc, seen, lines = _gatt_server(app_exe, port_a, "bas")
+    try:
+        chars = _run(app_exe, port_b, "bt.scan", f"bt.connect {GATT_NAME}", "gatt.chars", timeout=240)
+        handle = re.search(r"2a19\D*?(?:handle|value)[ =:]*(\d+)", chars.stdout, re.I | re.S)
+        assert handle, chars.stdout
+        h = handle.group(1)
+        out = _run(app_exe, port_b, f"gatt.read {h}", f"gatt.subscribe {h} notify", "gatt.listen 3",
+                   f"gatt.subscribe {h} off", f"gatt.write {h} 01", f"gatt.writelong {h} 01", "bt.disconnect")
+    finally:
+        _finish(proc, seen, lines)
+    assert out.returncode == 0, out.stdout
+    assert re.search(r"\b(100|level)\b", out.stdout, re.I), out.stdout

@@ -54,6 +54,7 @@ Thumbs.db
 debug_output.txt
 test_*.py
 !tests/test_*.py
+!tests/**/test_*.py
 debug_*.py
 temp_*.py
 verify_*.py
