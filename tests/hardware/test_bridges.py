@@ -5,8 +5,18 @@ import subprocess
 import time
 
 import pytest
-from hwutil import (SOURCES, _args, _background, _check_stream, _finish, _join_wifi, _run, _start_bridge, _stop,
-                    _wifi_connect_command)
+from hwutil import (
+    SOURCES,
+    _args,
+    _background,
+    _check_stream,
+    _finish,
+    _join_wifi,
+    _run,
+    _start_bridge,
+    _stop,
+    _wifi_connect_command,
+)
 
 
 @pytest.mark.two_devices

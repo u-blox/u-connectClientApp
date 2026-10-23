@@ -24,6 +24,7 @@ UNTESTED = {
     "gatt.server.readresp": "needs a scripted peer reading/writing at the right moment",
     "gatt.server.writeresp": "needs a scripted peer reading/writing at the right moment",
     "gatt.server.error": "needs a scripted peer reading/writing at the right moment",
+    "gatt.server.indicate": "needs a peer that enables indications; the SPS test peer enables notifications",
 }
 
 
