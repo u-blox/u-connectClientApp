@@ -78,9 +78,13 @@ jobs:
           git submodule update --init --recursive third-party/mbedtls
           git submodule update --init third-party/littlefs
       - name: Install toolchain
+        # Same Arm GNU release as local builds; Ubuntu's older gcc overflows the 128 KB lite boards.
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi ninja-build
+          sudo apt-get install -y ninja-build
+          curl -fsSL https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi.tar.xz \
+            | tar -xJ -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi/bin" >> "$GITHUB_PATH"
       - name: Fetch STM32Cube HAL
         run: git clone --depth 1 --branch ${{ matrix.ref }} --recurse-submodules --shallow-submodules https://github.com/STMicroelectronics/${{ matrix.repo }} "$RUNNER_TEMP/hal"
       - name: Build

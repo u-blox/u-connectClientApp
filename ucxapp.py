@@ -568,12 +568,12 @@ def update_readme_memory(new_rows):
     README.write_text(text[:m.start(2)] + table + text[m.end(2):], encoding="utf-8")
 
 
-def host_usage():
-    """Executable size and peak RAM after start (app.memory, offline) for the Windows and Linux builds."""
-    rows = {}
-    for key, name, file in HOST_TARGETS:
+def host_usage(keys):
+    """{key: (exe bytes, peak RAM bytes after start)} from app.memory (offline) for the Windows and Linux builds."""
+    usage = {}
+    for key, _, file in HOST_TARGETS:
         exe = BIN / file
-        if not exe.is_file() or (key == "win" and not IS_WINDOWS) or (
+        if key not in keys or not exe.is_file() or (key == "win" and not IS_WINDOWS) or (
                 key == "linux" and IS_WINDOWS and not shutil.which("wsl")):
             continue
         cmd = ["wsl", "./app/bin/ucxapp"] if key == "linux" and IS_WINDOWS else [str(exe)]
@@ -585,10 +585,13 @@ def host_usage():
         m = re.search(r"App RAM peak\s+size:\s*\S+\s+used:\s*(\d+)([MG]?)", out)
         if m is None:
             continue
-        ram = int(m.group(1)) * {"": 1, "M": 1 << 20, "G": 1 << 30}[m.group(2)]
-        rows[key] = (f"| `{key}` | {name} | {exe.stat().st_size / (1 << 20):.1f} MB | - | - "
-                     f"| {ram / (1 << 20):.1f} MB | - | - |")
-    return rows
+        usage[key] = (exe.stat().st_size, int(m.group(1)) * {"": 1, "M": 1 << 20, "G": 1 << 30}[m.group(2)])
+    return usage
+
+
+def host_row(key, usage):
+    name = next(h[1] for h in HOST_TARGETS if h[0] == key)
+    return f"| `{key}` | {name} | {usage[0] / (1 << 20):.1f} MB | - | - | {usage[1] / (1 << 20):.1f} MB | - | - |"
 
 
 def stm32_log(port):
@@ -647,10 +650,6 @@ def everything(args):
     rc = build_many(args, jobs)
     if args.clean and not (args.build or args.rebuild):
         return rc
-    host = host_usage()
-    for row in host.values():
-        print("Memory:", row)
-    update_readme_memory(host)
     print("\nOffline tests (pytest, no hardware):")
     out = subprocess.run([sys.executable, "-m", "pytest", "tests", "-q", "--ignore=tests/hardware"],
                          cwd=ROOT, capture_output=True, text=True, errors="replace")
@@ -685,7 +684,7 @@ def build_many(args, jobs):
             state = ("ok" if ended[b][0] == 0 else "FAIL") if b in ended else (f"{done}/{total}" if total else "...")
             cells.append(f"{b} {state}")
         if tty:
-            print(f"\r{time.monotonic() - start:4.0f} s  " + "  ".join(cells) + "   ", end="", flush=True)
+            print(f"\r{time.monotonic() - start:4.0f} s  " + "  ".join(cells) + "\033[K", end="", flush=True)
         if len(ended) < len(procs):
             time.sleep(1)
     if tty:
@@ -694,6 +693,9 @@ def build_many(args, jobs):
     usage = {}
     if args.build or args.rebuild:
         usage = {b: u for b in jobs if b in BOARDS and (u := stm32_usage(BOARDS[b][0])) is not None}
+        host = host_usage(jobs)
+    else:
+        host = {}
     print(f"\n{'target':6} {'result':7} {'time':>6} {'warn':>5} {'flash':>12} {'ram':>12}")
     failed = False
     report = []
@@ -704,6 +706,8 @@ def build_many(args, jobs):
         u = usage.get(b)
         flash = f"{u[0] // 1024}K {100 * u[0] / u[1]:3.0f}%" if u else "-"
         ram = f"{u[2] // 1024}K {100 * u[2] / u[3]:3.0f}%" if u else "-"
+        if b in host:
+            flash, ram = (f"{v / (1 << 20):.1f}M     " for v in host[b])
         print(f"{b:6} {'ok' if rc == 0 else 'FAILED':7} {secs:5.0f}s {warns:5} {flash:>12} {ram:>12}")
         failed |= rc != 0
         if problems:
@@ -716,6 +720,8 @@ def build_many(args, jobs):
             print(f"  ... {len(problems) - 20} more")
     if usage:
         record_usage(usage, quiet=True)
+    if host:
+        update_readme_memory({k: host_row(k, u) for k, u in host.items()})
     print(f"\n{'FAILED' if failed else 'All targets OK'}"
           f"{'' if failed or report else ', zero warnings'} in {time.monotonic() - start:.0f} s")
     return 1 if failed else 0
