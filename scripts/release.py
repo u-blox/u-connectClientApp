@@ -205,7 +205,7 @@ def finish(args, tag, tree, exe):
     package(tree, archive)
 
     step("Creating the release")
-    run("gh", "release", "create", tag, archive,
+    run("gh", "release", "create", tag, archive, exe, tree / "linux" / "ucxapp",
         "--title", f"u-connectXpressApp {tag}", "--notes-file", ".github/release-notes.md",
         "--generate-notes", *([] if args.publish else ["--draft"]))
     print(f"Release: {out('gh', 'release', 'view', tag, '--json', 'url', '--jq', '.url')[1]}")
