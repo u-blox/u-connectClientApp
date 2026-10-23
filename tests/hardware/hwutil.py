@@ -74,6 +74,19 @@ def _close_listeners(exe, port):
         _run(exe, port, *[f"sock.close {handle}" for handle in handles])
 
 
+def _reset_module(exe, port):
+    """Close sockets, BLE links and Wi-Fi, reboot, and check the module comes back with no sockets or links."""
+    socks = re.findall(r"socket (\d+):", _run(exe, port, "sock.list").stdout)
+    conns = re.findall(r"connection (\d+):", _run(exe, port, "bt.list").stdout)
+    _run(exe, port, *[f"sock.close {h}" for h in socks], *[f"bt.disconnect {h}" for h in conns], "wifi.disconnect")
+    out = _run(exe, port, "device.reboot", timeout=60)
+    assert "module rebooted" in out.stdout, f"reset of {port} failed:\n{out.stdout}"
+    time.sleep(5)
+    out = _run(exe, port, "sock.list", "bt.list")
+    clean = "0 socket(s)" in out.stdout and "0 connection(s)" in out.stdout
+    assert clean, f"{port} not clean after reset:\n{out.stdout}"
+
+
 def _start_bridge(exe, port, source, found, setup, bridge, cwd=None):
     """Module A runs the source bridge in a shell; returns (process, line queue)."""
     _close_listeners(exe, port)

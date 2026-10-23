@@ -456,7 +456,7 @@ PD8/PD9 stay reserved. SPI4 is used because PA7 on SPI1 is shared with the Ether
 | `stats.show` | `[tcp\|udp\|sps\|gatt\|http\|mqtt\|web] [rx\|tx]` | Payload bytes sent and received per channel; `stats.show tcp rx` prints just the number |
 | `stats.clear` | `[tcp\|udp\|sps\|gatt\|http\|mqtt\|web]` | Reset one channel's counters, or all |
 | `app.info` | | About this app: maker, platform and links |
-| `app.complete` | `<prefix>` | Tab completion of a command prefix: number of matches and the completed text |
+| `app.complete` | `<prefix>` | Show what Tab would complete a typed start of a command to, e.g. `app.complete wifi.sc` prints `1 match: wifi.scan` (for scripts and tests) |
 | `app.memory` | | App RAM, heap and flash (disk on PC) use, plus task stacks on STM32; same rows as `device.stack` |
 | `app.version` | | App version, build time, platform and compiler |
 | `app.uptime` | | Time since the app started (`days hh:mm:ss`) |

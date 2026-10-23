@@ -431,11 +431,69 @@ const char *ucxapp_ui_cmd_runs_on(const ucxapp_cmd_t *cmd)
     return ucxapp_ui_runs_on(group);
 }
 
+/* Display order inside a group: most used first. Unlisted commands follow in registration order. */
+static const char *const kCmdOrder[] = {
+    "device.info", "device.status", "device.reboot", "device.uptime", "device.diagnose", "device.caps",
+    "device.stack", "device.crash", "device.factory",
+    "log.level", "log.save", "log.stop", "log.clear",
+    "fw.update", "fw.download", "fw.flash", "fw.bootloader",
+    "bt.scan", "bt.connect", "bt.disconnect", "bt.list", "bt.bonds", "bt.profile.connect", "bt.profile.auto",
+    "bt.profile.add", "bt.profile.list", "bt.profile.remove", "bt.pairing", "bt.security", "bt.iocap",
+    "bt.confirm", "bt.passkey", "bt.autoconfirm", "bt.unbond", "bt.defaults",
+    "gatt.services", "gatt.chars", "gatt.read", "gatt.write", "gatt.subscribe", "gatt.listen", "gatt.send",
+    "gatt.credits", "gatt.writelong",
+    "gatt.client.hrs", "gatt.client.bas", "gatt.client.dis", "gatt.client.nus", "gatt.client.sps",
+    "gatt.client.ess", "gatt.client.cts", "gatt.client.lns", "gatt.client.aio", "gatt.client.wit",
+    "gatt.client.wps", "gatt.wps",
+    "gatt.server.list", "gatt.server.set", "gatt.server.notify", "gatt.server.indicate", "gatt.server.demo",
+    "gatt.server.hrs", "gatt.server.bas", "gatt.server.nus", "gatt.server.sps", "gatt.server.ess",
+    "gatt.server.cts", "gatt.server.lns", "gatt.server.aio", "gatt.server.wps",
+    "wifi.scan", "wifi.connect", "wifi.disconnect", "wifi.status", "wifi.ip", "wifi.rssi", "wifi.profile.auto",
+    "wifi.profile.connect", "wifi.profile.add", "wifi.profile.list", "wifi.profile.remove",
+    "wifi.ap.enable", "wifi.ap.disable", "wifi.ap.status",
+    "net.ping", "net.dns", "net.ntp", "net.iperf",
+    "sock.list", "sock.open", "sock.connect", "sock.send", "sock.read", "sock.close", "sock.tls",
+    "mqtt.connect", "mqtt.disconnect", "mqtt.subscribe", "mqtt.publish", "mqtt.read", "mqtt.unsubscribe",
+    "app.info", "app.version", "app.memory", "app.uptime",
+    "utils.zip", "utils.unzip", "utils.hash.text", "utils.tls.list", "utils.tls.ca.create",
+    "utils.tls.server.create", "utils.tls.client.create", "utils.tls.pem", "utils.tls.remove",
+    "file.list", "file.view", "file.hash", "file.remove",
+    "dtls.client", "dtls.server",
+    "web.start", "web.status", "web.stop",
+    "gnss.detect", "gnss.open", "gnss.status", "gnss.sats", "gnss.log", "gnss.bridge", "gnss.close",
+    "imu.detect", "imu.open", "imu.status", "imu.log", "imu.bridge", "imu.close",
+    "cell.detect", "cell.open", "cell.status", "cell.connect", "cell.disconnect", "cell.ping",
+    "can.status", "can.cfg", "can.send", "can.recv", "can.bridge",
+};
+
+static int cmdRank(const ucxapp_cmd_t *cmd, int index)
+{
+    for (size_t i = 0; i < sizeof(kCmdOrder) / sizeof(kCmdOrder[0]); i++) {
+        if (strcmp(kCmdOrder[i], cmd->name) == 0) {
+            return (int)i;
+        }
+    }
+    return 1000 + index;
+}
+
 int ucxapp_ui_group_cmds(const char *group, const ucxapp_cmd_t **out, int max)
 {
     cmdCtx_t ctx = { group, out, max, 0 };
+    int rank[UCXAPP_UI_MAX_GROUP_CMDS];
 
     ucxapp_cmd_foreach(visitCmd, &ctx);
+    for (int i = 0; i < ctx.count && i < UCXAPP_UI_MAX_GROUP_CMDS; i++) {
+        const ucxapp_cmd_t *cmd = out[i];
+        int r = cmdRank(cmd, i), j = i - 1;
+
+        while (j >= 0 && rank[j] > r) {
+            out[j + 1] = out[j];
+            rank[j + 1] = rank[j];
+            j--;
+        }
+        out[j + 1] = cmd;
+        rank[j + 1] = r;
+    }
     return ctx.count;
 }
 

@@ -142,6 +142,26 @@ git submodule update --init --recursive third-party/mbedtls
 Linux: `./ucxapp.py`. STM32: `.\ucxapp --stm32 --build --flash --log`.
 Find attached modules, GNSS receivers and IMUs: `.\ucxapp --detect`.
 
+## Memory footprint
+
+Release builds, updated by `.\ucxapp --everything --build`. On Windows and Linux: executable size and peak RAM
+after start; on STM32: flash and RAM used (RAM includes the FreeRTOS heap, see [docs/STM32_MEMORY.md](docs/STM32_MEMORY.md)).
+
+<!-- memory -->
+| Target | Name | Flash used | Flash size | Flash % | RAM used | RAM size | RAM % |
+|---|---|---|---|---|---|---|---|
+| `win` | Windows x64 | 1.6 MB | - | - | 8.6 MB | - | - |
+| `linux` | Linux x64 | 1.4 MB | - | - | 2.2 MB | - | - |
+| `h753` | NUCLEO-H753ZI | 416 KB | 2048 KB | 20% | 284 KB | 512 KB | 56% |
+| `f767` | NUCLEO-F767ZI | 403 KB | 2048 KB | 20% | 299 KB | 368 KB | 81% |
+| `f439` | NUCLEO-F439ZI | 406 KB | 2048 KB | 20% | 102 KB | 192 KB | 53% |
+| `f407` | STM32F4DISCOVERY | 403 KB | 1024 KB | 39% | 102 KB | 128 KB | 80% |
+| `f401` | NUCLEO-F401RE | 384 KB | 512 KB | 75% | 85 KB | 96 KB | 89% |
+| `f446` | NUCLEO-F446RE | 384 KB | 512 KB | 75% | 101 KB | 128 KB | 79% |
+| `f103` | NUCLEO-F103RB | 113 KB | 128 KB | 89% | 15 KB | 20 KB | 78% |
+| `g071` | NUCLEO-G071RB | 117 KB | 128 KB | 92% | 25 KB | 36 KB | 71% |
+<!-- /memory -->
+
 ## Documentation
 
 - [Command reference](COMMANDS.md): every command with usage

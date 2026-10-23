@@ -3,9 +3,11 @@
 and publish one archive with the layout windows/, linux/, stm32/stm32_<board>/.
 
 1. Checks the work tree is clean, on master and in sync with origin.
-2. Builds the Windows Release exe and signs it (the EV certificate is only available locally).
-3. Tags and pushes; .github/workflows/release.yml builds Linux + STM32 into the `release-tree` artifact.
-4. Downloads that tree, adds windows/ucxapp.exe and creates the release with
+2. Rebuilds every target (ucxapp.py --everything --rebuild: Windows, Linux via WSL, all STM32 boards, offline
+   tests) and commits the refreshed memory tables in README.md and docs/STM32_MEMORY.md.
+3. Builds the Windows Release exe and signs it (the EV certificate is only available locally).
+4. Tags and pushes; .github/workflows/release.yml builds Linux + STM32 into the `release-tree` artifact.
+5. Downloads that tree, adds windows/ucxapp.exe and creates the release with
    ucxapp-<tag>.zip plus ucxapp.exe and ucxapp (Linux) as direct downloads.
 
 X.Y.Z is U_CX_VERSION_MAJOR/MINOR/PATCH in u_cx_version.h (the same header app/CMakeLists.txt reads), YYMMDD is today.
@@ -115,8 +117,12 @@ def wait_for_run(tag, minutes):
 def package(tree, archive):
     """Zip the tree; zipfile keeps the Linux binary executable."""
     missing = [b for b in STM32_BOARDS if not (tree / "stm32" / f"stm32_{b}").is_dir()]
-    if not (tree / "linux" / "ucxapp").is_file() or missing:
-        fail(f"release tree incomplete (linux/ucxapp or stm32 boards {missing})")
+    if not (tree / "windows" / "ucxapp.exe").is_file():
+        missing.append("windows/ucxapp.exe")
+    if not (tree / "linux" / "ucxapp").is_file():
+        missing.append("linux/ucxapp")
+    if missing:
+        fail(f"release tree incomplete: {missing}")
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
         for f in sorted(tree.rglob("*")):
             if f.is_file():
@@ -157,6 +163,13 @@ def main():
 
     if not IS_WINDOWS:
         fail("run the release on Windows: the Windows exe is signed with the local EV certificate")
+
+    step("Building every target")
+    run(sys.executable, "ucxapp.py", "--everything", "--rebuild")
+    if not args.dry_run and out("git", "status", "--porcelain", "README.md", "docs/STM32_MEMORY.md")[1]:
+        step("Committing the updated memory tables")
+        run("git", "commit", "-m", f"Update memory footprint for {tag}", "README.md", "docs/STM32_MEMORY.md")
+        run("git", "push", "origin", "master")
 
     dist = ROOT / "dist" / tag
     shutil.rmtree(dist, ignore_errors=True)

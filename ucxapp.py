@@ -150,7 +150,12 @@ def stale(exe):
 
 
 def build_dir():
-    return ROOT / "build" / ("windows" if IS_WINDOWS else "linux")
+    if IS_WINDOWS:
+        return ROOT / "build" / "windows"
+    # WSL on a Windows drive (/mnt/x) is slow; build on the Linux disk, the exe still goes to app/bin.
+    if str(ROOT).startswith("/mnt/"):
+        return Path.home() / "ucxapp-build"
+    return ROOT / "build" / "linux"
 
 
 def host_clean(configs):
@@ -162,17 +167,19 @@ def host_clean(configs):
     else:
         shutil.rmtree(bd, ignore_errors=True)
         (BIN / "ucxapp").unlink(missing_ok=True)
-    print("Cleaned", bd.relative_to(ROOT))
+    print("Cleaned", bd)
 
 
 def cache_moved(cache):
-    """True when the CMake cache was made in another folder (repo moved or renamed)."""
+    """True when the CMake cache was made in another folder or for other sources (repo moved or renamed)."""
     try:
         text = cache.read_text(errors="replace")
     except OSError:
         return False
     m = re.search(r"^CMAKE_CACHEFILE_DIR:INTERNAL=(.*)$", text, re.M)
-    return m is not None and Path(m.group(1).strip()).resolve() != cache.parent.resolve()
+    src = re.search(r"^CMAKE_HOME_DIRECTORY:INTERNAL=(.*)$", text, re.M)
+    return ((m is not None and Path(m.group(1).strip()).resolve() != cache.parent.resolve())
+            or (src is not None and Path(src.group(1).strip()).resolve() != (ROOT / "app").resolve()))
 
 
 def host_build(configs, fresh=False):
@@ -197,8 +204,8 @@ def host_build(configs, fresh=False):
     for c in configs:
         if not IS_WINDOWS:
             check(["cmake", "-S", "app", "-B", bd, f"-DCMAKE_BUILD_TYPE={c}"], "CMake configure")
-        check(["cmake", "--build", bd, "--config", c, "--target", "ucxapp", *(["--clean-first"] if fresh else [])],
-              f"{c} build")
+        check(["cmake", "--build", bd, "--config", c, "--target", "ucxapp", "--parallel", str(os.cpu_count() or 4),
+               *(["--clean-first"] if fresh else [])], f"{c} build")
 
 
 def pick_exe(args):
@@ -535,6 +542,53 @@ def record_usage(results, quiet=False):
         "after that heap. Flash is code, read-only data and the initial values of `.data`.\n\n"
         "| Board | Name | Flash used | Flash size | Flash % | RAM used | RAM size | RAM % |\n"
         "|---|---|---|---|---|---|---|---|\n" + table + "\n", encoding="utf-8")
+    update_readme_memory({k: rows[k] for k in BOARDS if k in rows})
+
+
+README = ROOT / "README.md"
+README_MEMORY = re.compile(r"(<!-- memory -->\n)(.*?)(<!-- /memory -->)", re.S)
+HOST_TARGETS = (("win", "Windows x64", "ucxapp.exe"), ("linux", "Linux x64", "ucxapp"))
+
+
+def update_readme_memory(new_rows):
+    """Replace rows in the README memory table between <!-- memory --> and <!-- /memory -->."""
+    text = README.read_text(encoding="utf-8")
+    m = README_MEMORY.search(text)
+    if m is None:
+        return
+    rows = {}
+    for line in m.group(2).splitlines():
+        k = re.match(r"\| `(\w+)` \|", line)
+        if k:
+            rows[k.group(1)] = line
+    rows.update(new_rows)
+    order = [h[0] for h in HOST_TARGETS] + list(BOARDS)
+    table = ("| Target | Name | Flash used | Flash size | Flash % | RAM used | RAM size | RAM % |\n"
+             "|---|---|---|---|---|---|---|---|\n" + "\n".join(rows[k] for k in order if k in rows) + "\n")
+    README.write_text(text[:m.start(2)] + table + text[m.end(2):], encoding="utf-8")
+
+
+def host_usage():
+    """Executable size and peak RAM after start (app.memory, offline) for the Windows and Linux builds."""
+    rows = {}
+    for key, name, file in HOST_TARGETS:
+        exe = BIN / file
+        if not exe.is_file() or (key == "win" and not IS_WINDOWS) or (
+                key == "linux" and IS_WINDOWS and not shutil.which("wsl")):
+            continue
+        cmd = ["wsl", "./app/bin/ucxapp"] if key == "linux" and IS_WINDOWS else [str(exe)]
+        try:
+            out = subprocess.run([*cmd, "--offline", "--exec", "app.memory"], cwd=ROOT, capture_output=True,
+                                 text=True, errors="replace", timeout=60, stdin=subprocess.DEVNULL).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        m = re.search(r"App RAM peak\s+size:\s*\S+\s+used:\s*(\d+)([MG]?)", out)
+        if m is None:
+            continue
+        ram = int(m.group(1)) * {"": 1, "M": 1 << 20, "G": 1 << 30}[m.group(2)]
+        rows[key] = (f"| `{key}` | {name} | {exe.stat().st_size / (1 << 20):.1f} MB | - | - "
+                     f"| {ram / (1 << 20):.1f} MB | - | - |")
+    return rows
 
 
 def stm32_log(port):
@@ -593,6 +647,10 @@ def everything(args):
     rc = build_many(args, jobs)
     if args.clean and not (args.build or args.rebuild):
         return rc
+    host = host_usage()
+    for row in host.values():
+        print("Memory:", row)
+    update_readme_memory(host)
     print("\nOffline tests (pytest, no hardware):")
     out = subprocess.run([sys.executable, "-m", "pytest", "tests", "-q", "--ignore=tests/hardware"],
                          cwd=ROOT, capture_output=True, text=True, errors="replace")
